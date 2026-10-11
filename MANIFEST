@@ -17,3 +17,4 @@ README.md
 t/00-load.t
 t/10-selector.t
 t/11-quic-manager.t
+t/12-linux-event-adapter.t
