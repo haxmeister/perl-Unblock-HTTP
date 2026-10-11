@@ -9,7 +9,7 @@ Unblock::HTTP is the pure-Perl application layer above Unblock::HTTP1,
 Unblock::HTTP2, and Unblock::HTTP3. It must use the modern 0.11 engines,
 retain Uniform::HTTP message contracts, and remain independent of event loops.
 
-## Working feature branch (not merged)
+## Current implementation (main)
 
 - Client and Server have a common constructor and protocol selector.
 - Both expose the native engine through backend(), without wrapping transactions.
@@ -33,10 +33,30 @@ retain Uniform::HTTP message contracts, and remain independent of event loops.
 - The live socket tests did not verify TLS ALPN selection for HTTP/1/2,
   redirects, pooling, performance, or HTTP/1-to-HTTP/2 upgrade.
 
+## Approved future API improvements (not implemented)
+
+These are agreed goals. Review integration code and settle the interface before
+starting implementation; do not confuse these plans with the current API.
+
+1. Make Unblock::HTTP::Server->new() a reusable application-level server
+   definition, shared by many connections, rather than one Server per connection.
+2. Hide per-connection HTTP server construction within the top layer, without
+   taking socket, listener, or event-loop ownership away from the host.
+3. Add Client->get() and Client->post() conveniences that delegate to request(),
+   without turning Client into a UserAgent or adding redirects, cookies, or pools.
+4. Consider defaulting Transaction->respond(body => ...) to status 200, by a
+   clean consistent contract across the three underlying protocol engines.
+   Avoid adding transaction wrappers just to provide this shorthand.
+
+Keep the underlying Transaction objects and existing request/response
+streaming methods. No needless extra calls in the network hot path.
+These changes will be designed only after reviewing the existing integration
+surface; separate-engine changes require separate repository authorization.
+
 ## Architecture decisions not settled
 
-- Is one object per connection the desired top-layer API, or should Server also
-  manage a listener's accepted connections?
+- What exact connection-attachment method should the planned application-level
+  Server offer to framework adapters? The design should be agreed before code.
 - QUIC manager live UDP handshake and request verified; additional
   lifecycle, concurrency and memory retention audits remain.
 - Which server-side protocol detection and negotiation features should be
