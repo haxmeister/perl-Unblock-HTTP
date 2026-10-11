@@ -5,3 +5,5 @@ Revision history for Unblock::HTTP
     - Select HTTP/1, HTTP/2, or HTTP/3 from the host's ALPN or an explicit protocol.
     - Preserve the existing engine Transaction and attached-transport APIs.
     - Add integration documentation and isolated selector tests.
+    - Add QUIC manager to handle HTTP/3 session activation and cleanup.
+    - Add Linux::Event examples for TCP and QUIC hosts.

@@ -9,7 +9,7 @@ it does not parse HTTP frames itself or wrap every Transaction.
 
 ## Server
 
-~~~perl
+```perl
 use Unblock::HTTP::Server;
 
 my $http = Unblock::HTTP::Server->new(
@@ -20,7 +20,7 @@ my $http = Unblock::HTTP::Server->new(
         $tx->respond(status => 200, body => "hello\n");
     },
 );
-~~~
+```
 
 The event-framework stream feeds incoming decrypted bytes to
 `$http->input($bytes)`. It implements `unblock_send`, `unblock_finish`,
@@ -29,7 +29,7 @@ transport contract for HTTP/1 and HTTP/2.
 
 ## Client
 
-~~~perl
+```perl
 use Unblock::HTTP::Client;
 
 my $http = Unblock::HTTP::Client->new(
@@ -46,7 +46,7 @@ $http->request(
         print $response->status, "\n";
     },
 );
-~~~
+```
 
 Application callbacks receive the underlying Transaction, with common
 `respond`, `write`, `end`, and lifecycle methods. Advanced protocol-specific
@@ -63,16 +63,33 @@ Only the negotiated TLS ALPN result should be passed as `alpn`.
 
 For HTTP/3:
 
-~~~perl
+```perl
 my $http = Unblock::HTTP::Server->new(
     quic       => $ready_quic_connection,
     on_request => $on_request,
 );
 $http->start;
-~~~
+```
 
 The host integrates UDP and the timer through Net::QUIC::Driver, as before.
-The initial unified layer does not yet automate the Driver.
+A convenience manager can now create and activate all HTTP/3 sessions:
+
+```perl
+use Unblock::HTTP::QUIC;
+
+my $endpoint = Unblock::HTTP::QUIC->server(
+    certificate_file => $cert,
+    private_key_file => $key,
+    send        => $send_datagram,
+    set_timeout => $replace_timer,
+    on_request  => $on_request,
+);
+$endpoint->start;
+# Forward UDP events with $endpoint->receive, timeout, and writable.
+```
+
+This avoids writing the connection-discovery and handshake-readiness loop.
+The host still manages its own UDP socket and timer.
 
 ## Scope
 
@@ -83,6 +100,9 @@ existing protocol engines. Protocol detection and richer QUIC integration
 will be built as separate, tested features.
 
 Requires Perl 5.20 or newer because the included HTTP/3 engine requires it.
+
+The Linux::Event examples are `examples/linux-event-server.pl` for H1/H2 and
+`examples/linux-event-quic-server.pl` for H3.
 
 Read `perldoc Unblock::HTTP::Integration` for the precise transport contract.
 

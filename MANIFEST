@@ -1,9 +1,12 @@
 .gitignore
 Changes
+examples/linux-event-server.pl
+examples/linux-event-quic-server.pl
 lib/Unblock/HTTP.pm
 lib/Unblock/HTTP/_Session.pm
 lib/Unblock/HTTP/Client.pm
 lib/Unblock/HTTP/Integration.pm
+lib/Unblock/HTTP/QUIC.pm
 lib/Unblock/HTTP/Server.pm
 LICENSE
 Makefile.PL
@@ -12,3 +15,4 @@ MANIFEST.SKIP
 README.md
 t/00-load.t
 t/10-selector.t
+t/11-quic-manager.t

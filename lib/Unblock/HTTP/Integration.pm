@@ -63,8 +63,11 @@ Once a QUIC connection is ready, create a unified Server or Client:
     $http->start;
 
 Retain C<$http> while the QUIC connection is active. Do not feed UDP
-packets to C<input()>; Net::QUIC owns their delivery. HTTP/3 support in
-this first layer does not yet replace the Driver integration code.
+packets to C<input()>; Net::QUIC owns their delivery. Alternatively, use L<Unblock::HTTP::QUIC> as a higher-level manager. It
+constructs Net::QUIC::Driver and automatically starts an HTTP/3 Server for
+each ready QUIC connection. The framework then forwards UDP data and timer
+events to the manager. Only socket I/O and timer scheduling remain in the
+framework adapter. See examples/linux-event-quic-server.pl in the repository.
 
 =head1 LIMITS OF THE FIRST VERSION
 

@@ -38,8 +38,9 @@ The first version selects a protocol from the supplied ALPN result or an
 explicit C<protocol> option. An unnegotiated TCP connection defaults to
 HTTP/1.1. HTTP/3 uses an existing Net::QUIC connection.
 
-It does not create sockets, negotiate TLS, run an event loop, or manage a
-Net::QUIC::Driver. See L<Unblock::HTTP::Integration>.
+It does not create sockets, negotiate TLS, or require any particular event
+loop. The optional L<Unblock::HTTP::QUIC> class manages HTTP/3 sessions
+over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
 
 =head1 CLASSES
 
@@ -52,6 +53,10 @@ One outgoing HTTP connection.
 =item L<Unblock::HTTP::Server>
 
 One incoming HTTP connection.
+
+=item L<Unblock::HTTP::QUIC>
+
+HTTP/3 session management over Net::QUIC.
 
 =item L<Unblock::HTTP::Integration>
 
