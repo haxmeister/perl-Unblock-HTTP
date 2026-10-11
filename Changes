@@ -1,0 +1,7 @@
+Revision history for Unblock::HTTP
+
+0.01  Development
+    - Initial unified Client and Server connection API.
+    - Select HTTP/1, HTTP/2, or HTTP/3 from the host's ALPN or an explicit protocol.
+    - Preserve the existing engine Transaction and attached-transport APIs.
+    - Add integration documentation and isolated selector tests.
