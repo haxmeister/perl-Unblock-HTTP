@@ -48,6 +48,26 @@ The attached engine delivers output automatically, including output from
 callbacks invoked long after a read. The framework owns the socket,
 TLS, and output queue. The HTTP engine holds the host weakly.
 
+=head1 REUSABLE LINUX::EVENT SERVER ADAPTER
+
+For Linux::Event, L<Unblock::HTTP::Adapter::LinuxEvent> is an optional
+ready-made Stream subclass. It handles all the transport plumbing, using
+the selected engine directly for incoming bytes. The application only
+implements C<on_http_request> in its own subclass:
+
+    package MyHTTPStream;
+    use parent 'Unblock::HTTP::Adapter::LinuxEvent';
+
+    sub on_http_request ($self, $tx, $request) {
+        $tx->respond(status => 200, body => "hello\n");
+    }
+
+Use C<stream =E<gt> { class =E<gt> 'MyHTTPStream' }> in a
+Linux::Event::IO::Sock::Listener. TLS ALPN is read after transport
+readiness, so the same subclass can serve HTTP/1.1 or HTTP/2.
+Override C<http_protocol> to return C<h2> for plaintext prior knowledge.
+This adapter is optional and not loaded for other frameworks.
+
 =head1 HTTP/3 AND QUIC
 
 HTTP/3 uses Net::QUIC::Driver instead of the TCP transport contract.

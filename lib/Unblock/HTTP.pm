@@ -54,6 +54,10 @@ One outgoing HTTP connection.
 
 One incoming HTTP connection.
 
+=item L<Unblock::HTTP::Adapter::LinuxEvent>
+
+Optional reusable Linux::Event server Stream.
+
 =item L<Unblock::HTTP::QUIC>
 
 HTTP/3 session management over Net::QUIC.

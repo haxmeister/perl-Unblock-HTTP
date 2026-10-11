@@ -7,3 +7,5 @@ Revision history for Unblock::HTTP
     - Add integration documentation and isolated selector tests.
     - Add QUIC manager to handle HTTP/3 session activation and cleanup.
     - Add Linux::Event examples for TCP and QUIC hosts.
+    - Add reusable Linux::Event Stream adapter for HTTP/1 and HTTP/2.
+    - Add real socket integration tests and GitHub CI workflow.

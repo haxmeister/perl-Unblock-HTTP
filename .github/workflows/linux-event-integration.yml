@@ -1,0 +1,32 @@
+name: Linux::Event integration
+
+on:
+  push:
+    branches:
+      - feature/unified-http-layer
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  real-sockets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpanminus build-essential pkg-config libssl-dev openssl zlib1g-dev
+      - name: Install protocol engines and Linux::Event
+        run: |
+          cpanm --notest --quiet Linux::Event@0.117
+          cpanm --notest --quiet --installdeps .
+      - name: Build and run distribution tests
+        run: |
+          perl Makefile.PL
+          make
+          make test
+      - name: Test live TCP and QUIC sockets using Linux::Event
+        run: |
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t

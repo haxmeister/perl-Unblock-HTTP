@@ -27,6 +27,32 @@ The event-framework stream feeds incoming decrypted bytes to
 and `unblock_abort` to accept outgoing bytes. This is the same attached
 transport contract for HTTP/1 and HTTP/2.
 
+## Linux::Event adapter
+
+Linux::Event users can avoid writing repeated input/output integration code.
+Create one small subclass and implement the application handler:
+
+```perl
+use Unblock::HTTP::Adapter::LinuxEvent;
+
+package MyHTTPStream;
+use parent 'Unblock::HTTP::Adapter::LinuxEvent';
+
+sub on_http_request ($self, $tx, $request) {
+    $tx->respond(status => 200, body => "hello\n");
+}
+
+# Use in a Linux::Event listener:
+# stream => { class => 'MyHTTPStream' }
+```
+
+The adapter uses the TLS-negotiated ALPN when available, defaults to HTTP/1.1
+on plaintext connections, and allows HTTP/2 prior knowledge by overriding
+`http_protocol` to return `h2`. It forwards socket reads directly
+to the selected engine to avoid unnecessary calls in the hot path.
+
+See `examples/linux-event-server.pl` for a complete program.
+
 ## Client
 
 ```perl
@@ -105,6 +131,18 @@ The Linux::Event examples are `examples/linux-event-server.pl` for H1/H2 and
 `examples/linux-event-quic-server.pl` for H3.
 
 Read `perldoc Unblock::HTTP::Integration` for the precise transport contract.
+
+## Integration tests
+
+Run the isolated distribution tests with `make test`. A separate
+Linux::Event suite runs real HTTP/1.1, HTTP/2, and HTTP/3 exchanges over
+local TCP and UDP sockets:
+
+    prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t
+
+This suite needs the actual Unblock engines, Linux::Event, and Net::QUIC
+installed. It is exercised by the GitHub Actions integration workflow,
+rather than shipped as a mandatory CPAN test dependency.
 
 ## License
 

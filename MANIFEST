@@ -4,6 +4,7 @@ examples/linux-event-server.pl
 examples/linux-event-quic-server.pl
 lib/Unblock/HTTP.pm
 lib/Unblock/HTTP/_Session.pm
+lib/Unblock/HTTP/Adapter/LinuxEvent.pm
 lib/Unblock/HTTP/Client.pm
 lib/Unblock/HTTP/Integration.pm
 lib/Unblock/HTTP/QUIC.pm

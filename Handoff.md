@@ -17,8 +17,12 @@ retain Uniform::HTTP message contracts, and remain independent of event loops.
 - HTTP/3 can use a pre-existing QUIC connection, or QUIC manager for all sessions.
 - QUIC manager delegates UDP and timers to Net::QUIC::Driver and owns per-connection HTTP3 lifecycle.
 - Unknown ALPN is rejected rather than guessed.
-- 59 isolated test assertions pass using stub engines and Driver. Real protocol integration
-  has NOT been tested in this environment because the engines are not installed.
+- 59 isolated test assertions pass using stub engines and Driver.
+- Added optional Linux::Event Stream adapter with direct engine input forwarding.
+- Added real socket integration tests under xt/ for HTTP/1.1, H2 prior knowledge,
+  and H3 over UDP/QUIC, plus a CI workflow to install dependencies and run them.
+- Real protocol integration has not passed here: Linux::Event and the HTTP engines
+  are absent from the local runtime. Check GitHub Actions for a verified result.
 
 ## Architecture decisions not settled
 
@@ -35,7 +39,7 @@ retain Uniform::HTTP message contracts, and remain independent of event loops.
 1. Review the public API with the maintainer before treating it as stable.
 2. Exercise real HTTP1 and HTTP2 attached transports on Linux::Event.
 3. Exercise HTTP3 QUIC manager against a live Net::QUIC::Driver with UDP and timers.
-4. Add real integration tests and separate app usage from adapter examples.
+4. Run and debug the real socket tests on the Linux CI worker.
 5. Benchmark the wrapper against calling the engines directly.
 6. Full release audit only after all three paths are tested.
 
