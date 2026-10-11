@@ -12,8 +12,8 @@ use Unblock::HTTP::QUIC;
 my ($host, $port, $cert, $key) = @ARGV;
 $host = '127.0.0.1' unless defined $host;
 $port = 4433 unless defined $port;
-$cert = 't/fixtures/localhost-cert.pem' unless defined $cert;
-$key  = 't/fixtures/localhost-key.pem' unless defined $key;
+die "usage: $0 HOST PORT CERT.pem KEY.pem\n"
+    unless defined($cert) && defined($key);
 
 die "use a concrete bind address, not a wildcard, in this example\n"
     if $host eq '0.0.0.0' || $host eq '::';

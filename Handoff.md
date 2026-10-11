@@ -17,7 +17,7 @@ retain Uniform::HTTP message contracts, and remain independent of event loops.
 - HTTP/3 can use a pre-existing QUIC connection, or QUIC manager for all sessions.
 - QUIC manager delegates UDP and timers to Net::QUIC::Driver and owns per-connection HTTP3 lifecycle.
 - Unknown ALPN is rejected rather than guessed.
-- 58 isolated test assertions pass using stub engines and Driver. Real protocol integration
+- 59 isolated test assertions pass using stub engines and Driver. Real protocol integration
   has NOT been tested in this environment because the engines are not installed.
 
 ## Architecture decisions not settled
