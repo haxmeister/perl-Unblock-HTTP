@@ -3,7 +3,7 @@ package Unblock::HTTP::Client;
 use strict;
 use warnings;
 use Carp qw(croak);
-use Scalar::Util qw(blessed refaddr);
+use Scalar::Util qw(blessed refaddr weaken);
 use URI;
 use Uniform::HTTP::Request;
 use Unblock::HTTP::_Policy;
@@ -209,7 +209,7 @@ sub _closed {
 sub _usable {
     my ($self, $conn, $version) = @_;
     return 0 unless _compatible($version, $conn->{protocol});
-    return 0 if _closed($conn) || _retired($conn);
+    return 0 if _closed($conn) || _retired($conn) || $conn->{credit_blocked};
     my $capacity = $conn->{protocol} eq 'http/1.1'
         ? 1 : $self->{limit}{max_streams_per_connection};
     return 0 if $conn->{active} >= $capacity;
@@ -242,7 +242,7 @@ sub _pump {
         if ($conn) {
             shift @{ $pool->{pending} };
             $self->{pending_count}--;
-            $self->_dispatch($pool, $conn, $op);
+            last unless $self->_dispatch($pool, $conn, $op);
             next;
         }
         last if $pool->{connecting};
@@ -397,23 +397,41 @@ sub _connected {
     # These advertise Server capabilities; Client constructors reject them.
     delete $options->{enable_connect_protocol} if $protocol eq 'h2';
     delete $options->{enable_extended_connect} if $protocol eq 'h3';
-    if ($protocol eq 'h2') {
-        # A peer may raise its advertised stream limit later. Wake the pool
-        # after processing SETTINGS, not from the byte/stream data path.
-        $options->{on_settings} = sub { $self->_schedule($pool) };
-    }
-    my $engine = Unblock::HTTP::_EngineFactory->create(
-        'Client', $protocol, %$options, %arg,
-    );
-    $engine->start if $protocol eq 'h3';
-    push @{ $pool->{connections} }, {
-        engine => $engine, host => $host, protocol => $protocol,
-        active => 0,
+    my $conn = {
+        host => $host, protocol => $protocol, active => 0,
+        credit_blocked => 0,
         verified_origin =>
             (defined($result->{verified_origin})
               && !ref($result->{verified_origin})
               && $result->{verified_origin} eq '1') ? 1 : 0,
     };
+    my $weak_self = $self;
+    my $weak_pool = $pool;
+    my $weak_conn = $conn;
+    weaken($weak_self);
+    weaken($weak_pool);
+    weaken($weak_conn);
+    if ($protocol eq 'h2') {
+        # A peer may raise its advertised stream limit later.
+        $options->{on_settings} = sub {
+            return unless $weak_self && $weak_pool;
+            $weak_self->_schedule($weak_pool);
+        };
+    } elsif ($protocol eq 'h3') {
+        # The H3 engine exclusively owns Net::QUIC's availability callback.
+        # A failed-to-open bidi stream causes this one-shot notification.
+        $options->{on_request_available} = sub {
+            return unless $weak_self && $weak_pool && $weak_conn;
+            $weak_conn->{credit_blocked} = 0;
+            $weak_self->_schedule($weak_pool);
+        };
+    }
+    my $engine = Unblock::HTTP::_EngineFactory->create(
+        'Client', $protocol, %$options, %arg,
+    );
+    $engine->start if $protocol eq 'h3';
+    $conn->{engine} = $engine;
+    push @{ $pool->{connections} }, $conn;
     return $engine;
 }
 
@@ -508,9 +526,18 @@ sub _dispatch {
             stream_body => $op->{stream_body},
             %engine_callback,
         );
-        # HTTP/3 returns undef when QUIC has no available bidirectional
-        # stream credit. It has not created a Transaction. Do not leave a
-        # phantom active slot or replay into an arbitrary engine.
+        # No QUIC bidirectional stream was opened; no request was sent.
+        # Preserve the SAME unsent operation and wait for the H3 engine's
+        # request-availability signal rather than fabricating a failure.
+        if (!defined($op->{transaction}) && !$op->is_terminal
+            && $conn->{protocol} eq 'h3') {
+            $conn->{active}--;
+            $conn->{credit_blocked} = 1;
+            $op->{state} = 'queued';
+            unshift @{ $pool->{pending} }, $op;
+            $self->{pending_count}++;
+            return 0;
+        }
         die "$conn->{protocol} request was not admitted by its engine\n"
             unless defined($op->{transaction}) || $op->is_terminal;
         1;
@@ -522,6 +549,7 @@ sub _dispatch {
         }
         $self->_schedule($pool);
     }
+    return 1;
 }
 
 sub _schedule {
