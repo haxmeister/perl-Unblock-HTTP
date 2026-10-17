@@ -18,6 +18,7 @@ BEGIN {
         bless { engine => $engine, request => $request,
                 callbacks => $callbacks, state => 'active' }, $class;
     }
+    sub request { $_[0]{request} }
     sub response { $_[0]{response} }
     sub error { $_[0]{error} }
     sub is_cancelled { $_[0]{state} eq 'cancelled' }
@@ -132,10 +133,11 @@ like($@, qr/pending queue is full/, 'clear queue overflow error');
 is(scalar(@connects), 1, 'only one concurrent connect per origin');
 
 my $host = PoolTest::Transport->new;
-$connects[0]{ready}->(transport => $host, alpn => 'h2');
+my $attached_engine = $connects[0]{ready}->(transport => $host, alpn => 'h2');
 is($client->pending_count, 0, 'H2 has multiplexed both requests');
 my ($h2) = @{ $one->{origin}{connections} };
 isa_ok($h2->{engine}, 'Unblock::HTTP2::Client');
+is(refaddr($attached_engine), refaddr($h2->{engine}), 'factory receives actual attached engine');
 is($h2->{host}, $host, 'pool retains transport identity');
 is($h2->{active}, 2, 'two active streams share one H2 engine');
 ok($one->transaction && $two->transaction, 'both operations hold real transactions');
