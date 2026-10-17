@@ -142,8 +142,10 @@ sub _progress {
         if ($self->{role} eq 'Server') {
             $http = $self->{server}->attach_quic(connection => $quic);
         } else {
-            require Unblock::HTTP::Client;
-            $http = Unblock::HTTP::Client->new(quic => $quic, %{ $self->{http3} });
+            require Unblock::HTTP::_EngineFactory;
+            $http = Unblock::HTTP::_EngineFactory->create(
+                'Client', 'h3', quic => $quic, %{ $self->{http3} },
+            );
             $http->start;
         }
         if ($quic->closed) {
@@ -229,8 +231,9 @@ or create per-connection HTTP/3 Servers.
 
 C<on_ready> fires once per ready QUIC connection. On a server manager it
 receives the actual HTTP3 Server engine and the manager. On a client manager
-it still receives the existing single-connection unified Client and manager.
-The client API is scheduled for redesign in a later stage.
+it receives the actual HTTP3 Client engine and manager. The shared
+multi-origin Client uses connect_quic instead; this helper remains a low-level
+Net::QUIC::Driver convenience.
 
 =head1 METHODS
 
