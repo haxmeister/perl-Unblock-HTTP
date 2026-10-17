@@ -933,7 +933,7 @@ cancels an active transaction.
 C<release_connection($host, $engine, $protocol, $reason)> is an optional
 framework hook for reclaiming the socket, QUIC resources, and attached
 engine exactly once. The reason is C<idle_timeout>, C<evicted>, C<closed>,
-or C<draining>. If the callback is omitted, the Client calls the engine's
+C<draining>, or C<network_changed>. If the callback is omitted, the Client calls the engine's
 C<close()> when supported, otherwise the connection's C<close()>. Framework
 adapters that own transport lifecycle should provide the hook to clean up
 their actual socket/QUIC objects. Idle timeouts use one cancellable timer
@@ -973,6 +973,30 @@ Transaction, no automatic replay is permitted.
 Draining/GOAWAY connections are retired once idle.
 
 Connections are reused by origin and the requested protocol policy.
+
+C<network_changed()> is an explicit notification from the framework when
+the underlying network identity has changed (for example, a VPN switch or
+network interface handoff). The Client does NOT detect network events
+itself. The method flushes all cached Alt-Svc hints and discards unused
+connections immediately via C<release_connection> with reason
+C<network_changed>. A connection with active transactions is marked
+retiring; its existing requests are neither cancelled nor replayed,
+and it is released only after those transactions finish. Pending requests
+retain their operation handles, deadlines, queue positions and callbacks.
+Any old in-progress connection factory is abandoned, using its optional
+cancellation hook; late readiness is ignored. Advertisements received on
+a connection predating the network change cannot repopulate Alt-Svc.
+The next scheduler turn establishes fresh transports as capacity permits.
+
+C<pool_stats()> returns a copy of the current scheduler counts with
+C<origins>, C<connections>, C<active>, C<idle>, C<retiring>,
+C<credit_blocked>, C<connecting>, C<pending>, and C<by_origin>.
+C<by_origin> is a list of snapshot hashes with scheme, host, port
+and the same counts for each origin (other than C<origins>).
+These are observational counts only. No engine, socket, QUIC object or
+mutable scheduler structure is returned. It does not run callbacks,
+attach transports or create timers.
+
 An operation can be cancelled while still queued/connecting, including
 while an H3 connection is waiting for peer bidirectional-stream credit.
 A connect factory may return a cancellation coderef to abort establishment
