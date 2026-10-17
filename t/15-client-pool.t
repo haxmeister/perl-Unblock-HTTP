@@ -336,4 +336,23 @@ is($next_from_finish->state, 'active', 'deferred continuation dispatches after u
 $next_from_finish->transaction->finish;
 shift(@reentry_defer)->() if @reentry_defer;
 
+# A quiet keep-alive engine should not schedule a no-op deferred pump.
+# This avoids a framework callback per request without dropping the
+# existing queue/reentrancy and idle-expiry behavior.
+my (@quiet_ready, @quiet_defer);
+my $quiet = Unblock::HTTP::Client->new(
+    http1 => {},
+    connect_stream => sub { push @quiet_ready, $_[2] },
+    defer => sub { push @quiet_defer, $_[0] },
+    max_connections_per_origin => 1,
+);
+my $quiet_first = $quiet->request(url => 'http://quiet.test/one');
+$quiet_ready[0]->(transport => PoolTest::Transport->new);
+$quiet_first->transaction->finish;
+is(scalar(@quiet_defer), 0, 'quiet keep-alive completion avoids redundant defer');
+my $quiet_second = $quiet->request(url => 'http://quiet.test/two');
+is(scalar(@quiet_ready), 1, 'quiet connection remains reusable without scheduled maintenance');
+$quiet_second->transaction->finish;
+is(scalar(@quiet_defer), 0, 'second quiet completion also avoids redundant defer');
+
 done_testing;
