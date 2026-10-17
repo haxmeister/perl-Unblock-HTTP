@@ -224,12 +224,14 @@ connections. Synchronous connect factories are budgeted to at most the
 per-origin connection limit per scheduler pump; this prevents unbounded
 recursion/churn when a peer admits no requests.
 
-The current HTTP3 engine has no public non-consuming QUIC bidirectional
-stream-credit check. Its request() can return undef if no QUIC stream is
-available. The Client now reports a terminal non-admission error on the
-operation (no fake Transaction or leaked active slot), instead of silently
-stranding it. True H3 peer-credit wakeup will require an engine callback
-contract in a later coordinated slice.
+The HTTP3 engine on its feature branch now offers a narrow
+on_request_available($h3_client) constructor callback, emitted once after
+request() failed to open a QUIC bidi stream and Net::QUIC subsequently
+reported bidi stream availability. The callback is advisory, not stream
+credit reservation. The upper Client keeps the unsent operation in its
+bounded queue, prevents reentry on that H3 connection, and schedules a
+deferred admission attempt when the callback runs. Active transactions
+are never replayed; queued cancellation and timeout remain effective.
 
 New t/19-client-admission.t covers peer zero/increased SETTINGS, active
 H2 GOAWAY, sync non-admitting factory, H3 unavailable stream credit,
@@ -248,11 +250,12 @@ passed. All 24 H1/H2 requests completed, each operation timer was cancelled,
 and the earlier H3 live socket regression remained green. The final queued
 state correction was included in that run.
 
-H3 does not yet expose a non-consuming QUIC stream-credit admission probe or
-an availability callback to the shared Client. The explicit non-admission
-error is safe, but it is not automatic backpressure/queueing of H3 streams.
-Follow-up engine work should add a capacity-change signal before promising
-fully peer-aware H3 scheduling.
+The verified HTTP3 feature branch now supplies the one-shot bidi stream
+availability callback, and the unified Client queues unsent requests
+until notified. A non-consuming stream-credit *quantity* is still not
+available; the notification may race other QUIC users, so another failed
+admission simply re-arms the signal. The pool does not infer or cache
+a fabricated stream limit.
 
 ## Later design milestones
 
