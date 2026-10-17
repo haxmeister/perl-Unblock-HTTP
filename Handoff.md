@@ -156,7 +156,11 @@ Implementation now published on the upper feature branch:
   388dde830590dde6792e8e2c91945a4d3ee264e0: 10 distribution test
   files / 362 checks and 2 live TCP/QUIC tests / 17 checks, PASS.
   Subsequent t/18 cases for queued H1 expiry and factories without optional
-  cancellation are undergoing their own final CI run.
+  cancellation passed CI 39064100968, increasing distribution checks to
+  371; the live suite still passed 17 checks. Afterward a regression was
+  added for on_finish creating another H1 request: _pump now defers this
+  dispatch until after the current engine terminal callback unwinds. The
+  terminal reentrancy commit is awaiting its own CI run.
 - No engine, Net::QUIC or Uniform::HTTP source was modified. No performance
   claim has been measured. Broad live concurrency and peer-aware capacity
   coordination remain later work.
@@ -263,7 +267,8 @@ and inspection inputs only; never publish modifications there.
    network change/cache invalidation, retries only with verifiable safe
    eligibility, peer-aware pool capacity, and wider live pool stress tests.
    Optional per-request deadlines and cancellable/stale connection attempts
-   now pass CI 39063973271 (362 distribution and 17 live checks).
+   pass CI 39064100968 (371 distribution and 17 live checks).
+   H1 terminal callback reentrancy regression was added subsequently.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
