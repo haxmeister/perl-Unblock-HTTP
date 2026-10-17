@@ -212,6 +212,37 @@ reentering the engine. Run 39064232198 passed with that guard and test:
 10 distribution files / 375 top-level checks plus 2 live files /
 17 checks. This Client deadline and factory lifecycle slice is verified.
 
+## Bounded pool admission and concurrent transport test (2026-10-17)
+
+The shared Client now distinguishes H2 connections temporarily limited by
+peer SETTINGS_MAX_CONCURRENT_STREAMS from permanently draining connections.
+It uses the real H2 Client->can_open_transaction and schedules a new pump
+after the engine's on_settings control callback. Peer zero capacity waits
+without evicting a healthy idle engine; a GOAWAY/draining engine is not
+reused after its active streams finish. H3 GOAWAY similarly retires idle
+connections. Synchronous connect factories are budgeted to at most the
+per-origin connection limit per scheduler pump; this prevents unbounded
+recursion/churn when a peer admits no requests.
+
+The current HTTP3 engine has no public non-consuming QUIC bidirectional
+stream-credit check. Its request() can return undef if no QUIC stream is
+available. The Client now reports a terminal non-admission error on the
+operation (no fake Transaction or leaked active slot), instead of silently
+stranding it. True H3 peer-credit wakeup will require an engine callback
+contract in a later coordinated slice.
+
+New t/19-client-admission.t covers peer zero/increased SETTINGS, active
+H2 GOAWAY, sync non-admitting factory, H3 unavailable stream credit,
+H3 GOAWAY, and independent multi-origin queue limits. First CI for
+t/19 passed 419 distribution checks and the previous 17 live checks.
+
+The expanded live xt/linux-event-tcp.t now issues twelve H1 and twelve H2
+requests. Its first run exposed that the earlier test-only connect_stream
+factory reused one LinuxEvent stream for multiple engines. The test factory
+was corrected to establish a distinct framework-owned socket on each new
+connection, matching the documented transport contract. The expanded live
+run and final queued-state correction still require CI verification.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, retries after engine dispatch,
