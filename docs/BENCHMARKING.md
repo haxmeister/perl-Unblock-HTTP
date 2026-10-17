@@ -81,6 +81,54 @@ establish a precise improvement percentage.
 Do not extrapolate these numbers to bulk streaming, multiplexed H2,
 QUIC/H3, slow receivers, CPU consumption or production capacity.
 
+## Request-path profiling checkpoint (2026-10-17)
+
+The loopback comparison now times the synchronous call to request() as
+well as the full application-level request/response wall time. Both
+the direct-engine and unified modes include Uniform Request creation
+in that call; the unified mode also parses and validates the URL,
+selects an origin and native engine, and performs pool admission.
+The extra Time::HiRes calls perturb each measured request, so figures
+should be compared ONLY to runs with identical instrumentation.
+
+bench/request-setup.pl is an additional pure user-space microbenchmark.
+It measures URI parsing/validation, Uniform::HTTP::Request construction,
+and their combination separately, with no sockets, engine, or pool.
+These measurements are descriptive, not a decomposition that sums to
+precisely the total request() time.
+
+First instrumented CI 39079013272, median us/request() across three
+alternating-order rounds of 1,000 measured requests:
+
+| Mode | H1 direct | H1 unified | H2 direct | H2 unified |
+| --- | ---: | ---: | ---: | ---: |
+| Original pool scheduling | 45.61 | 93.18 | 45.22 | 99.82 |
+| Reusable connection direct-dispatch, CI 39079217496 | 45.10 | 87.77 | 45.42 | 95.26 |
+| Same direct-dispatch + 9 regression checks, CI 39079251789 | 73.67 | 131.22 | 80.54 | 148.14 |
+
+The first microbenchmark reported medians of 9.871 us for URI
+validation, 10.425 us for Uniform construction, and 20.872 us for
+the combined case. They are not additive to protocol execution.
+
+The Client optimization bypasses full queue insertion and pool scanning
+only if exactly one healthy ready connection can immediately admit
+the request, with no existing queued work, maintenance, callback stack
+reentrancy, or idle_timeout. Every other path stays with the general
+bounded scheduler.
+
+CI 39079251789 passed 552 distribution checks and 145 live H1/H2/H3
+tests. The direct-dispatch path was also covered by targeted unit tests.
+Runner-to-runner timing variation is substantial, so the exact apparent
+speedup is NOT established. What is established: a redundant scheduler
+scan was removed in a provably eligible case without breaking regression
+tests. The remaining synchronous overhead is material and needs
+subcomponent profiling before more risky parser or pooling shortcuts.
+
+Run:
+
+    perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 5000 500 5
+    perl -Iblib/lib -Iblib/arch bench/request-setup.pl 20000 5
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
