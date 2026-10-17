@@ -160,7 +160,11 @@ Implementation now published on the upper feature branch:
   371; the live suite still passed 17 checks. Afterward a regression was
   added for on_finish creating another H1 request: _pump now defers this
   dispatch until after the current engine terminal callback unwinds. The
-  terminal reentrancy commit is awaiting its own CI run.
+  terminal reentrancy commit passed CI run 39064232198, tested source
+  69c79094e742b07bbba5ee01ad4cd09ccfa2a03a:
+  10 distribution test files / 375 checks, plus 2 live TCP/QUIC tests /
+  17 checks, all PASS. Latest documentation-only commits follow this
+  source checkpoint. The feature branch is not release-ready.
 - No engine, Net::QUIC or Uniform::HTTP source was modified. No performance
   claim has been measured. Broad live concurrency and peer-aware capacity
   coordination remain later work.
@@ -268,7 +272,10 @@ and inspection inputs only; never publish modifications there.
    eligibility, peer-aware pool capacity, and wider live pool stress tests.
    Optional per-request deadlines and cancellable/stale connection attempts
    pass CI 39064100968 (371 distribution and 17 live checks).
-   H1 terminal callback reentrancy regression was added subsequently.
+   H1 terminal callback reentrancy is also CI-verified in run
+   39064232198 (375 distribution / 17 live checks). Next milestones:
+   peer-aware stream capacity, multi-origin stress testing, pool eviction,
+   and conservative transport-change handling.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
