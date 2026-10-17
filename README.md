@@ -144,6 +144,11 @@ transaction and reports a timeout on the operation. A factory can return
 a cancellation coderef so a timed-out or manually cancelled connection
 attempt releases its pool slot; late factory readiness is ignored.
 
+When HTTP/3 QUIC bidi stream credit is exhausted, an unsubmitted
+request stays in the bounded Client queue; the H3 engine notifies when
+request stream availability changes, and the Client retries admission
+only after framework deferral. No submitted request is replayed.
+
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
 one request at a time. The limits are adjustable. Pool idle expiry, validated
