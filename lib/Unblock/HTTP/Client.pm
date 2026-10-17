@@ -739,14 +739,19 @@ C<can_open_transaction()>, including the peer's advertised concurrent
 stream limit and GOAWAY/draining state. If the peer advertises zero streams,
 the request remains queued until a later SETTINGS increase; the Client
 does not repeatedly discard a healthy connection. HTTP/3 uses the bounded
-per-connection cap, but QUIC stream credit has no public non-consuming
-probe in the current engine contract. If the engine returns no transaction,
-the Client reports an explicit non-admission error with the operation
-handle instead of inventing a transaction or replaying a request.
+per-connection cap. If QUIC cannot open a bidirectional stream, the
+engine returns no transaction and emits a later one-shot
+C<on_request_available> notification when stream availability changes.
+The Client preserves the SAME unsent operation in its bounded queue,
+blocks that H3 connection until the engine notification, then uses
+framework C<defer> before trying admission again. It does not poll
+QUIC or manufacture a Transaction. Once an engine returns a real
+Transaction, no automatic replay is permitted.
 Draining/GOAWAY connections are retired once idle.
 
 Connections are reused by origin and the requested protocol policy.
-An operation can be cancelled while still queued/connecting.
+An operation can be cancelled while still queued/connecting, including
+while an H3 connection is waiting for peer bidirectional-stream credit.
 A connect factory may return a cancellation coderef to abort establishment
 if the initiating operation is cancelled or times out. Later readiness from
 an abandoned attempt is ignored, never attached to an HTTP engine, and the
