@@ -145,6 +145,7 @@ is($one->transaction->request->target, '/a?q=1', 'URL maps to origin-form target
 is($one->transaction->request->authority, 'Example.test:444', 'URL authority is preserved');
 is($h2->{engine}{options}{receive_body}, 'buffered', 'engine performs bounded buffering');
 is($h2->{engine}{options}{max_buffered_body_bytes}, 1_048_576, 'buffer limit configured');
+ok(!exists($h2->{engine}{options}{enable_connect_protocol}), 'H2 Client does not receive Server-only CONNECT setting');
 $one->transaction->finish('test');
 is_deeply([map { $_->[0] } @seen], ['response','finish'],
     'buffered response fires only at completion then terminal notification');
@@ -238,6 +239,7 @@ my $h3op = $h3->request(
 $quic_ready[0]->(connection => PoolTest::Quic->new);
 isa_ok($h3op->transaction->{engine}, 'Unblock::HTTP3::Client');
 is($h3op->transaction->{engine}{started}, 1, 'HTTP3 starts exactly once');
+ok(!exists($h3op->transaction->{engine}{options}{enable_extended_connect}), 'H3 Client does not receive Server-only CONNECT setting');
 $h3op->transaction->finish;
 ok(!eval { $h3->request(url => 'http://quic.test/'); 1 },
     'H3 cleartext URL rejected');
@@ -255,5 +257,54 @@ for my $case (
     ok(!eval { $case->[0]->(); 1 }, 'invalid client request or factory rejected');
     like($@, $case->[1], 'specific validation error');
 }
+
+
+# A full multiplexed pool must queue, then dispatch after terminal unwind.
+my (@cap_ready, @cap_defer);
+my $cap = Unblock::HTTP::Client->new(
+    http2 => {},
+    connect_stream => sub { push @cap_ready, $_[2] },
+    defer => sub { push @cap_defer, $_[0] },
+    max_connections_per_origin => 1,
+    max_streams_per_connection => 1,
+    max_pending_requests => 1,
+);
+my $cap_first = $cap->request(url => 'https://capacity.test/one');
+$cap_ready[0]->(transport => PoolTest::Transport->new, alpn => 'h2');
+my $cap_second = $cap->request(url => 'https://capacity.test/two');
+is($cap_second->state, 'queued', 'full H2 connection queues request');
+is($cap->pending_count, 1, 'bounded H2 queue records pending work');
+$cap_first->transaction->finish;
+is($cap_second->state, 'queued', 'H2 scheduling waits until a later turn');
+shift(@cap_defer)->();
+is($cap_second->state, 'active', 'H2 slot is reused when available');
+is($cap->pending_count, 0, 'H2 queue slot released at dispatch');
+$cap_second->transaction->finish;
+shift(@cap_defer)->() if @cap_defer;
+
+# A strict H2 request may evict an idle H1 connection when pool is full.
+my (@strict_ready, @strict_defer);
+my $strict = Unblock::HTTP::Client->new(
+    http1 => {}, http2 => {},
+    connect_stream => sub { push @strict_ready, [$_[1], $_[2]] },
+    defer => sub { push @strict_defer, $_[0] },
+    max_connections_per_origin => 1,
+);
+my $old = $strict->request(
+    url => 'https://strict.test/one', http_version => '1.1',
+);
+is_deeply($strict_ready[0][0], ['http/1.1'], 'strict H1 offers H1 alone');
+$strict_ready[0][1]->(transport => PoolTest::Transport->new, alpn => 'http/1.1');
+$old->transaction->finish;
+shift(@strict_defer)->() if @strict_defer;
+my $required = $strict->request(
+    url => 'https://strict.test/two', http_version => '2',
+);
+is(scalar(@strict_ready), 2, 'strict H2 evicts idle incompatible H1 engine');
+is_deeply($strict_ready[1][0], ['h2'], 'strict H2 negotiates only H2');
+$strict_ready[1][1]->(transport => PoolTest::Transport->new, alpn => 'h2');
+isa_ok($required->transaction->{engine}, 'Unblock::HTTP2::Client');
+$required->transaction->finish;
+shift(@strict_defer)->() if @strict_defer;
 
 done_testing;
