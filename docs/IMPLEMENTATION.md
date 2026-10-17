@@ -2,7 +2,7 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Status: Server and first Client pool slice CI verified; Alt-Svc slice being validated. Not a release candidate.
+Status: Server, Client pool and authenticated Alt-Svc slices CI verified. Not a release candidate.
 
 ## Implemented
 
@@ -172,13 +172,14 @@ Implemented on the upper feature branch in this follow-up:
   t/17-alt-svc-client.t cover parser/expiry/authentication, strict
   selection, factory failure and prevention of unsafe request replay.
 
-The Alt-Svc integration must still pass its final source CI run before
-calling this slice fully verified. Server and all three engine branch
-sources remain unchanged.
+Alt-Svc source/test commit 557cb101e5cd2342368d43f18afc400e69546634
+passed integration CI run 39062960467: 9 distribution test files, 316 checks,
+and 2 live H1/H2/H3 tests, 15 checks. Source and POD were reviewed again
+after that run. Server and all three engine branch sources remain unchanged.
 
 ## Later design milestones
 
-Cross-host Alt-Svc, DNS HTTPS discovery, safe bounded retries,
+Cross-host Alt-Svc, DNS HTTPS discovery, retries after engine dispatch,
 request timeout policy, peer-aware multiplexed capacity and pool idle
 cleanup are pending. These will need real multi-request socket tests.
 
