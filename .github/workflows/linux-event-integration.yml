@@ -54,3 +54,6 @@ jobs:
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
           prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t
+      - name: Direct versus shared Client benchmark smoke (not a performance gate)
+        run: |
+          perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 100 20
