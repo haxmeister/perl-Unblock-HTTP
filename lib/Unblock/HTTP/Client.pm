@@ -719,7 +719,14 @@ sub _dispatch {
             1;
         };
         warn $@ unless $ok;
-        $self->_schedule($pool);
+        # A quiet, reusable connection needs no additional loop turn.
+        # Preserve deferred H1 reentrancy, pending queues, idle timers
+        # and immediate cleanup of closed/draining/stale connections.
+        $self->_schedule($pool)
+            if @{ $pool->{pending} }
+                || defined($self->{idle_timeout})
+                || $conn->{stale}
+                || _closed($conn) || _retired($conn);
     };
     my $no_credit = 0;
     my $ok = eval {
