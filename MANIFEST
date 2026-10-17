@@ -6,6 +6,7 @@ lib/Unblock/HTTP.pm
 lib/Unblock/HTTP/_Session.pm
 lib/Unblock/HTTP/Adapter/LinuxEvent.pm
 lib/Unblock/HTTP/Client.pm
+lib/Unblock/HTTP/_ClientOperation.pm
 lib/Unblock/HTTP/Integration.pm
 lib/Unblock/HTTP/QUIC.pm
 lib/Unblock/HTTP/Server.pm
@@ -24,3 +25,4 @@ t/13-server-attachment.t
 docs/IMPLEMENTATION.md
 docs/ENGINE-CONTRACTS.md
 t/14-server-receive.t
+t/15-client-pool.t
