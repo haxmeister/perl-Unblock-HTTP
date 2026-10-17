@@ -296,6 +296,13 @@ Implemented and published on upper feature branch:
   unlike the previous test's low-level QUIC manager, this verifies
   the application Client path over authenticated real sockets. Await
   its separate final CI run before marking live adaptation verified.
+  Verified shared-Client real QUIC/TLS integration: run 39069934513
+  PASS on commit 944d3841eedf3adda088e9f7dd05c8c44ad3be87:
+  11 distribution test files / 444 checks and two live TCP/QUIC files /
+  19 checks. The live HTTP3 POST was sent by the upper multi-origin
+  Client, through Net::QUIC::Driver and the real H3 feature engine.
+  A subsequent trivial ready-attachment guard and this handoff edit
+  change no HTTP request/transport semantics.
 No main/ref changes, releases, version bumps, merges or changes to
 Net::QUIC / Uniform::HTTP. H3 engine unit/matrix CI and interop are
 recorded in its own Handoff.md.
