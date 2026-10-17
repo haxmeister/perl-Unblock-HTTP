@@ -177,4 +177,58 @@ ok(!eval { $broken->request(url => 'http://bad.test/', timeout => 1); 1 },
     'timer setup failure propagates before enqueue');
 is($broken->pending_count, 0, 'timer registration failure leaves queue empty');
 
+
+# A queued request can expire while an existing H1 transaction remains active.
+my (@queue_times, @queue_ready, @queue_defer, @queue_calls);
+my $queued_client = Unblock::HTTP::Client->new(
+    http1 => {},
+    connect_stream => sub { push @queue_ready, $_[2] },
+    defer => sub { push @queue_defer, $_[0] },
+    schedule_timer => sub {
+        my ($seconds, $fire) = @_;
+        push @queue_times, $fire;
+        return sub {};
+    },
+    max_connections_per_origin => 1,
+);
+my $holding = $queued_client->request(
+    url => 'http://queued.test/one',
+    timeout => 10,
+);
+$queue_ready[0]->(transport => TimeoutTest::Host->new);
+my $waiting = $queued_client->request(
+    url => 'http://queued.test/two',
+    timeout => 1,
+    on_error => sub { push @queue_calls, 'error' },
+    on_finish => sub { push @queue_calls, 'finish' },
+);
+is($waiting->state, 'queued', 'second H1 request blocked by active peer');
+$queue_times[1]->();
+is($waiting->state, 'error', 'queued request expires independently');
+is_deeply(\@queue_calls, [qw(error finish)], 'queued deadline notifies once');
+is($holding->state, 'active', 'active H1 peer is unaffected');
+is($queued_client->pending_count, 0, 'expired queued request releases capacity');
+$holding->transaction->finish;
+shift(@queue_defer)->() if @queue_defer;
+is(scalar(@queue_ready), 1, 'expired queued work never triggers new connect');
+
+# Even factories that do not supply optional cancellation callbacks must not
+# attach a late transport after the initiating operation is cancelled.
+my (@stale_ready, @stale_defer);
+my $stale_client = Unblock::HTTP::Client->new(
+    http1 => {},
+    connect_stream => sub { push @stale_ready, $_[2]; return },
+    defer => sub { push @stale_defer, $_[0] },
+);
+my $stale_first = $stale_client->request(url => 'http://stale.test/first');
+my $stale_second = $stale_client->request(url => 'http://stale.test/second');
+$stale_first->cancel;
+shift(@stale_defer)->() if @stale_defer;
+is(scalar(@stale_ready), 2, 'replacement connect starts without cancel hook');
+ok(!defined $stale_ready[0]->(transport => TimeoutTest::Host->new),
+    'late completion is discarded without factory cancel support');
+$stale_ready[1]->(transport => TimeoutTest::Host->new);
+is($stale_second->state, 'active', 'later operation receives only fresh engine');
+$stale_second->transaction->finish;
+
 done_testing;
