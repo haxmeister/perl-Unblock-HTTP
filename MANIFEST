@@ -30,3 +30,4 @@ t/15-client-pool.t
 t/16-alt-svc.t
 t/17-alt-svc-client.t
 t/18-client-timeouts.t
+t/19-client-admission.t
