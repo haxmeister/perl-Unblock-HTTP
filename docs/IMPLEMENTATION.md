@@ -2,7 +2,7 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Status: Server verified; first shared Client slice in integration CI. Not a release candidate.
+Status: Server and first Client pool slice CI verified; Alt-Svc slice being validated. Not a release candidate.
 
 ## Implemented
 
@@ -139,13 +139,46 @@ Validation checkpoint: CI run 39061708958 passed the distribution suite
 The replacement live TCP test exposed an H2 Client constructor rejection of
 the Server-only enable_connect_protocol option, also applicable to the H3
 enable_extended_connect option. Client now removes these before constructing
-H2/H3 engines. Latest feature CI must pass before marking this slice
-verified. No local shell git checkout is possible in this session because
+H2/H3 engines. Verified Client pool CI: run 39062331531 passed all 256 distribution
+checks and 15 live TCP/QUIC checks at commit df6fa8ea. No local shell git checkout is possible in this session because
 github.com DNS resolution fails; edits/publication used the GitHub connector.
+
+## Alt-Svc discovery and safe connection fallback (2026-10-17)
+
+Implemented on the upper feature branch in this follow-up:
+
+- A bounded in-memory Alt-Svc cache. Accepts the same-host h3=":PORT"
+  syntax on authenticated HTTPS responses only, with one origin-scoped
+  entry, a maximum lifetime of 24 hours, Age adjustment, clear handling,
+  stale entry removal and bounded cache size (256 origins).
+- Framework connect_stream must return verified_origin => 1 after TLS
+  certificate/hostname validation against the request origin before
+  Alt-Svc headers are trusted. Merely setting a URL scheme to https
+  does not establish TLS authentication.
+- Subsequent requests with no strict http_version may choose H3. The
+  connect_quic factory gets the original origin plus alternative_host
+  and alternative_port, then must return verified_origin => 1 to confirm
+  the alternative is authoritative for the ORIGINAL origin. The request's
+  scheme, authority and target are unchanged.
+- Cross-host alternative services are deliberately unsupported for now.
+  No silent TLS verification bypass, DNS discovery, 0-RTT or connection race.
+- A failed advertised QUIC connection may fall back to existing TCP
+  BEFORE dispatch, because no HTTP request has been transmitted. This
+  does not invoke application on_error, does not retry a strict version
+  and invalidates the failed advertisement. After engine request()
+  dispatch, there is never an automatic replay, even for GET; the
+  application sees the original error.
+- Unit tests in t/16-alt-svc.t and integration tests in
+  t/17-alt-svc-client.t cover parser/expiry/authentication, strict
+  selection, factory failure and prevention of unsafe request replay.
+
+The Alt-Svc integration must still pass its final source CI run before
+calling this slice fully verified. Server and all three engine branch
+sources remain unchanged.
 
 ## Later design milestones
 
-Validated Alt-Svc cache and DNS HTTPS discovery, safe bounded retries,
+Cross-host Alt-Svc, DNS HTTPS discovery, safe bounded retries,
 request timeout policy, peer-aware multiplexed capacity and pool idle
 cleanup are pending. These will need real multi-request socket tests.
 
