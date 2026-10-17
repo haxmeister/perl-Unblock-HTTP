@@ -365,6 +365,38 @@ Outstanding: network-change invalidation and pool status API, broader
 stream/backpressure stress and direct-engine performance comparisons,
 WebSocket integration and final application/framework adapter examples.
 
+## Explicit network-change invalidation and Client pool snapshot (2026-10-17)
+
+Starting verified upper feature head 7151b6cabc921d77fb0c443042123af024ad3fa2;
+CI 39073350222 passed. H1/H2/H3 feature refs and all main refs were
+checked and remain unchanged. No engine, QUIC or Uniform source edits planned.
+
+Implementation contract for this slice:
+- Client->network_changed() is an explicit framework call, not polling or
+  implicit OS network detection. Clear the entire cached Alt-Svc set,
+  invalidate pending Alt-Svc preference before dispatch, cancel in-flight
+  factories through the existing optional cancellation hook, and ignore
+  their late readiness. Pending operations keep their identity, timeout
+  and position in the finite queue, and are re-scheduled after deferral.
+- Mark established connections stale for future requests. Retire their
+  idle engines immediately through the existing one-shot release hook;
+  active transactions are not cancelled or replayed. Stale connections
+  consume their existing origin capacity until active streams finish.
+  On completion, retire them and admit queued operations on fresh sockets.
+- In-flight responses from old network transports cannot repopulate
+  Alt-Svc after invalidation. An additional explicit invalidation is safe.
+- Client->pool_stats() returns a read-only copied snapshot with totals and
+  per-origin counts for pending, connecting, active, idle, credit-blocked
+  and stale connections. It must not return engine, QUIC or socket objects,
+  and must not mutate scheduling state or create timers.
+- Deterministic tests for pending Alt-Svc, old active H1/H2 streams,
+  connection factory cancellation/late callback, H3 credit-block,
+  repeated invalidation, idle timer cleanup and snapshot stability.
+  Verify CI and refresh this handoff after source/test commits.
+
+No fabricated post-dispatch retry, no network sniffing in Client, no
+unbounded buffers or per-body event wrappers. This is a plan until CI passes.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
