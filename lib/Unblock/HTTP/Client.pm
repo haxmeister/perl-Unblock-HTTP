@@ -648,7 +648,10 @@ wrapping, method injection or duplicate receive accumulator is used.
 
 =head1 FACTORIES
 
-C<connect_stream($origin, $alpn_choices, $ready)> is for TCP/TLS. The
+C<connect_stream($origin, $alpn_choices, $ready)> is for TCP/TLS. Each
+factory invocation MUST establish a distinct transport, or return an
+existing idle transport whose ownership is explicitly transferred. Never
+attach multiple different engines to the same framework stream. The
 origin is a hash with scheme, host, port and authority; ALPN choices are
 wire names h2 and/or http/1.1. Call C<$ready-E<gt>(transport =E<gt> $host,
 alpn =E<gt> $negotiated)> exactly once after connection establishment.
@@ -703,8 +706,17 @@ supported. No connection-establishment racing occurs.
 Defaults: max_pending_requests = 128, max_connections_per_origin = 4,
 max_streams_per_connection = 32. Every limit must be positive.
 The request queue rejects overflow. HTTP/1 handles one request at a
-time on each connection; HTTP/2 and HTTP/3 multiplex within the stated
-per-connection cap, also obeying available engine admission signals.
+time on each connection. HTTP/2 admission also honors the real engine's
+C<can_open_transaction()>, including the peer's advertised concurrent
+stream limit and GOAWAY/draining state. If the peer advertises zero streams,
+the request remains queued until a later SETTINGS increase; the Client
+does not repeatedly discard a healthy connection. HTTP/3 uses the bounded
+per-connection cap, but QUIC stream credit has no public non-consuming
+probe in the current engine contract. If the engine returns no transaction,
+the Client reports an explicit non-admission error with the operation
+handle instead of inventing a transaction or replaying a request.
+Draining/GOAWAY connections are retired once idle.
+
 Connections are reused by origin and the requested protocol policy.
 An operation can be cancelled while still queued/connecting.
 A connect factory may return a cancellation coderef to abort establishment
