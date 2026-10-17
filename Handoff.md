@@ -3,7 +3,7 @@
 Updated: 2026-10-17
 Repository: haxmeister/perl-Unblock-HTTP
 Branch: feature/high-level-client-server
-Status: ordinary Server receive/lifecycle milestone implemented and CI verified.
+Status: Server verified; shared Client factory/pooling slice in CI validation.
 
 ## Resume here
 
@@ -46,8 +46,19 @@ Concrete implementation order:
    Next milestone after this slice: validated Alt-Svc cache/discovery, safe
    method/transport-aware retries, and WebSocket upgrades later.
 
-NOTE: this section records the plan, not successful implementation. Update it
-with actual code and test results before marking any stage complete.
+Implementation now committed on the upper feature branch: reusable Client,
+_ClientOperation, framework factories, strict version selection, bounded
+per-origin H1/H2/H3 pool, deferred H1 reuse, Client callback sequencing,
+low-level QUIC helper direct H3 engine, docs, and t/15-client-pool.t.
+No dependency source changes were needed. CI source 700dbd20 passed all
+245 distribution checks; the live test still used the former Client and
+failed. The converted live test then exposed H2 Server-only CONNECT option
+leaking into Client constructors; that and the H3 equivalent are corrected.
+Added regression checks and strict idle-connection eviction. Current CI must
+still be checked. No performance benchmark has run.
+
+Do not infer Alt-Svc, retries, WebSocket, DNS HTTPS discovery, timed factory
+cancellation or final pool capacity policy from this first slice.
 
 ## Current implementation
 
@@ -145,9 +156,9 @@ and inspection inputs only; never publish modifications there.
 1. Ordinary Server milestone is complete. Upper run 39059172525 passed the
    182 distribution checks and 15 live TCP/QUIC checks.
 2. Preserve this milestone on feature branches, with no release or merge.
-3. Continue the next design milestone from the original approved handoff:
-   shared Client definition, transport factories, request-operation handle,
-   bounded scheduling/pooling, validated Alt-Svc and retry policy.
+3. Client definition, callback factories, request-operation handle, bounded
+   scheduling/pooling have implementation and new tests, but require final
+   CI confirmation. Next: validated Alt-Svc, retry and timeout policy.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
