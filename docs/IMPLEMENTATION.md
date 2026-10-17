@@ -372,6 +372,40 @@ measured buffer high-water and partial writes, stream-body producer
 backpressure, H3 direct-engine baseline, concurrency fairness and
 runtime/CPU/allocation profiling.
 
+## Synchronous request setup profiling and safe direct dispatch (2026-10-17)
+
+The live TCP direct-versus-shared Client benchmark now times the request()
+call separately from end-to-end request completion. An isolated
+bench/request-setup.pl microbenchmark compares URI validation and Uniform
+object construction without network, parser or scheduling overhead.
+The instrumented first baseline reported ~45 us direct request() call
+versus ~93 us unified H1 / ~100 us unified H2. The isolated URI and
+Uniform setup cases measured ~9.9 us and ~10.4 us respectively on that
+CI runner. These are not rigorously additive measurements.
+
+The Client request hot path now directly calls the real engine via
+_dispatch when exactly one reusable pooled connection already exists,
+the native engine admits a transaction, and no queue/connection/maintenance
+work, callback reentrancy or idle timer can interfere. All other requests
+still follow the bounded scheduler; strict policy, cancellation,
+network-change retirement, H1 reentrancy and H3 stream-credit waiting
+remain unchanged. No per-byte forwarding or new request wrapper was added.
+
+t/15-client-pool.t covers bypass of redundant pool scans for eligible
+H2 multiplexed requests, continued bounded queuing at capacity, deferred
+capacity wakeup and exclusion of idle-managed connections. CI
+39079251789 passed 13 distribution files / 552 checks and three live
+TCP/QUIC files / 145 checks. The same CI run completed the
+three-round real-socket benchmark and the URI/Uniform microbenchmark.
+
+The timed H1 unified request() median changed from ~93 to ~88 us on
+nearby separate CI runners; H2 from ~100 to ~95 us. There is still
+substantial observed overhead, and CI machine variation prevents
+a precise speedup claim. Further profiling must distinguish
+object allocation and URL validation from pool management and engine
+callback setup before broader optimizations are considered.
+See docs/BENCHMARKING.md for raw results and limitations.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
