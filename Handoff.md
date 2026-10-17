@@ -425,6 +425,34 @@ Next: backpressure and large-body live stress, pooled-vs-direct-engine
 performance measurements, framework/application examples and WebSocket
 integration. Explicit network detection remains the adapter's job.
 
+## Real streaming and backpressure continuation (2026-10-17)
+
+Starting upper feature ref 699b695d673e97a6a2ba153bcea3d07e83b163b7
+and CI run 39073970857 PASS. All H1/H2/H3 feature refs and all four
+main baselines were verified unchanged. Required approved design and
+engine contract documents reviewed before editing.
+
+Implement narrow, measurable validation before optimizing:
+1. Add LinuxEvent real TCP integration exercising both H1 and H2 with
+   concurrent POST bodies larger than default 1 MiB receive buffering,
+   registering server transaction on_data at headers. Client response
+   registers on_data automatically (no stream_response flag) and receives
+   large responses through its real engine transaction. Record bytes,
+   checksums, callback sequencing, exact finish and no response buffering.
+2. Exercise network backpressure via framework-owned socket output and
+   writable events, preserving native engine on_drain behavior; no
+   per-chunk helper added to the upper Server.
+3. Keep resource/test limits modest and deterministic (bounded payloads,
+   watchdog, no network external dependencies). Ensure normal buffered
+   workflows remain green. Verify via coordinated Github Actions CI.
+4. Build or document a direct-versus-upper protocol-engine comparison
+   harness only after a reliable same-workload fixture is available.
+   No throughput/latency gains or copies avoided will be asserted without
+   measured before/after results.
+
+This is a work plan, not a verification report. Maintain source/test
+checkpoints and avoid main, release, tag, merge and version changes.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
