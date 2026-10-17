@@ -26,9 +26,10 @@ if ($openssl != 0) {
 
 my $loop = Linux::Event::Loop->new;
 my ($server, $client, $client_driver, $server_timer, $client_timer, $client_socket);
-my ($body, $error, $requests, $ready) = ('', undef, 0, 0);
-my ($header_request, $header_tx, $received_body);
-my @server_events;
+my ($error, $requests, $ready, $completed) = (undef, 0, 0, 0);
+my $total = 8;
+my (%header_request, %header_tx, %received_body, %response_body,
+    %server_events, %client_events, %completed_index);
 
 my $server_socket = Linux::Event::IO::Sock::Dgram->new(
     loop => $loop, host => '127.0.0.1', port => 0,
@@ -44,21 +45,26 @@ $server = Unblock::HTTP::QUIC->server(
     server => Unblock::HTTP::Server->new(
         http3 => {},
         on_headers => sub ($tx, $request) {
-            $header_request = $request;
-            $header_tx = $tx;
-            push @server_events, 'headers';
+            my $target = $request->target;
+            $header_request{$target} = $request;
+            $header_tx{$target} = $tx;
+            push @{ $server_events{$target} }, 'headers';
             $tx->on_finish(sub ($finished) {
-                push @server_events, 'finish:' . $finished->state;
+                push @{ $server_events{$target} }, 'finish:' . $finished->state;
             });
         },
         on_request => sub ($tx, $request) {
+            my $target = $request->target;
             $requests++;
-            push @server_events, 'request';
-            $received_body = $request->body;
-            is(refaddr($request), refaddr($header_request), 'same H3 request at headers and completion');
-            is(refaddr($tx), refaddr($header_tx), 'same H3 engine transaction');
-            ok($request->is_complete && !$request->is_mutable, 'H3 request complete and frozen');
-            $tx->respond(status => 200, body => "hello over quic\n");
+            push @{ $server_events{$target} }, 'request';
+            $received_body{$target} = $request->body;
+            is(refaddr($request), refaddr($header_request{$target}),
+                "$target H3 request identity");
+            is(refaddr($tx), refaddr($header_tx{$target}),
+                "$target H3 transaction identity");
+            ok($request->is_complete && !$request->is_mutable,
+                "$target H3 request complete and frozen");
+            $tx->respond(status => 200, body => "hello over quic $target\n");
         },
     ),
     send => sub ($datagram) {
@@ -110,25 +116,32 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 $loop->defer($callback);
             },
         );
-        my $operation = $client->request(
-            method => 'POST', url => 'https://localhost/',
-            body => "request over quic\n",
-            http_version => '3',
-            on_response => sub ($tx, $response) {
-                $error = "HTTP/3 status " . $response->status
-                    unless $response->status == 200;
-                $body = $response->body;
-            },
-            on_error => sub ($tx, $e) {
-                $error = "HTTP/3: $e";
-                $loop->stop;
-            },
-            on_finish => sub ($tx) {
-                $error ||= 'HTTP/3 request was not complete'
-                    unless $tx->is_complete;
-                $loop->stop;
-            },
-        );
+        for my $index (1 .. $total) {
+            my $target = '/job' . $index;
+            $client->request(
+                method => 'POST', url => "https://localhost$target",
+                body => "request over quic $target\n",
+                http_version => '3',
+                on_response => sub ($tx, $response) {
+                    $error = "HTTP/3 status " . $response->status
+                        unless $response->status == 200;
+                    $response_body{$target} = $response->body;
+                    push @{ $client_events{$target} }, 'response';
+                },
+                on_error => sub ($tx, $e) {
+                    $error = "HTTP/3 $target: $e";
+                    $loop->stop;
+                },
+                on_finish => sub ($tx) {
+                    $error ||= "HTTP/3 $target did not complete"
+                        unless $tx->is_complete;
+                    $completed_index{$target}++;
+                    $completed++;
+                    push @{ $client_events{$target} }, 'finish';
+                    $loop->stop if $completed == $total || $error;
+                },
+            );
+        }
         $client_driver = Net::QUIC::Driver->client(
             local => $socket->local->sockaddr,
             peer => $socket->peer->sockaddr,
@@ -176,10 +189,20 @@ my $limit = Linux::Event::Kernel::Timer->new(
 $loop->run;
 is($error, undef, 'no QUIC or HTTP/3 error');
 is($ready, 1, 'one ready client');
-is($requests, 1, 'HTTP/3 server receives request');
-is($received_body, "request over quic\n", 'unified H3 callback receives complete buffered body');
-is_deeply(\@server_events, ['headers', 'request', 'finish:complete'], 'unified H3 lifecycle order');
-is($body, "hello over quic\n", 'HTTP/3 body received');
+is($requests, $total, 'HTTP/3 server receives all concurrent requests');
+is($completed, $total, 'HTTP/3 client completes all concurrent requests');
+for my $index (1 .. $total) {
+    my $target = '/job' . $index;
+    is($received_body{$target}, "request over quic $target\n",
+        "$target H3 received complete buffered body");
+    is($response_body{$target}, "hello over quic $target\n",
+        "$target H3 response body");
+    is_deeply($server_events{$target}, [ 'headers', 'request', 'finish:complete' ],
+        "$target H3 server lifecycle");
+    is_deeply($client_events{$target}, [ 'response', 'finish' ],
+        "$target H3 client lifecycle");
+    is($completed_index{$target}, 1, "$target finished exactly once");
+}
 $server_timer->cancel if $server_timer && $server_timer->is_active;
 $client_timer->cancel if $client_timer && $client_timer->is_active;
 $limit->cancel if $limit->is_active;
