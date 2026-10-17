@@ -149,6 +149,12 @@ request stays in the bounded Client queue; the H3 engine notifies when
 request stream availability changes, and the Client retries admission
 only after framework deferral. No submitted request is replayed.
 
+Idle connection eviction is opt-in with `idle_timeout => $seconds`.
+When enabled, the framework supplies `schedule_timer` and may supply
+`release_connection($host, $engine, $protocol, $reason)` to close its own
+socket or QUIC resources. Timers are cancelled on reuse and never close
+connections with active streams or queued requests waiting for peer credit.
+
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
 one request at a time. The limits are adjustable. Pool idle expiry, validated
