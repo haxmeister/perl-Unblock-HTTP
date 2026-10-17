@@ -110,6 +110,36 @@ also CI-green (39063045212, 39063081185, 39063084160). The latter are
 source/documentation corrections, not new engine dependency changes.
 No speedup or zero-copy claim has been made.
 
+## Request deadline and stale factory slice (2026-10-17)
+
+Resume checkpoint: upper feature head 6be05992db9e7d8d7d0076dd2c4d563f932faa9a
+passed CI run 39063244495. All engine branches and all main refs match the
+previous handoff; no engine or read-only dependency source changes planned.
+
+Implementation sequence:
+
+1. Introduce optional framework schedule_timer(seconds, callback) => cancel
+   callback. Require it only for requests using a positive timeout in seconds.
+   The timeout covers queue, connect and active response lifetime, not a
+   separate network-only phase. Do not use internal blocking timers or poll.
+2. Terminal pre-dispatch timeout calls on_error(operation, error) and then
+   on_finish(operation), with no engine transaction or automatic replay.
+   Active timeout cancels the real engine tx; the operation records timeout
+   as failure, delivers on_error(tx, error) before on_finish(tx), and retains
+   engine cancellation semantics instead of fabricating a parser error.
+3. Track a specific in-flight connection attempt; cancellation/timeout of its
+   initiating request releases the pool connection slot. Optional factory
+   cancellation callback aborts pending establishment. Late ready() calls
+   are ignored, never attached or dispatched. Request callback queue remains
+   bounded and avoids synchronous engine reentrancy.
+4. Cover synchronous/late factory callbacks, expired queued/active requests,
+   double cancel, exactly-once error/finish and timer cleanup with deterministic
+   fake framework timers; verify live unchanged H1/H2/H3 CI. Keep this slice
+   isolated from peer-stream capacity and post-dispatch automatic retries.
+
+This section is an implementation plan, not a CI result. Record actual
+verified commit/check totals when complete.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
