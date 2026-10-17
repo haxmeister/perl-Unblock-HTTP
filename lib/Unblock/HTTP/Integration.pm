@@ -19,7 +19,8 @@ This feature branch supplies reusable Server policy and direct engine
 attachment, with bounded buffered or streamed Server callbacks. It requires
 the coordinated engine feature branches. Automatic WebSocket transitions,
 shared Client factories and bounded pooling are now in progress. Validated
-Alt-Svc, retries and WebSocket transitions remain later stages.
+Cross-host Alt-Svc, post-dispatch retries and WebSocket transitions remain
+later stages. Authenticated same-host Alt-Svc and unsent fallback are available.
 See docs/IMPLEMENTATION.md in the repository.
 
 =head1 TCP AND TLS SERVERS
@@ -134,6 +135,15 @@ successful attachment, so the framework can retain it. Feed TCP bytes,
 EOF, errors and recovered output capacity directly to that engine. For
 HTTP/3, preserve QUIC Driver UDP and timer operation and let HTTP/3 own
 its stream callbacks. The pooled Client is not a byte-path forwarding object.
+
+The TCP factory may report C<verified_origin =E<gt> 1> ONLY after
+successfully validating the HTTPS TLS certificate against the original
+origin hostname. This enables learning Alt-Svc from that connection.
+The QUIC factory receives C<alternative_host> and C<alternative_port>
+when an advertised alternative is selected, while retaining the original
+origin authority and host. It MUST authenticate the QUIC peer for the
+original HTTPS origin and report C<verified_origin =E<gt> 1> for the
+request to be dispatched. A missing attestation rejects that alternative.
 
 C<defer> is necessary because the engine may invoke on_finish before its
 own response-retirement bookkeeping has unwound. Deferring new dispatch
