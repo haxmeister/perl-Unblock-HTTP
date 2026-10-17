@@ -28,3 +28,4 @@ docs/ENGINE-CONTRACTS.md
 t/14-server-receive.t
 t/15-client-pool.t
 t/16-alt-svc.t
+t/17-alt-svc-client.t
