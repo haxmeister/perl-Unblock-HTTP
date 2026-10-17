@@ -549,8 +549,48 @@ Add regressions to prove the shortcut is not used for queued H1 work,
 active on_finish reentrancy, or idle timer lifecycle. Compare three
 alternate-order CI rounds again before declaring benefit.
 
-No main/release or engine changes. This is an optimization plan until
-its separate source and regression CI pass.
+The candidate is now implemented and verified on the upper feature branch.
+Client->request has a narrow same-origin direct-dispatch path for exactly one
+ready reusable connection with native admission capacity, no pending work,
+connecting factory, scheduled maintenance, callback reentrancy or configured
+idle_timeout. It calls the original _dispatch against the actual engine
+Transaction; nothing is reblessed or buffered. Every other case retains
+the fully validated bounded _pump.
+
+t/15-client-pool.t gained a tracked-Client regression proving that ready H2
+multiplex requests bypass _pump, saturated connections continue through the
+bounded pending queue, deferred completion wakes correctly, and configured
+idle expiration always uses _pump. Existing tests cover H1 on_finish
+reentrancy, cancellation, timeout and H3 credit. No new engine source edit.
+
+Verification: source CI 39079217496 PASS at commit
+7acf49adf21851280e1aefc851d59a9fc9a224f8 (543 distribution and 145 live).
+Regression CI 39079251789 PASS at commit
+4413707b34fb17745a901e5488b8b6a25f66dac5:
+13 distribution files / 552 top-level checks and 3 live H1/H2/H3 files /
+145 checks. The direct and unified benchmark, URI/Uniform setup microbenchmark,
+and large-body/backpressure fixtures all run in that CI job.
+
+Instrumented benchmark medians (1000 measured requests, 100 warmup, 3
+alternating-order rounds; microseconds request() inclusive):
+- Before direct-dispatch, CI 39079013272: H1 direct 45.61, unified 93.18;
+  H2 direct 45.22, unified 99.82.
+- After code-only change, CI 39079217496: H1 direct 45.10, unified 87.77;
+  H2 direct 45.42, unified 95.26.
+- Later regression run 39079251789 on a slower runner: H1 direct 73.67,
+  unified 131.22; H2 direct 80.54, unified 148.14. Runner variability
+  prevents treating the observed gap change as a precise speedup.
+
+URI-only and Uniform-only median operations were about 9.9 and 10.4 us
+in the first isolated microbench, combined ~20.9 us, so the remaining
+request()-inclusive overhead also includes policy, operation allocation,
+pool admission and callbacks. These components have not been individually
+profiled yet. No zero-copy or production throughput claim is justified.
+
+No main/release or engine changes. Next: profile subcomponents of Client
+request construction and queue admission, plus true sustained slow-receiver
+backpressure/high-water behavior. Preserve correctness, error/cancel order
+and event-loop neutrality before any deeper fast-path optimization.
 
 ## Current implementation
 
