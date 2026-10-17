@@ -9,6 +9,7 @@ use Uniform::HTTP::Request;
 use Unblock::HTTP::_Policy;
 use Unblock::HTTP::_EngineFactory;
 use Unblock::HTTP::_ClientOperation;
+use Unblock::HTTP::_AltSvc;
 
 our $VERSION = '0.01';
 
@@ -34,6 +35,13 @@ sub new {
     croak 'new(): connect_quic is required for HTTP/3'
         if $policy->enabled('h3') && !$factory{connect_quic};
 
+    my $clock = delete $option{alt_svc_clock};
+    croak 'new(): alt_svc_clock must be a coderef'
+        if defined($clock) && ref($clock) ne 'CODE';
+    my $alt_svc = Unblock::HTTP::_AltSvc->new(
+        (defined($clock) ? (clock => $clock) : ()),
+    );
+
     my %limit;
     for my $key (qw(max_pending_requests max_connections_per_origin max_streams_per_connection)) {
         my $default = $key eq 'max_pending_requests' ? 128
@@ -51,6 +59,7 @@ sub new {
         limit => \%limit,
         pending_count => 0,
         pools => {},
+        alt_svc => $alt_svc,
     }, $class;
 }
 
@@ -84,6 +93,7 @@ sub request {
     $target = '/' . $target if substr($target, 0, 1) eq '?';
 
     my $version = delete $field{http_version};
+    my $strict_version = defined($version) ? 1 : 0;
     if (defined $version) {
         croak 'request(): http_version must be 1.1, 2 or 3'
             if ref($version) || $version !~ /\A(?:1\.1|2|3)\z/;
@@ -124,6 +134,7 @@ sub request {
         info => {
             scheme => $scheme, host => $host, port => 0 + $port,
             authority => $authority,
+            key => $key,
         },
         pending => [],
         connections => [],
@@ -135,6 +146,14 @@ sub request {
         $self, $request, \%callbacks, $version, $origin,
     );
     $op->{stream_body} = $stream_body;
+    if (!$strict_version && $scheme eq 'https'
+        && $version eq 'tcp' && $self->{policy}->enabled('h3')) {
+        my $advertised = $self->{alt_svc}->lookup($key);
+        if ($advertised) {
+            $op->{alt_svc} = $advertised;
+            $op->{version} = 'h3';
+        }
+    }
     push @{ $origin->{pending} }, $op;
     $self->{pending_count}++;
     $self->_pump($origin);
@@ -216,6 +235,7 @@ sub _connect {
     my ($self, $pool, $op) = @_;
     my $version = $op->{version};
     my $quic = $version eq 'h3';
+    my $alt = $op->{alt_svc};
     my $factory = $self->{factory}{ $quic ? 'connect_quic' : 'connect_stream' };
     $pool->{connecting} = 1;
     $op->{state} = 'connecting';
@@ -226,14 +246,27 @@ sub _connect {
         my %result = @_;
         my $engine;
         my $ok = eval { $engine = $self->_connected($pool, $op, $version, \%result); 1 };
-        $self->_fail_pending($pool, $op, "$@") unless $ok;
+        if (!$ok) {
+            my $error = "$@";
+            if (!$self->_fallback_alternative($pool, $op, $error)) {
+                $self->_fail_pending($pool, $op, $error);
+            }
+        }
         $self->_pump($pool);
         return $engine;
     };
     my @alpn = $version eq 'tcp' ? $self->alpn_protocols : ($version);
     my $ok = eval {
         if ($quic) {
-            $factory->($pool->{info}, $ready);
+            my $info = $pool->{info};
+            if ($alt) {
+                # The HTTP origin is unchanged. Only the UDP target differs.
+                $info = { %$info,
+                    alternative_host => $info->{host},
+                    alternative_port => $alt->{port},
+                };
+            }
+            $factory->($info, $ready);
         } else {
             $factory->($pool->{info}, \@alpn, $ready);
         }
@@ -252,6 +285,8 @@ sub _connected {
         die "connect_quic: expected a ready QUIC connection\n"
             unless blessed($host) && $host->can('ready') && $host->can('closed')
                 && $host->ready && !$host->closed;
+        die "connect_quic: alternative must authenticate the original HTTPS origin\n"
+            if $op->{alt_svc} && !($result->{verified_origin} || 0);
         %arg = (quic => $host);
     } else {
         $protocol = defined($result->{alpn}) && length($result->{alpn})
@@ -279,8 +314,35 @@ sub _connected {
     push @{ $pool->{connections} }, {
         engine => $engine, host => $host, protocol => $protocol,
         active => 0,
+        verified_origin => $result->{verified_origin} ? 1 : 0,
     };
     return $engine;
+}
+
+# Alternative connection failure before dispatch is safe to recover from:
+# the engine never saw this request. Once dispatched, no retry is automatic.
+sub _fallback_alternative {
+    my ($self, $pool, $op, $error) = @_;
+    return 0 unless $op->{alt_svc} && !$op->{transaction}
+        && !$op->is_terminal
+        && ($self->{policy}->enabled('http/1.1') || $self->{policy}->enabled('h2'));
+    $self->{alt_svc}->invalidate($op->{origin}{info}{key});
+    for my $pending (@{ $pool->{pending} }) {
+        next unless $pending->{alt_svc} && !$pending->is_terminal;
+        delete $pending->{alt_svc};
+        $pending->{version} = 'tcp';
+        $pending->{state} = 'queued';
+    }
+    return 1;
+}
+
+sub _learn_alt_svc {
+    my ($self, $pool, $conn, $response) = @_;
+    return unless $conn->{verified_origin}
+        && $pool->{info}{scheme} eq 'https'
+        && $self->{policy}->enabled('h3');
+    $self->{alt_svc}->observe($pool->{info}{key}, $response);
+    return;
 }
 
 sub _dispatch {
@@ -295,7 +357,15 @@ sub _dispatch {
     $engine_callback{on_drain} = $callbacks->{on_drain}
         if $callbacks->{on_drain};
 
-    if ($callbacks->{on_response} && $callbacks->{on_data}) {
+    if ($pool->{info}{scheme} eq 'https' && $self->{policy}->enabled('h3')) {
+        # Once per response headers, not on the body hot path.
+        $engine_callback{on_response} = sub {
+            my ($tx, $response) = @_;
+            $self->_learn_alt_svc($pool, $conn, $response);
+            $callbacks->{on_response}->($tx, $response)
+                if $callbacks->{on_data} && $callbacks->{on_response};
+        };
+    } elsif ($callbacks->{on_response} && $callbacks->{on_data}) {
         $engine_callback{on_response} = $callbacks->{on_response};
     }
     if ($callbacks->{on_response} || ($callbacks->{on_end} && $callbacks->{on_data})) {
