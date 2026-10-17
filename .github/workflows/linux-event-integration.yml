@@ -53,4 +53,4 @@ jobs:
           make test
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
-          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t
