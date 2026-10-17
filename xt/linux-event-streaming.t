@@ -23,15 +23,41 @@ my $per_protocol = 3;
 my $current_protocol;
 
 our ($LOOP, $SERVER, $PROTOCOL, $FAILED, $FINISHED, $SERVER_COUNT,
-    $CLIENT_DRAIN, $WATCHDOG, $TIMERS_CANCELLED, $REQUESTS);
+    $CLIENT_DRAIN, $WATCHDOG, $TIMERS_CANCELLED, $REQUESTS,
+    $PRESSURE_INJECTED, $PRESSURE_RELEASES);
 our (%SERVER_DIGEST, %SERVER_BYTES, %SERVER_EVENTS, %SERVER_TX,
      %CLIENT_DIGEST, %CLIENT_BYTES, %CLIENT_EVENTS, %CLIENT_CHUNKS,
      %SERVER_CHUNKS, %CLIENT_HEADERS, %SERVER_HEADERS);
+
+# The adapter simulates the documented false-means-accepted boundary once
+# per connection, then resumes the real engine on a framework timer.
+# This does not pretend to measure real socket congestion.
+sub pressure_once ($stream) {
+    return 1 if $stream->{pressure_injected}++;
+    $PRESSURE_INJECTED++;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $LOOP, after => 0.01,
+        on_timer => sub ($t) {
+            delete $stream->{pressure_timer};
+            $PRESSURE_RELEASES++;
+            my $engine = $stream->{http} || $stream->{unblock_http};
+            $engine->resume_output if $engine && !$stream->is_closed;
+            $LOOP->stop if $FINISHED == $REQUESTS
+                && $PRESSURE_RELEASES == $PRESSURE_INJECTED;
+        },
+    );
+    $stream->{pressure_timer} = $timer;
+    return 0;
+}
 
 package StreamingTestServer;
 use parent 'Unblock::HTTP::Adapter::LinuxEvent';
 sub http_protocol ($self) { $main::PROTOCOL }
 sub http_server ($self) { $main::SERVER }
+sub unblock_send ($self, $bytes) {
+    my $ready = $self->SUPER::unblock_send($bytes);
+    return $ready ? main::pressure_once($self) : $ready;
+}
 
 package StreamingTestClient;
 use parent 'Linux::Event::IO::Sock::Stream';
@@ -59,7 +85,7 @@ sub on_drain ($self) {
 sub unblock_send ($self, $bytes) {
     my $ready = $self->write($bytes);
     die 'stream closed during HTTP output' if $self->is_closed;
-    return $ready;
+    return $ready ? main::pressure_once($self) : $ready;
 }
 sub unblock_finish ($self) { $self->end }
 sub unblock_abort ($self, $reason) { $self->close }
@@ -71,8 +97,10 @@ is(length($download) > 1048576, 1, 'downloaded fixture exceeds default buffer li
 for my $protocol ('http/1.1', 'h2') {
     $current_protocol = $protocol;
     ($PROTOCOL, $LOOP, $FAILED, $FINISHED, $SERVER_COUNT,
-        $CLIENT_DRAIN, $TIMERS_CANCELLED, $REQUESTS) =
-        ($protocol, Linux::Event::Loop->new, undef, 0, 0, 0, 0, $per_protocol);
+        $CLIENT_DRAIN, $TIMERS_CANCELLED, $REQUESTS,
+        $PRESSURE_INJECTED, $PRESSURE_RELEASES) =
+        ($protocol, Linux::Event::Loop->new, undef, 0, 0, 0, 0,
+         $per_protocol, 0, 0);
     (%SERVER_DIGEST, %SERVER_BYTES, %SERVER_EVENTS, %SERVER_TX,
      %CLIENT_DIGEST, %CLIENT_BYTES, %CLIENT_EVENTS, %CLIENT_CHUNKS,
      %SERVER_CHUNKS, %CLIENT_HEADERS, %SERVER_HEADERS) = ();
@@ -191,7 +219,8 @@ for my $protocol ('http/1.1', 'h2') {
                 $FAILED ||= "incomplete transaction at $path"
                     unless $tx->is_complete;
                 $FINISHED++;
-                $LOOP->stop if $FINISHED == $REQUESTS || $FAILED;
+                $LOOP->stop if $FAILED || ($FINISHED == $REQUESTS
+                    && $PRESSURE_RELEASES == $PRESSURE_INJECTED);
             },
         );
     }
@@ -209,6 +238,9 @@ for my $protocol ('http/1.1', 'h2') {
     is($SERVER_COUNT, $REQUESTS, "$protocol server receives all large uploads");
     is($FINISHED, $REQUESTS, "$protocol client finishes all large downloads");
     is($TIMERS_CANCELLED, $REQUESTS, "$protocol releases each request timer");
+    ok($PRESSURE_INJECTED > 0, "$protocol simulated write congestion");
+    is($PRESSURE_RELEASES, $PRESSURE_INJECTED,
+        "$protocol resumes every accepted-but-blocked write");
 
     for my $index (1 .. $REQUESTS) {
         my $path = "/large$index";
