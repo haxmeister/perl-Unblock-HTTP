@@ -20,9 +20,9 @@ use Unblock::HTTP2::Client;
 my ($sample, $warmup) = @ARGV;
 $sample = 1000 unless defined $sample;
 $warmup = 100 unless defined $warmup;
-die "usage: perl bench/client-vs-direct.pl [samples>0] [warmup>=0]\n"
+die "usage: perl bench/client-vs-direct.pl [samples>0] [warmup>0]\n"
     unless $sample =~ /\A[1-9][0-9]*\z/
-        && $warmup =~ /\A(?:0|[1-9][0-9]*)\z/
+        && $warmup =~ /\A[1-9][0-9]*\z/
         && $sample <= 100000 && $warmup <= 10000;
 
 our ($LOOP, $SERVER, $PROTOCOL, $MODE, $READY_CALLBACK, $ENGINE, $CLIENT,
@@ -51,7 +51,8 @@ sub on_ready ($self) {
         );
     }
     $main::ENGINE = $self->{engine};
-    $main::LOOP->defer(sub { main::next_request() });
+    $main::LOOP->defer(sub { main::next_request() })
+        if $main::MODE eq 'direct';
 }
 sub on_data ($self, $bytes) { $self->{engine}->input($bytes) }
 sub on_eof ($self) {
