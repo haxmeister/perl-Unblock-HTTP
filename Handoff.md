@@ -137,8 +137,29 @@ Implementation sequence:
    fake framework timers; verify live unchanged H1/H2/H3 CI. Keep this slice
    isolated from peer-stream capacity and post-dispatch automatic retries.
 
-This section is an implementation plan, not a CI result. Record actual
-verified commit/check totals when complete.
+Implementation now published on the upper feature branch:
+- Client accepts optional schedule_timer(seconds, callback), returning a
+  timer-cancellation coderef; request(timeout => seconds) covers queue,
+  establishment and active transaction lifetime.
+- _ClientOperation stores/cancels its timer on terminal notification.
+- Client tracks one concrete factory attempt per origin. When a pending
+  initiating operation times out or cancels, the attempt slot is freed and
+  an optional factory cancellation hook is invoked. Stale ready() calls do
+  not create engines or dispatch requests.
+- An active timeout invokes actual engine Transaction->cancel, while the
+  operation reports timeout as an error. on_error(tx, reason) precedes
+  on_finish(tx); intentional cancellation has no manufactured error.
+- t/18-client-timeouts.t covers deterministic timer, cancellation, callback
+  ordering and late factory edge cases. The live LinuxEvent TCP test uses
+  a real framework timer and verifies cleanup on both H1 and H2.
+- Verified CI run 39063973271 at source commit
+  388dde830590dde6792e8e2c91945a4d3ee264e0: 10 distribution test
+  files / 362 checks and 2 live TCP/QUIC tests / 17 checks, PASS.
+  Subsequent t/18 cases for queued H1 expiry and factories without optional
+  cancellation are undergoing their own final CI run.
+- No engine, Net::QUIC or Uniform::HTTP source was modified. No performance
+  claim has been measured. Broad live concurrency and peer-aware capacity
+  coordination remain later work.
 
 ## Current implementation
 
@@ -241,6 +262,8 @@ and inspection inputs only; never publish modifications there.
    (316 distribution checks and 15 live tests). Remaining: timeout policy,
    network change/cache invalidation, retries only with verifiable safe
    eligibility, peer-aware pool capacity, and wider live pool stress tests.
+   Optional per-request deadlines and cancellable/stale connection attempts
+   now pass CI 39063973271 (362 distribution and 17 live checks).
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
