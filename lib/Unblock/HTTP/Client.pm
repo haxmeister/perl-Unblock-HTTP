@@ -80,6 +80,82 @@ sub alpn_protocols { $_[0]{policy}->alpn_protocols }
 sub supports { $_[0]{policy}->enabled($_[1]) }
 sub pending_count { $_[0]{pending_count} }
 
+# A copied, observational-only snapshot. No transport or engine objects
+# escape, and taking a snapshot never runs scheduler or timer callbacks.
+sub pool_stats {
+    my ($self) = @_;
+    my $total = {
+        origins => 0, connections => 0, active => 0, idle => 0,
+        retiring => 0, credit_blocked => 0, connecting => 0,
+        pending => $self->{pending_count},
+        by_origin => [],
+    };
+    for my $key (sort keys %{ $self->{pools} }) {
+        my $pool = $self->{pools}{$key};
+        my $one = {
+            scheme => $pool->{info}{scheme},
+            host => $pool->{info}{host},
+            port => $pool->{info}{port},
+            connections => 0, active => 0, idle => 0,
+            retiring => 0, credit_blocked => 0,
+            connecting => $pool->{connecting} ? 1 : 0,
+            pending => scalar @{ $pool->{pending} },
+        };
+        for my $conn (@{ $pool->{connections} }) {
+            $one->{connections}++;
+            $one->{active} += $conn->{active};
+            $one->{retiring}++ if $conn->{stale} || _retired($conn);
+            $one->{credit_blocked}++ if $conn->{credit_blocked};
+            $one->{idle}++ if !$conn->{active} && !$conn->{credit_blocked}
+                && !$conn->{released} && !_closed($conn)
+                && !_retired($conn);
+        }
+        for my $count (qw(connections active idle retiring credit_blocked connecting)) {
+            $total->{$count} += $one->{$count};
+        }
+        push @{ $total->{by_origin} }, $one;
+        $total->{origins}++;
+    }
+    return $total;
+}
+
+# A framework explicitly invokes this when its network identity changes.
+# No active transaction is replayed, cancelled or moved between engines.
+sub network_changed {
+    my ($self) = @_;
+    $self->{alt_svc}->clear;
+    for my $pool (values %{ $self->{pools} }) {
+        # Suppress synchronous reentry from user-owned release hooks.
+        local $pool->{callback_depth} = ($pool->{callback_depth} || 0) + 1;
+        if (my $attempt = $pool->{attempt}) {
+            my $op = $attempt->{op};
+            $self->_abandon_connect($pool, $op);
+            $op->{state} = 'queued' unless $op->is_terminal;
+        }
+        for my $op (@{ $pool->{pending} }) {
+            next if $op->is_terminal || !$op->{alt_svc};
+            delete $op->{alt_svc};
+            $op->{version} = 'tcp';
+            $op->{state} = 'queued';
+        }
+        my (@keep, @release);
+        for my $conn (@{ $pool->{connections} }) {
+            $conn->{stale} = 1;
+            $self->_cancel_idle($conn) if $conn->{idle_cancel};
+            if ($conn->{active}) {
+                push @keep, $conn;
+            } else {
+                push @release, $conn;
+            }
+        }
+        $pool->{connections} = \@keep;
+        $self->_release_connection($_, 'network_changed') for @release;
+        $self->_schedule($pool) if @{ $pool->{pending} };
+        $self->_delete_empty_pool($pool);
+    }
+    return;
+}
+
 sub request {
     my ($self, @args) = @_;
     croak 'request(): expected named arguments' if @args % 2;
@@ -200,6 +276,7 @@ sub _compatible {
 sub _retired {
     my ($conn) = @_;
     my $engine = $conn->{engine};
+    return 1 if $conn->{stale};
     if ($conn->{protocol} eq 'h2') {
         return $engine->can('draining') && $engine->draining ? 1 : 0;
     }
@@ -575,6 +652,7 @@ sub _fallback_alternative {
 
 sub _learn_alt_svc {
     my ($self, $pool, $conn, $response) = @_;
+    return if $conn->{stale};
     return unless $conn->{verified_origin}
         && $pool->{info}{scheme} eq 'https'
         && $self->{policy}->enabled('h3');
