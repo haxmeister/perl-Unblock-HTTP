@@ -245,6 +245,43 @@ my $flush = sub {
     is(scalar @finishes, 1, 'cancelled H3 operation finishes exactly once');
 }
 
+# A deadline may expire while waiting for QUIC credit; later readiness
+# must not resurrect the expired operation or manufacture a transaction.
+{
+    local $AdmissionTest::Engine::NO_H3_STREAM = 1;
+    my $fire;
+    my $timer_cancels = 0;
+    my $client = Unblock::HTTP::Client->new(
+        http3 => {}, defer => $defer, max_connections_per_origin => 1,
+        connect_quic => sub { $_[1]->(connection => AdmissionTest::Quic->new) },
+        schedule_timer => sub {
+            $fire = $_[1];
+            return sub { $timer_cancels++ };
+        },
+    );
+    my (@errors, @finishes);
+    my $op = $client->request(url => 'https://timeoutcredit.test/',
+        http_version => '3', timeout => 0.5,
+        on_error => sub { push @errors, [@_] },
+        on_finish => sub { push @finishes, $_[0] },
+    );
+    is($op->state, 'queued', 'H3 credit-blocked operation waits with timer');
+    my $engine = $op->{origin}{connections}[0]{engine};
+    $fire->();
+    is($op->state, 'error', 'deadline expires credit-blocked request');
+    like($op->error, qr/timed out/, 'timeout reason retained');
+    is($client->pending_count, 0, 'deadline removes H3 blocked queue entry');
+    is($timer_cancels, 1, 'terminal timer cancellation is exactly once');
+    is(scalar(@errors), 1, 'timeout produces one on_error');
+    is(refaddr($errors[0][0]), refaddr($op), 'pre-dispatch timeout uses operation identity');
+    is(scalar(@finishes), 1, 'timeout produces one on_finish');
+    $engine->{no_stream} = 0;
+    $engine->{option}{on_request_available}->($engine);
+    $flush->();
+    ok(!defined($op->transaction), 'late bidi credit does not dispatch timed-out request');
+    is(scalar(@finishes), 1, 'late notification does not repeat terminal callback');
+}
+
 # A GOAWAY-marked idle H3 is not reused.
 {
     my @engines;
