@@ -49,9 +49,11 @@ over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
 =head1 IMPLEMENTATION STATUS
 
 This feature branch implements reusable Server attachment, bounded buffered
-requests, and per-transaction streaming. It requires the coordinated engine
-receive/lifecycle branches. WebSocket transitions, client pooling and transport
-factories remain planned. See docs/IMPLEMENTATION.md.
+requests, and per-transaction streaming. The shared Client now has callback
+connection factories, operation handles and an initial bounded per-origin
+pool. It requires the coordinated engine receive/lifecycle branches.
+WebSocket transitions, validated Alt-Svc and retry policy remain planned.
+See docs/IMPLEMENTATION.md.
 
 =head1 CLASSES
 
@@ -59,7 +61,8 @@ factories remain planned. See docs/IMPLEMENTATION.md.
 
 =item L<Unblock::HTTP::Client>
 
-Currently one outgoing HTTP connection; the multi-destination API is planned.
+One reusable client definition for many destinations, with a bounded
+request queue and per-origin H1/H2/H3 connection pools.
 
 =item L<Unblock::HTTP::Server>
 
