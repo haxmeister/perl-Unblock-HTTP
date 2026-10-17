@@ -120,7 +120,8 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
 This feature branch implements reusable attachment and ordinary buffered or
 streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
-WebSocket transitions, Client pooling, and transport factories remain planned.
+WebSocket transitions remain planned. Initial Client factories and bounded
+pooling are implemented separately in Unblock::HTTP::Client.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
 =head1 CONSTRUCTOR
