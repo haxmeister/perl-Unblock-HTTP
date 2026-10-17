@@ -118,8 +118,8 @@ The request returns an operation handle right away. Its `transaction()` is
 undefined while waiting for a connection, then becomes the **real engine
 Transaction** after dispatch. `cancel()`, `state()`, and `error()` work
 without polling. A strict `http_version => '3'` requires HTTP/3, not a
-fallback to HTTP/2. HTTPS cold requests use H2/H1 ALPN; automatic H3 discovery
-and retry policy are not implemented yet.
+fallback to HTTP/2. HTTPS cold requests use H2/H1 ALPN; later requests may use H3
+through an authenticated, fresh, same-host Alt-Svc advertisement.
 
 An integration supplies `connect_stream`, `connect_quic` and a `defer`
 callback. The factory opens TCP/TLS or QUIC through its framework and calls
