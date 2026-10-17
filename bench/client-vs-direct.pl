@@ -29,7 +29,7 @@ die "usage: perl bench/client-vs-direct.pl [samples>0] [warmup>0] [rounds>0]\n"
 
 our ($LOOP, $SERVER, $PROTOCOL, $MODE, $READY_CALLBACK, $ENGINE, $CLIENT,
     $SOCKET, $FAILED, $DONE, $TOTAL, $WARMUP, $START, $ELAPSED, $RESPONSES,
-    $SCHEDULE);
+    $SCHEDULE, $REQUEST_CALL_TIME, $REQUEST_CALL_COUNT);
 
 package BenchServer;
 use parent 'Unblock::HTTP::Adapter::LinuxEvent';
@@ -98,6 +98,8 @@ sub next_request {
         $FAILED = "HTTP error: $error";
         $LOOP->stop;
     };
+    my $sample_this_request = $DONE >= $WARMUP;
+    my $call_start = time() if $sample_this_request;
     if ($MODE eq 'direct') {
         my $request = Uniform::HTTP::Request->new(
             method => 'GET', scheme => 'http',
@@ -116,14 +118,19 @@ sub next_request {
             on_finish => $on_finish,
         );
     }
+    if ($sample_this_request) {
+        $REQUEST_CALL_TIME += time() - $call_start;
+        $REQUEST_CALL_COUNT++;
+    }
 }
 
 sub run_one {
     my ($mode, $protocol) = @_;
     ($MODE, $PROTOCOL, $LOOP, $FAILED, $DONE, $RESPONSES, $ELAPSED,
-        $ENGINE, $CLIENT, $SOCKET, $READY_CALLBACK, $START) =
+        $ENGINE, $CLIENT, $SOCKET, $READY_CALLBACK, $START,
+        $REQUEST_CALL_TIME, $REQUEST_CALL_COUNT) =
         ($mode, $protocol, Linux::Event::Loop->new, undef, 0, 0, undef,
-         undef, undef, undef, undef, undef);
+         undef, undef, undef, undef, undef, 0, 0);
     $TOTAL = $sample + $warmup;
     $WARMUP = $warmup;
     $SERVER = Unblock::HTTP::Server->new(
@@ -197,7 +204,9 @@ sub run_one {
         unless $DONE == $TOTAL;
     die "$mode $protocol: server processed $RESPONSES, expected $TOTAL\n"
         unless $RESPONSES == $TOTAL;
-    return $ELAPSED;
+    die "request call counter mismatch: $REQUEST_CALL_COUNT/$sample\n"
+        unless $REQUEST_CALL_COUNT == $sample;
+    return ($ELAPSED, 1_000_000 * $REQUEST_CALL_TIME / $REQUEST_CALL_COUNT);
 }
 
 print "# Real TCP loopback client dispatch; server is identical in both modes.\n";
@@ -205,14 +214,15 @@ print "# Includes Uniform request construction, HTTP parsing and framework overh
 print "# Not statistically controlled; no copy/allocation or slow-receiver measurements.\n";
 print "# Rounds alternate direct-first and unified-first to reduce ordering bias.\n";
 for my $protocol ('http/1.1', 'h2') {
-    my %samples;
+    my (%samples, %call_samples);
     for my $round (1 .. $rounds) {
         my @order = $round % 2 ? ('direct', 'unified') : ('unified', 'direct');
         for my $mode (@order) {
-            my $seconds = run_one($mode, $protocol);
+            my ($seconds, $mean_call_us) = run_one($mode, $protocol);
             push @{ $samples{$mode} }, $seconds;
-            printf "%-9s %-7s round=%-2d %5d requests in %.5f s (%.0f req/s)\n",
-                $protocol, $mode, $round, $sample, $seconds, $sample/$seconds;
+            push @{ $call_samples{$mode} }, $mean_call_us;
+            printf "%-9s %-7s round=%-2d %5d requests in %.5f s (%.0f req/s), request() %.2f us avg\n",
+                $protocol, $mode, $round, $sample, $seconds, $sample/$seconds, $mean_call_us;
         }
     }
     my %median;
@@ -226,4 +236,9 @@ for my $protocol ('http/1.1', 'h2') {
     printf "# %s median direct %.5fs; unified %.5fs; wall-time ratio %.3f\n",
         $protocol, $median{direct}, $median{unified},
         $median{unified} / $median{direct};
+    for my $mode ('direct', 'unified') {
+        my @sorted = sort { $a <=> $b } @{ $call_samples{$mode} };
+        printf "# %s %s median request() inclusive time: %.2f us/request\n",
+            $protocol, $mode, $sorted[int(@sorted / 2)];
+    }
 }
