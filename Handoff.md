@@ -65,6 +65,38 @@ No performance benchmark has run.
 Do not infer Alt-Svc, retries, WebSocket, DNS HTTPS discovery, timed factory
 cancellation or final pool capacity policy from this first slice.
 
+## Alt-Svc and retry continuation (2026-10-17)
+
+Before edits: verified current upper feature head df6fa8ea4987d2d6702aeb387f0e219eacbe39e2;
+last CI 39062331531 SUCCESS (256 distribution and 15 live checks). Engine feature
+refs unchanged. Main is off limits. No local checkout available in this turn;
+connector writes specify only the upper feature branch.
+
+Coherent next slice:
+
+1. Small bounded in-memory Alt-Svc cache, isolated parser, explicit freshness
+   (ma / Age / clear / expiry). Start with same-host h3 alternatives only;
+   discard cross-host and malformed alternatives rather than advertise
+   authentication that has not been established. Cache only headers from
+   framework-confirmed TLS-authenticated HTTPS responses. Do not infer
+   authentication solely from a URL scheme.
+2. On subsequent non-strict requests select a fresh h3 alternative. Pass
+   original origin authority and alternative UDP port separately to QUIC
+   connection factory, while preserving request origin semantics. Require
+   that the returned QUIC connection is verified authoritative for the
+   original origin before dispatch. Strict http_version continues to win.
+3. Failed alternative connection before request dispatch may safely fall
+   back once to TCP for the same pending operation (no request transmitted).
+   Invalidate stale discovery. No replay once an engine request() has been
+   called, regardless of HTTP method; do not infer unprocessed requests from
+   transport or stream errors.
+4. Add unit cases for parsing, authentication, explicit version precedence,
+   expiry, clear, failure fallback, unsafe replay guards; run distribution
+   and live integration CI. Update docs and this handoff as tested.
+
+This section initially records the proposed implementation sequence; do not
+call it verified until a real passing source CI run is recorded below.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
