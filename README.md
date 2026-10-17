@@ -96,25 +96,48 @@ $endpoint->start;
 
 Read `perldoc Unblock::HTTP::Integration` for the adapter contract.
 
-## Client status
+## Shared Client (development)
 
-Client still represents one existing connection at this checkpoint:
+The Client now owns reusable HTTP policy, request scheduling, and per-origin
+connection pools. An application makes one Client for many destinations:
 
 ```perl
-my $client = Unblock::HTTP::Client->new(
-    transport => $stream,
-    alpn => $negotiated_alpn,
-);
-$client->request(
-    method => 'GET', target => '/', authority => 'example.test',
-    on_response => sub { my ($tx, $response) = @_; },
+my $op = $client->request(
+    method => 'GET',
+    url => 'https://example.com/data',
+    on_response => sub {
+        my ($tx, $response) = @_;
+        print $response->status, "\\n";
+    },
 );
 ```
 
-Its existing callbacks follow the engine contract. The approved next stages
-replace this with one Client managing destinations, bounded request scheduling,
-connection reuse, protocol selection, and discovery. Redirects, cookies,
-routing and middleware remain outside this distribution.
+The request returns an operation handle right away. Its `transaction()` is
+undefined while waiting for a connection, then becomes the **real engine
+Transaction** after dispatch. `cancel()`, `state()`, and `error()` work
+without polling. A strict `http_version => '3'` requires HTTP/3, not a
+fallback to HTTP/2. HTTPS cold requests use H2/H1 ALPN; automatic H3 discovery
+and retry policy are not implemented yet.
+
+An integration supplies `connect_stream`, `connect_quic` and a `defer`
+callback. The factory opens TCP/TLS or QUIC through its framework and calls
+`$ready->(...)`. **The ready callback returns the real connected engine.**
+The adapter keeps that engine on its framework-owned stream or connection and
+feeds input directly to it. The `defer` callback schedules work in a later
+event-loop turn. See `perldoc Unblock::HTTP::Client` and
+`perldoc Unblock::HTTP::Integration` for the exact contracts.
+
+By default the Client buffers up to 1 MiB of response data in the chosen
+engine, then calls `on_response` once after body completion. Supplying
+`on_data` automatically streams the response: `on_response` fires when
+headers arrive, then `on_data($tx, $chunk)`, `on_end($tx)`, and terminal
+`on_finish($tx)`. Client buffering does not add another body accumulator.
+
+The queue defaults to 128 pending requests, with at most four connections per
+origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
+one request at a time. The limits are adjustable. Pool idle expiry, validated
+Alt-Svc, retries, WebSocket upgrades and convenience framework connector
+classes are future milestones. This is **not** a release candidate.
 
 ## Examples and tests
 
