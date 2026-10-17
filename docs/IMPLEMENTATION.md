@@ -240,8 +240,19 @@ The expanded live xt/linux-event-tcp.t now issues twelve H1 and twelve H2
 requests. Its first run exposed that the earlier test-only connect_stream
 factory reused one LinuxEvent stream for multiple engines. The test factory
 was corrected to establish a distinct framework-owned socket on each new
-connection, matching the documented transport contract. The expanded live
-run and final queued-state correction still require CI verification.
+connection, matching the documented transport contract.
+
+Verified run 39065677169 on commit e13e5004e60e3df28875d5164b61e3e74459bb9c:
+11 distribution files / 419 checks, and 2 live TCP/QUIC files / 19 checks
+passed. All 24 H1/H2 requests completed, each operation timer was cancelled,
+and the earlier H3 live socket regression remained green. The final queued
+state correction was included in that run.
+
+H3 does not yet expose a non-consuming QUIC stream-credit admission probe or
+an availability callback to the shared Client. The explicit non-admission
+error is safe, but it is not automatic backpressure/queueing of H3 streams.
+Follow-up engine work should add a capacity-change signal before promising
+fully peer-aware H3 scheduling.
 
 ## Later design milestones
 
