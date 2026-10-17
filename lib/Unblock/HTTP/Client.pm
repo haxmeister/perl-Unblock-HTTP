@@ -776,6 +776,8 @@ Unblock::HTTP::Client - Reusable HTTP client with framework transport factories
         },
     );
 
+    # Optional idle_timeout => 30 requires schedule_timer and an adapter
+    # should supply release_connection to close its owned transport.
     my $operation = $client->request(
         method => 'GET', url => 'https://example.com/',
         timeout => 15,  # Optional, seconds; requires schedule_timer.
