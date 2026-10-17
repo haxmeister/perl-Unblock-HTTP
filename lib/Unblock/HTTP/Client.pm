@@ -269,6 +269,9 @@ sub _connected {
         %arg = (transport => $host);
     }
     my $options = $self->{policy}->options($protocol);
+    # These advertise Server capabilities; Client constructors reject them.
+    delete $options->{enable_connect_protocol} if $protocol eq 'h2';
+    delete $options->{enable_extended_connect} if $protocol eq 'h3';
     my $engine = Unblock::HTTP::_EngineFactory->create(
         'Client', $protocol, %$options, %arg,
     );
