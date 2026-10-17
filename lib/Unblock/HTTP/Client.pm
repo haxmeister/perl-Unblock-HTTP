@@ -258,6 +258,24 @@ sub request {
             unless ref($cancel) eq 'CODE';
         $op->{timer_cancel} = $cancel;
     }
+    # A healthy, immediately admissible pooled connection needs no
+    # queue insertion, full pool scan or scheduler allocation. This is
+    # strictly an application-request path, never the per-byte path.
+    # Keep the general pump for pending work, reentrant callbacks,
+    # connecting factories and idle-expiration lifecycle management.
+    if (!defined($self->{idle_timeout})
+        && !@{ $origin->{pending} }
+        && !$origin->{connecting}
+        && !$origin->{pumping}
+        && !$origin->{callback_depth}
+        && !$origin->{scheduled}
+        && @{ $origin->{connections} } == 1) {
+        my $conn = $origin->{connections}[0];
+        if ($self->_usable($conn, $op->{version})) {
+            $self->_dispatch($origin, $conn, $op);
+            return $op;
+        }
+    }
     push @{ $origin->{pending} }, $op;
     $self->{pending_count}++;
     $self->_pump($origin);
