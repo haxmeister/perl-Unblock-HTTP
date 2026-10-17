@@ -171,27 +171,78 @@ my $flush = sub {
     $flush->();
 }
 
-# H3 request() may return undef if there is no QUIC bidi stream credit.
+# The HTTP/3 engine returns undef when QUIC has no bidi stream credit.
+# The Client must queue the UNTRANSMITTED operation and wake only after
+# a new bidi availability notification, with no fake transaction or retry.
 {
     local $AdmissionTest::Engine::NO_H3_STREAM = 1;
+    my $connections = 0;
     my $client = Unblock::HTTP::Client->new(
-        http3 => {}, defer => $defer,
-        connect_quic => sub { $_[1]->(connection => AdmissionTest::Quic->new) },
+        http3 => {}, defer => $defer, max_connections_per_origin => 1,
+        connect_quic => sub {
+            $connections++;
+            $_[1]->(connection => AdmissionTest::Quic->new);
+        },
     );
     my (@errors, @finishes);
     my $op = $client->request(url => 'https://h3.test/', http_version => '3',
         on_error => sub { push @errors, [@_] },
         on_finish => sub { push @finishes, $_[0] },
     );
-    is($op->state, 'error', 'H3 no-stream result is a terminal non-admission');
-    like($op->error, qr/not admitted/, 'H3 admission error is explicit');
+    is($op->state, 'queued', 'H3 no-stream result preserves unsent operation');
     ok(!defined($op->transaction), 'no phantom transaction created');
-    is($client->pending_count, 0, 'queue slot released');
-    is(scalar(@errors), 1, 'one H3 non-admission error');
-    is(refaddr($errors[0][0]), refaddr($op), 'error receives operation, not fake tx');
-    is(scalar(@finishes), 1, 'one finish notification');
-    is($op->{origin}{connections}[0]{active}, 0, 'H3 connection slot released');
+    is($client->pending_count, 1, 'unsent H3 request is counted in queue');
+    is(scalar(@errors), 0, 'lack of temporary bidi credit is not an HTTP error');
+    is(scalar(@finishes), 0, 'temporary block does not finish operation');
+    my $conn = $op->{origin}{connections}[0];
+    is($conn->{active}, 0, 'H3 unavailable stream does not occupy active slot');
+    ok($conn->{credit_blocked}, 'connection waits for one-shot bidi notification');
+    is($connections, 1, 'bounded pool does not keep opening QUIC connections');
+
+    my $second = $client->request(
+        url => 'https://h3.test/second', http_version => '3',
+    );
+    is($second->state, 'queued', 'later request waits behind first unsent request');
+    is($client->pending_count, 2, 'both unsent requests remain bounded');
+
+    my $engine = $conn->{engine};
+    $engine->{no_stream} = 0;
+    $engine->{option}{on_request_available}->($engine);
+    is($op->state, 'queued', 'availability callback never dispatches inline');
     $flush->();
+    is($op->state, 'active', 'deferred notification admits original operation');
+    is($second->state, 'active', 'other queued H3 request also admitted within cap');
+    is($connections, 1, 'H3 reuses original QUIC connection');
+    is($client->pending_count, 0, 'queued H3 operations released at dispatch');
+    $op->transaction->finish;
+    $second->transaction->finish;
+    $flush->();
+    is(scalar(@errors), 0, 'successful recovery did not invent error');
+    is(scalar(@finishes), 1, 'original transaction finishes once');
+}
+
+# Cancelled unadmitted H3 work may not be resurrected by later credit.
+{
+    local $AdmissionTest::Engine::NO_H3_STREAM = 1;
+    my $client = Unblock::HTTP::Client->new(
+        http3 => {}, defer => $defer, max_connections_per_origin => 1,
+        connect_quic => sub { $_[1]->(connection => AdmissionTest::Quic->new) },
+    );
+    my (@errors, @finishes);
+    my $op = $client->request(url => 'https://cancelcredit.test/', http_version => '3',
+        on_error => sub { push @errors, 1 },
+        on_finish => sub { push @finishes, 1 },
+    );
+    my $engine = $op->{origin}{connections}[0]{engine};
+    ok($op->cancel, 'blocked H3 request can be cancelled');
+    is($op->state, 'cancelled', 'cancel before QUIC credit stays cancellation');
+    is($client->pending_count, 0, 'cancel removes blocked queue entry');
+    $engine->{no_stream} = 0;
+    $engine->{option}{on_request_available}->($engine);
+    $flush->();
+    ok(!defined $op->transaction, 'availability cannot dispatch cancelled operation');
+    is(scalar @errors, 0, 'intentional cancellation has no on_error');
+    is(scalar @finishes, 1, 'cancelled H3 operation finishes exactly once');
 }
 
 # A GOAWAY-marked idle H3 is not reused.
