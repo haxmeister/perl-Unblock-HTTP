@@ -18,7 +18,8 @@ Unblock::HTTP::Integration - Attach framework transports to HTTP engines
 This feature branch supplies reusable Server policy and direct engine
 attachment, with bounded buffered or streamed Server callbacks. It requires
 the coordinated engine feature branches. Automatic WebSocket transitions,
-client pooling and transport factories are later stages.
+shared Client factories and bounded pooling are now in progress. Validated
+Alt-Svc, retries and WebSocket transitions remain later stages.
 See docs/IMPLEMENTATION.md in the repository.
 
 =head1 TCP AND TLS SERVERS
@@ -102,13 +103,46 @@ timeout in seconds; the framework replaces its timer accordingly. The manager
 sets H3 ALPN and uses the supplied reusable Server definition without overriding
 its callbacks or policy. C<on_ready> receives the real HTTP3 Server engine.
 
-=head1 EXISTING CLIENT
+=head1 SHARED CLIENT FACTORIES
 
-The current Client is still a single-connection object. Construct it with
-C<transport> and C<alpn>, then use its request and input/output methods.
-A future stage replaces this API with destination management and a shared
-framework connection factory. Do not infer pooling or automatic connection
-creation from the new Server API.
+The shared Client requires framework callbacks for connection establishment:
+
+    my $client = Unblock::HTTP::Client->new(
+        http1 => {}, http2 => {}, http3 => {},
+        connect_stream => sub {
+            my ($origin, $alpn_choices, $ready) = @_;
+            # Use the framework to establish TCP/TLS.
+            # In its connection callback:
+            # my $engine = $ready->(
+            #     transport => $framework_stream, alpn => $negotiated,
+            # );
+            # $framework_stream->{http_engine} = $engine;
+        },
+        connect_quic => sub {
+            my ($origin, $ready) = @_;
+            # Establish QUIC with the framework/Net::QUIC::Driver.
+            # my $engine = $ready->(connection => $ready_quic);
+        },
+        defer => sub {
+            my ($callback) = @_;
+            # Schedule for a LATER event-loop turn, never inline.
+        },
+    );
+
+The ready callback returns the actual H1, H2, or H3 Client engine after
+successful attachment, so the framework can retain it. Feed TCP bytes,
+EOF, errors and recovered output capacity directly to that engine. For
+HTTP/3, preserve QUIC Driver UDP and timer operation and let HTTP/3 own
+its stream callbacks. The pooled Client is not a byte-path forwarding object.
+
+C<defer> is necessary because the engine may invoke on_finish before its
+own response-retirement bookkeeping has unwound. Deferring new dispatch
+prevents re-entering an HTTP/1 engine from that callback.
+
+A factory failure uses C<$ready-E<gt>(error =E<gt> $reason)>. A request that
+never reached an engine calls on_error/on_finish with the request operation
+handle rather than pretending that an engine transaction exists. Do not
+automatically retry requests when connection outcome is ambiguous.
 
 =head1 OPTIONAL LINUX::EVENT ADAPTER
 
