@@ -419,7 +419,8 @@ sub _pump {
             push @kept, $conn;
         } else {
             $self->_release_connection($conn,
-                _closed($conn) ? 'closed' : 'draining');
+                _closed($conn) ? 'closed'
+                : $conn->{stale} ? 'network_changed' : 'draining');
         }
     }
     $pool->{connections} = \@kept;
