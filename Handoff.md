@@ -3,7 +3,7 @@
 Updated: 2026-10-17
 Repository: haxmeister/perl-Unblock-HTTP
 Branch: feature/high-level-client-server
-Status: Server, Client pool and authenticated Alt-Svc slices CI verified.
+Status: Server, Client, Alt-Svc, deadlines, H3 credit wakeup and idle pooling CI verified.
 
 ## Resume here
 
@@ -335,7 +335,35 @@ Design chosen for this slice:
   wrappers, unbounded timers, or automatic post-dispatch retry.
 No source edits to H1/H2/H3/QUIC/Uniform are expected.
 
-This is a plan until source CI passes.
+Implemented on the upper feature branch:
+- idle_timeout is opt-in, in seconds, requiring framework schedule_timer.
+  Idle timers are per idle connection, cancelled on reuse; zero active
+  transactions is insufficient when queued work is blocked on H2 SETTINGS
+  or H3 QUIC credit. Stale timers cannot close reused connections.
+- Optional release_connection(host, engine, protocol, reason) allows
+  adapter-owned resource cleanup. Defaults to engine->close if supported,
+  otherwise QUIC connection->close. Releases are guarded to run once.
+- Pool pruning and strict-protocol idle eviction now release resources.
+  Empty origin pools are removed when idle connections expire.
+- t/20-client-idle.t covers H1 idle reuse, timer cancellation, H2
+  multiplex last-stream cleanup, zero-peer-credit protection, H3
+  cleanup and strict cap evictions.
+- The real QUIC/TLS integration test now runs eight concurrent HTTP3
+  POST requests over a single shared Client connection and checks
+  distinct Uniform messages, real engine transaction identity,
+  complete request/response bodies and exact callback order without
+  assuming which stream completes first.
+- Verified code and tests: CI run 39073163329 PASS on
+  a0b8a0164e741e55010c954b1f35f0e7ee350e98.
+  12 distribution files / 487 checks plus 2 live TCP/QUIC
+  files / 78 checks. Subsequent commits only expand Client/Integration
+  POD, README and docs/IMPLEMENTATION.md.
+- No engine source change, release, version bump, merge, tag or main edit.
+  Net::QUIC and Uniform::HTTP remain read-only.
+
+Outstanding: network-change invalidation and pool status API, broader
+stream/backpressure stress and direct-engine performance comparisons,
+WebSocket integration and final application/framework adapter examples.
 
 ## Current implementation
 
