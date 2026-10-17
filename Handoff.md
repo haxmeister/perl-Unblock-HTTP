@@ -35,9 +35,10 @@ This file records the approved implementation plan and progress.
 ## Authorization and boundaries
 
 Change only perl-Unblock-HTTP. Reading dependency sources is authorized.
-Do not modify other repositories, push, merge, or release without approval.
-The branch and any local commits have NOT been pushed. A new environment
-cannot fetch this work from GitHub until a feature-branch push is approved.
+Do not modify other repositories, merge, or release without approval.
+The maintainer approved pushing this feature-branch checkpoint on 2026-10-17.
+That approval includes the continuation records. It does not authorize main
+changes or work in dependency repositories. Verify the remote branch on resume.
 The uploaded design handoff supersedes the former roadmap, especially its
 old exclusion of connection pooling. The package is Unblock::HTTP.
 Unblock::Web is reserved for future UserAgent/web-application facilities.
@@ -130,11 +131,13 @@ pre-transaction failures and finish callbacks before implementing this.
   README/POD/examples. Isolated suite: 5 files / 164 assertions PASS.
   POD parsing, manifest presence and whitespace checks passed. The source scan
   found no non-ASCII text in code, tests, examples or continuation documents.
-  Checkpoint is local; inspect git log for its commit. No push is authorized.
+  Implementation checkpoint: 46c49058b2285cca8eabdeef3810946e2950632b.
+- 2026-10-17: maintainer approved publishing this feature branch. Continuation
+  records updated before the push. Check the remote head and CI on resume.
 
 ## Continuing in another chat
 
-Use this prompt after the feature branch has been pushed with approval:
+Use this prompt to continue from the published feature branch:
 
     Continue haxmeister/perl-Unblock-HTTP on feature/high-level-client-server.
     Read Handoff.md and docs/IMPLEMENTATION.md before editing. The original
@@ -145,7 +148,7 @@ Use this prompt after the feature branch has been pushed with approval:
     authorization. Do not mistake this checkpoint for completed Server or
     Client APIs. Update Handoff.md after every substantial milestone.
 
-Until a push is approved, the new code exists only in this workspace and its
-local git history. A different environment cannot recover it just from the
-GitHub branch name. Ask for a feature-branch-only push after presenting the
-concrete checkpoint; never push main or infer cross-repository permission.
+Fetch feature/high-level-client-server from GitHub and inspect its latest
+commit before continuing. The publishing approval was for this checkpoint;
+never push main or infer cross-repository permission. CI results are not yet
+recorded here; verify the branch workflow before claiming live validation.

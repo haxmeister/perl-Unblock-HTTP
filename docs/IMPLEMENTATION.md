@@ -158,5 +158,6 @@ Live test sources were migrated but have not been executed here.
 
 The integration workflow now targets feature/high-level-client-server. It
 still installs engine repository heads; reproducible pins and additional live
-coverage remain work for the next stages. No workflow has been triggered by
-this local checkpoint. No benchmark result is claimed.
+coverage remain work for the next stages. The maintainer approved publishing
+this checkpoint on 2026-10-17. Check the branch workflow after the push; no live
+CI result is recorded here yet. No benchmark result is claimed.
