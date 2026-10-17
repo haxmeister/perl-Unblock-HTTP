@@ -147,6 +147,14 @@ origin authority and host. It MUST authenticate the QUIC peer for the
 original HTTPS origin and report C<verified_origin =E<gt> 1> for the
 request to be dispatched. A missing attestation rejects that alternative.
 
+The framework should call C<$client-E<gt>network_changed> after a
+meaningful route/interface/VPN transition. This explicitly clears
+old Alt-Svc hints and idle sockets. Active requests retain their
+transactions and finish or fail naturally without blind replay.
+Connection factories that were still pending are abandoned safely.
+C<$client-E<gt>pool_stats> exposes read-only counts for adapter
+diagnostics without requiring access to engine internals.
+
 A Client may enable C<idle_timeout> with its optional framework timer
 factory and C<release_connection> hook. On the first completely idle
 period after the last active transaction (and without waiting queued
