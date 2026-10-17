@@ -147,6 +147,15 @@ origin authority and host. It MUST authenticate the QUIC peer for the
 original HTTPS origin and report C<verified_origin =E<gt> 1> for the
 request to be dispatched. A missing attestation rejects that alternative.
 
+A Client may enable C<idle_timeout> with its optional framework timer
+factory and C<release_connection> hook. On the first completely idle
+period after the last active transaction (and without waiting queued
+requests), a timer runs. Reuse cancels the timer. When it expires, the
+framework release hook receives the actual transport and engine to
+perform its normal cleanup, with a reason string; it must not attach
+another engine to the released transport. Active streams and pending
+H2/H3 credit-blocked work are never expired.
+
 A Client may also receive C<schedule_timer =E<gt> sub { ... }> for
 application requests specifying C<timeout> in seconds. The callback
 receives the delay and an expiry callback, schedules a future framework
