@@ -7,6 +7,7 @@ lib/Unblock/HTTP/_Session.pm
 lib/Unblock/HTTP/Adapter/LinuxEvent.pm
 lib/Unblock/HTTP/Client.pm
 lib/Unblock/HTTP/_ClientOperation.pm
+lib/Unblock/HTTP/_AltSvc.pm
 lib/Unblock/HTTP/Integration.pm
 lib/Unblock/HTTP/QUIC.pm
 lib/Unblock/HTTP/Server.pm
@@ -26,3 +27,4 @@ docs/IMPLEMENTATION.md
 docs/ENGINE-CONTRACTS.md
 t/14-server-receive.t
 t/15-client-pool.t
+t/16-alt-svc.t
