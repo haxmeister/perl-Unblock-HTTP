@@ -288,15 +288,22 @@ the actual socket cleanup and should use the hook when required.
 t/20-client-idle.t covers reuse and timer invalidation, H2 multiplex
 lifetimes, peer-zero-credit demand, H3 resource cleanup, retirement at a
 strict connection cap, empty origin deletion and validation. The live
-QUIC suite is extended to issue eight independent POST transactions on
-one real H3 connection and verify each request and response by identity
-without assuming stream completion order. CI verification follows.
+QUIC suite issues eight independent POST transactions on one real H3
+connection and verifies each request and response by identity without
+assuming stream completion order.
+
+Source and expanded live regression CI run 39073163329 PASS at
+a0b8a0164e741e55010c954b1f35f0e7ee350e98:
+12 distribution files / 487 checks and 2 live TCP/QUIC files /
+78 checks. No performance claims or code changes to the three engines.
 
 ## Later design milestones
 
-Cross-host Alt-Svc, DNS HTTPS discovery, retries after engine dispatch,
-request timeout policy, peer-aware multiplexed capacity and pool idle
-cleanup are pending. These will need real multi-request socket tests.
+Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
+invalidation, safe retries after dispatch (if defensible), broader
+backpressure/load testing, and pool status/observability remain pending.
+Request deadlines, peer-aware H2 admission, H3 credit wakeup, and opt-in
+idle expiration are implemented and CI verified.
 
 WebSocket enablement is rejected. H2/H3 Extended CONNECT advertising is disabled.
 The raw H1 engine can still issue 101; a complete WebSocket permission gate and
