@@ -25,6 +25,8 @@ lib/Unblock/HTTP/_EngineFactory.pm
 t/13-server-attachment.t
 docs/IMPLEMENTATION.md
 docs/ENGINE-CONTRACTS.md
+docs/BENCHMARKING.md
+bench/client-vs-direct.pl
 t/14-server-receive.t
 t/15-client-pool.t
 t/16-alt-svc.t
