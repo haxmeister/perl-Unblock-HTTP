@@ -204,12 +204,42 @@ Planned slice:
    simultaneous origins. Extend the live TCP integration with concurrent
    client traffic. Verify new source CI before marking complete.
 
+Implemented and published on the upper feature branch:
+- H2 admission respects the real engine can_open_transaction, including peer
+  SETTINGS_MAX_CONCURRENT_STREAMS and draining/GOAWAY. Zero temporary peer
+  credit does not close a healthy connection. on_settings schedules a pump
+  so queued requests resume when peer credit increases.
+- Draining H2 and GOAWAY H3 engines are retired when idle, never while active.
+  Connection caps remain enforced while outstanding streams complete.
+- Synchronous factories are limited to the per-origin connection budget per
+  pump, preventing endless creation on a non-admitting peer.
+- A request returning undef from H3 engine->request (no QUIC bidi stream
+  credit) now reports one explicit pre-dispatch non-admission error and
+  releases its active slot; it cannot fabricate a Transaction or replay.
+  A ready connection without request capacity is recorded as queued, not
+  connecting.
+- New t/19-client-admission.t exercises zero/increased SETTINGS, draining H2,
+  synchronous factories, H3 no-credit/GOAWAY, and six independent origins.
+- The live TCP test now submits 12 H1 and 12 H2 requests with framework
+  owned timers. Initial run exposed a TEST-ONLY adapter bug: its old factory
+  attached several engine instances to one TCP stream. Corrected factory
+  creates a distinct LinuxEvent stream per connection. All 24 requests
+  completed with the corrected adapter.
+- Verified integration source CI: run 39065677169 on
+  e13e5004e60e3df28875d5164b61e3e74459bb9c passed 11 distribution
+  files / 419 checks plus 2 live TCP/QUIC files / 19 checks.
+- Later documentation-only commits clarify one-engine-per-socket and API
+  capacity limits; no engine repository source was changed.
+
+Remaining: H3 engine/QUIC stream availability notification is not exposed
+to the shared Client; current no-credit admission fails explicitly rather
+than queuing indefinitely. Peer-credit callback contract, automated
+network-change invalidation, idle cleanup, further fairness and load
+benchmarks remain subsequent milestones. No performance gains claimed.
+
 Unchanged: original-engine and Uniform identities, callback-first
 application API, transport-owned buffers, no required XS, strict HTTP
 version, timeout semantics, and no replay after dispatch.
-H3 stream-credit notification and true peer-aware admission remain
-follow-up engine-contract work if tests show the need. No source change
-is planned for H1/H2/H3 in this slice.
 
 ## Current implementation
 
@@ -316,8 +346,8 @@ and inspection inputs only; never publish modifications there.
    pass CI 39064100968 (371 distribution and 17 live checks).
    H1 terminal callback reentrancy is also CI-verified in run
    39064232198 (375 distribution / 17 live checks). Next milestones:
-   peer-aware stream capacity, multi-origin stress testing, pool eviction,
-   and conservative transport-change handling.
+   H3 peer-credit readiness notification, broader multiorigin live
+   stress, pool idle eviction and conservative transport-change handling.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
