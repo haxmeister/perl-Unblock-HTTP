@@ -23,7 +23,7 @@ sub new {
     }
     my $policy = Unblock::HTTP::_Policy->new(%protocols);
     my %factory;
-    for my $name (qw(connect_stream connect_quic defer schedule_timer)) {
+    for my $name (qw(connect_stream connect_quic defer schedule_timer release_connection)) {
         $factory{$name} = delete $option{$name} if exists $option{$name};
         croak "new(): $name must be a coderef"
             if exists($factory{$name}) && ref($factory{$name}) ne 'CODE';
@@ -41,6 +41,17 @@ sub new {
     my $alt_svc = Unblock::HTTP::_AltSvc->new(
         (defined($clock) ? (clock => $clock) : ()),
     );
+
+    my $idle_timeout = delete $option{idle_timeout};
+    if (defined $idle_timeout) {
+        croak 'new(): idle_timeout must be a positive number of seconds'
+            if ref($idle_timeout)
+                || $idle_timeout !~ /\A(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\z/
+                || $idle_timeout <= 0;
+        croak 'new(): idle_timeout requires schedule_timer callback'
+            unless $factory{schedule_timer};
+        $idle_timeout += 0;
+    }
 
     my %limit;
     for my $key (qw(max_pending_requests max_connections_per_origin max_streams_per_connection)) {
@@ -60,6 +71,7 @@ sub new {
         pending_count => 0,
         pools => {},
         alt_svc => $alt_svc,
+        idle_timeout => $idle_timeout,
     }, $class;
 }
 
@@ -209,7 +221,8 @@ sub _closed {
 sub _usable {
     my ($self, $conn, $version) = @_;
     return 0 unless _compatible($version, $conn->{protocol});
-    return 0 if _closed($conn) || _retired($conn) || $conn->{credit_blocked};
+    return 0 if $conn->{released} || _closed($conn) || _retired($conn)
+        || $conn->{credit_blocked};
     my $capacity = $conn->{protocol} eq 'http/1.1'
         ? 1 : $self->{limit}{max_streams_per_connection};
     return 0 if $conn->{active} >= $capacity;
@@ -219,6 +232,103 @@ sub _usable {
     return 1;
 }
 
+# A pooled transport is released once. The framework may own the socket
+# and its close semantics, so allow its adapter to perform final cleanup.
+sub _cancel_idle {
+    my ($self, $conn) = @_;
+    $conn->{idle_generation}++;
+    my $cancel = delete $conn->{idle_cancel} or return;
+    eval { $cancel->(); 1 } or warn "idle timer cancellation failed: $@";
+    return;
+}
+
+sub _release_connection {
+    my ($self, $conn, $reason) = @_;
+    return if $conn->{released};
+    $conn->{released} = 1;
+    $self->_cancel_idle($conn);
+    my $release = $self->{factory}{release_connection};
+    my $ok = eval {
+        if ($release) {
+            $release->($conn->{host}, $conn->{engine}, $conn->{protocol}, $reason);
+        } elsif ($conn->{engine}->can('close')) {
+            $conn->{engine}->close;
+        } elsif ($conn->{host}->can('close')) {
+            # Current HTTP/3 Client has no close(), but Net::QUIC does.
+            $conn->{host}->close;
+        }
+        1;
+    };
+    warn "connection release failed: $@" unless $ok;
+    return;
+}
+
+sub _drop_connection {
+    my ($self, $pool, $conn, $reason) = @_;
+    return if $conn->{active};
+    $pool->{connections} = [
+        grep { $_ != $conn } @{ $pool->{connections} }
+    ];
+    $self->_release_connection($conn, $reason);
+    $self->_delete_empty_pool($pool);
+    return;
+}
+
+sub _delete_empty_pool {
+    my ($self, $pool) = @_;
+    return if $pool->{connecting}
+        || @{ $pool->{pending} } || @{ $pool->{connections} };
+    my $key = $pool->{info}{key};
+    delete $self->{pools}{$key}
+        if exists $self->{pools}{$key}
+            && $self->{pools}{$key} == $pool;
+    return;
+}
+
+sub _sync_idle {
+    my ($self, $pool) = @_;
+    my $idle_timeout = $self->{idle_timeout};
+    return unless defined $idle_timeout;
+    my $waiting = $pool->{connecting} || @{ $pool->{pending} };
+    for my $conn (@{ $pool->{connections} }) {
+        if ($waiting || $conn->{active} || $conn->{released}) {
+            $self->_cancel_idle($conn) if $conn->{idle_cancel};
+            next;
+        }
+        next if $conn->{idle_cancel};
+        my $generation = ++$conn->{idle_generation};
+        my $weak_self = $self;
+        my $weak_pool = $pool;
+        my $weak_conn = $conn;
+        weaken($weak_self);
+        weaken($weak_pool);
+        weaken($weak_conn);
+        my $ok = eval {
+            my $cancel = $self->{factory}{schedule_timer}->(
+                $idle_timeout,
+                sub {
+                    return unless $weak_self && $weak_pool && $weak_conn;
+                    return unless $weak_conn->{idle_generation} == $generation;
+                    delete $weak_conn->{idle_cancel};
+                    return if $weak_conn->{released}
+                        || $weak_conn->{active}
+                        || $weak_pool->{connecting}
+                        || @{ $weak_pool->{pending} };
+                    $weak_self->_drop_connection(
+                        $weak_pool, $weak_conn, 'idle_timeout',
+                    );
+                },
+            );
+            die "schedule_timer must return cancellation coderef\n"
+                unless ref($cancel) eq 'CODE';
+            $conn->{idle_cancel} = $cancel;
+            1;
+        };
+        warn "idle timer setup failed: $@" unless $ok;
+    }
+    return;
+}
+
 sub _pump {
     my ($self, $pool) = @_;
     # Application on_finish can synchronously enqueue another request.
@@ -226,10 +336,19 @@ sub _pump {
     return if $pool->{pumping} || $pool->{callback_depth};
     local $pool->{pumping} = 1;
     my $attempt_budget = $self->{limit}{max_connections_per_origin};
-    $pool->{connections} = [
-        grep { $_->{active} || (!_closed($_) && !_retired($_)) }
-        @{ $pool->{connections} }
-    ];
+    my @kept;
+    for my $conn (@{ $pool->{connections} }) {
+        if ($conn->{active} || (!_closed($conn) && !_retired($conn))) {
+            push @kept, $conn;
+        } else {
+            $self->_release_connection($conn,
+                _closed($conn) ? 'closed' : 'draining');
+        }
+    }
+    $pool->{connections} = \@kept;
+    # Pending demand is not idle, even if the peer temporarily offers no
+    # H2/H3 request stream credit.
+    $self->_sync_idle($pool);
     while (@{ $pool->{pending} }) {
         my $op = $pool->{pending}[0];
         if ($op->is_terminal) {
@@ -255,7 +374,7 @@ sub _pump {
                     || _closed($idle) || _retired($idle);
                 next unless $unusable;
                 splice @{ $pool->{connections} }, $i, 1;
-                $idle->{engine}->close if $idle->{engine}->can('close');
+                $self->_release_connection($idle, 'evicted');
                 last;
             }
         }
@@ -266,6 +385,8 @@ sub _pump {
         $self->_connect($pool, $op);
         last if $pool->{connecting};
     }
+    $self->_sync_idle($pool);
+    $self->_delete_empty_pool($pool);
 }
 
 sub _connect {
@@ -463,6 +584,7 @@ sub _learn_alt_svc {
 
 sub _dispatch {
     my ($self, $pool, $conn, $op) = @_;
+    $self->_cancel_idle($conn) if $conn->{idle_cancel};
     $conn->{active}++;
     $op->{state} = 'active';
     my $callbacks = $op->{callbacks};
