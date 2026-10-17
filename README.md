@@ -7,7 +7,8 @@ existing engines. This distribution adds no XS.
 This feature branch is under development. The reusable Server and direct
 connection attachment are implemented, along with the first shared Client
 factory, request-handle, bounded queue and pooling slice. WebSocket transitions,
-cross-host Alt-Svc, post-dispatch retries and timeout policy are not implemented yet. The
+cross-host Alt-Svc and post-dispatch retries remain unimplemented; optional
+framework-driven request deadlines are now available. The
 buffered and streamed callbacks require the coordinated engine feature
 branches. Read [implementation status](docs/IMPLEMENTATION.md) before using
 the branch. It is not a release candidate.
@@ -134,6 +135,14 @@ engine, then calls `on_response` once after body completion. Supplying
 `on_data` automatically streams the response: `on_response` fires when
 headers arrive, then `on_data($tx, $chunk)`, `on_end($tx)`, and terminal
 `on_finish($tx)`. Client buffering does not add another body accumulator.
+
+A request may set `timeout => $seconds` to cover queuing, establishment,
+and its active HTTP transaction. The framework adapter supplies an optional
+`schedule_timer($seconds, $callback)` constructor callback returning a timer
+cancellation coderef. A timed-out active request cancels its real engine
+transaction and reports a timeout on the operation. A factory can return
+a cancellation coderef so a timed-out or manually cancelled connection
+attempt releases its pool slot; late factory readiness is ignored.
 
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
