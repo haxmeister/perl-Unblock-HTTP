@@ -530,7 +530,27 @@ Next validated profiling slice:
 - Verify with CI, leave all engine and read-only dependency sources alone,
   update this handoff with results, and preserve main/release restrictions.
 
-This is a plan until new source CI and profiler output are recorded.
+Measured setup profiling CI 39079013272 PASS: 13 distribution files
+/ 543 checks, 3 live files / 145 checks. 1000 measured requests with
+100 warmup, 3 rounds: H1 direct median synchronous request() 45.61 us,
+unified 93.18 us; H2 direct 45.22 us, unified 99.82 us. URI-only
+validation microbench median 9.871 us, Uniform object-only median
+10.425 us, combined 20.872 us on the same CI runner. Bench
+instrumentation adds a clock call to both modes, so raw values are
+not directly comparable to earlier uninstrumented runs. No production
+hot-path code changed for that measurement.
+
+Next narrow candidate: direct-dispatch a request on an already
+available healthy pooled engine when the origin has no queued
+operations, no in-flight factory, no callback reentrancy or deferred
+maintenance, and idle expiration is disabled. The engine transaction
+remains native. All other requests follow the existing bounded pump.
+Add regressions to prove the shortcut is not used for queued H1 work,
+active on_finish reentrancy, or idle timer lifecycle. Compare three
+alternate-order CI rounds again before declaring benefit.
+
+No main/release or engine changes. This is an optimization plan until
+its separate source and regression CI pass.
 
 ## Current implementation
 
