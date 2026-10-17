@@ -169,6 +169,48 @@ Implementation now published on the upper feature branch:
   claim has been measured. Broad live concurrency and peer-aware capacity
   coordination remain later work.
 
+## Client pool admission and retirement (2026-10-17)
+
+Starting refs verified: upper 21d6899d234dc157715ac4385d02b3733a65ef05,
+HTTP1 99edf2fa99816a383915cd1a0989dda93036a495,
+HTTP2 51fb1ad9ef97ff7a4451b10d14a505df4d55fae4,
+HTTP3 e35bd69874cb45ea37094cf58e9ed807b46ad6d9.
+All upper CI through run 39064361372 PASS; main refs unchanged.
+There is no network-capable shell checkout in this session, so edits are
+published directly through the GitHub connector to the feature ref.
+
+Admission review: H2 Client->can_open_transaction respects peer
+SETTINGS_MAX_CONCURRENT_STREAMS, local active cap and draining.
+H3 Connection->_submit_request returns undef if QUIC open_bidi_stream
+has no credit. The H3 Client has no public can_open_transaction or
+availability event for the pool. Do not pretend configured upper limits
+are peer credit; do not re-submit or auto-replay a dispatched request.
+
+Planned slice:
+1. Prevent synchronous factory completion loops when a connected H2
+   peer advertises zero concurrent streams or a connection immediately
+   becomes non-admitting. Bound new connection attempts per pump, and
+   do not spin/allocate unbounded connections during reentrant callbacks.
+2. Respect H2 admission/draining while distinguishing busy (temporarily
+   full) connections from idle retired connections. Reap unusable idle
+   engines; never abort active transactions for capacity reclamation.
+   Enforce the per-origin connection limit and bounded queue.
+3. Detect an H3 request() result of undef. A request has not been
+   admitted; do not mark it active forever, do not call on_finish on a
+   made-up transaction, and do not blindly replay. Surface a terminal
+   admission error unless a real engine notification API is added later.
+4. Add adversarial pool tests for zero-capacity peer, reentrant factory
+   completion, draining H2, strictly-versioned queue behavior, and
+   simultaneous origins. Extend the live TCP integration with concurrent
+   client traffic. Verify new source CI before marking complete.
+
+Unchanged: original-engine and Uniform identities, callback-first
+application API, transport-owned buffers, no required XS, strict HTTP
+version, timeout semantics, and no replay after dispatch.
+H3 stream-credit notification and true peer-aware admission remain
+follow-up engine-contract work if tests show the need. No source change
+is planned for H1/H2/H3 in this slice.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
