@@ -23,7 +23,7 @@ sub new {
     }
     my $policy = Unblock::HTTP::_Policy->new(%protocols);
     my %factory;
-    for my $name (qw(connect_stream connect_quic defer)) {
+    for my $name (qw(connect_stream connect_quic defer schedule_timer)) {
         $factory{$name} = delete $option{$name} if exists $option{$name};
         croak "new(): $name must be a coderef"
             if exists($factory{$name}) && ref($factory{$name}) ne 'CODE';
@@ -118,6 +118,14 @@ sub request {
         croak "request(): $name must be a coderef" unless ref($cb) eq 'CODE';
         $callbacks{$name} = $cb;
     }
+    my $timeout = delete $field{timeout};
+    if (defined $timeout) {
+        croak 'request(): timeout must be a positive number of seconds'
+            if ref($timeout) || $timeout !~ /\A(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\z/
+                || $timeout <= 0;
+        croak 'request(): timeout requires schedule_timer callback'
+            unless $self->{factory}{schedule_timer};
+    }
     my $stream_body = delete($field{stream_body}) ? 1 : 0;
     croak 'request(): on_drain requires stream_body'
         if $callbacks{on_drain} && !$stream_body;
@@ -153,6 +161,14 @@ sub request {
             $op->{alt_svc} = $advertised;
             $op->{version} = 'h3';
         }
+    }
+    if (defined $timeout) {
+        my $cancel = $self->{factory}{schedule_timer}->(
+            0 + $timeout, sub { $self->_request_timeout($op, $timeout) },
+        );
+        croak 'request(): schedule_timer must return a cancellation coderef'
+            unless ref($cancel) eq 'CODE';
+        $op->{timer_cancel} = $cancel;
     }
     push @{ $origin->{pending} }, $op;
     $self->{pending_count}++;
@@ -237,11 +253,17 @@ sub _connect {
     my $quic = $version eq 'h3';
     my $alt = $op->{alt_svc};
     my $factory = $self->{factory}{ $quic ? 'connect_quic' : 'connect_stream' };
+    my $attempt = { op => $op, cancelled => 0, completed => 0 };
     $pool->{connecting} = 1;
+    $pool->{attempt} = $attempt;
     $op->{state} = 'connecting';
     my $called = 0;
     my $ready = sub {
         return if $called++;
+        # A cancelled/timed-out factory must not attach its late transport.
+        return unless $pool->{attempt} && $pool->{attempt} == $attempt;
+        $attempt->{completed} = 1;
+        delete $pool->{attempt};
         $pool->{connecting} = 0;
         my %result = @_;
         my $engine;
@@ -257,6 +279,7 @@ sub _connect {
     };
     my @alpn = $version eq 'tcp'
         ? $self->alpn_protocols : ($version eq 'h3' ? ('h3') : ($version));
+    my $cancel;
     my $ok = eval {
         if ($quic) {
             my $info = $pool->{info};
@@ -267,13 +290,51 @@ sub _connect {
                     alternative_port => $alt->{port},
                 };
             }
-            $factory->($info, $ready);
+            $cancel = $factory->($info, $ready);
         } else {
-            $factory->($pool->{info}, \@alpn, $ready);
+            $cancel = $factory->($pool->{info}, \@alpn, $ready);
         }
         1;
     };
-    $ready->(error => "$@") unless $ok || $called;
+    if (ref($cancel) eq 'CODE' && !$attempt->{completed}) {
+        if ($attempt->{cancelled}) {
+            eval { $cancel->(); 1 } or warn "connection cancellation failed: $@";
+        } else {
+            $attempt->{cancel} = $cancel;
+        }
+    }
+    $ready->(error => "$@") unless $ok || $called || $attempt->{cancelled};
+}
+
+# A pending request may abandon its own factory without holding the origin
+# hostage. The framework may return a cancellation callback from the factory.
+sub _abandon_connect {
+    my ($self, $pool, $op) = @_;
+    my $attempt = $pool->{attempt} or return;
+    return unless $attempt->{op} == $op;
+    delete $pool->{attempt};
+    $pool->{connecting} = 0;
+    $attempt->{cancelled} = 1;
+    if (my $cancel = delete $attempt->{cancel}) {
+        eval { $cancel->(); 1 } or warn "connection cancellation failed: $@";
+    }
+    return;
+}
+
+sub _request_timeout {
+    my ($self, $op, $seconds) = @_;
+    return if $op->is_terminal;
+    my $error = "request timed out after $seconds seconds";
+    if (my $tx = $op->{transaction}) {
+        # Engine cancellation preserves protocol-specific stream isolation.
+        # The operation separately reports expiration as a timeout error.
+        $op->{timeout_error} = $error;
+        $tx->cancel;
+        return;
+    }
+    $self->_fail_pending($op->{origin}, $op, $error);
+    $self->_schedule($op->{origin});
+    return;
 }
 
 sub _connected {
@@ -393,10 +454,16 @@ sub _dispatch {
         my ($tx) = @_;
         return if $op->is_terminal;
         $op->{transaction} ||= $tx;
-        $op->{state} = $tx->is_cancelled ? 'cancelled'
+        $op->{state} = $op->{timeout_error} ? 'error'
+            : $tx->is_cancelled ? 'cancelled'
             : $tx->is_error ? 'error' : 'complete';
-        $op->{error} = $tx->error if $tx->is_error;
+        $op->{error} = $op->{timeout_error} || ($tx->is_error ? $tx->error : undef);
+        $op->_cancel_timer;
         $conn->{active}--;
+        if ($op->{timeout_error} && $callbacks->{on_error}) {
+            eval { $callbacks->{on_error}->($tx, $op->{timeout_error}); 1 }
+                or warn $@;
+        }
         my $ok = eval {
             $callbacks->{on_finish}->($tx) if $callbacks->{on_finish};
             1;
@@ -440,11 +507,13 @@ sub _fail_active {
     return if $op->is_terminal;
     $op->{state} = 'error';
     $op->{error} = $error;
+    $op->_cancel_timer;
     $self->_pending_callbacks($op, 1);
 }
 
 sub _fail_pending {
     my ($self, $pool, $op, $error) = @_;
+    $self->_abandon_connect($pool, $op);
     for (my $i = 0; $i < @{ $pool->{pending} }; $i++) {
         next unless $pool->{pending}[$i] == $op;
         splice @{ $pool->{pending} }, $i, 1;
@@ -454,6 +523,7 @@ sub _fail_pending {
     return if $op->is_terminal;
     $op->{state} = 'error';
     $op->{error} = $error;
+    $op->_cancel_timer;
     $self->_pending_callbacks($op, 1);
 }
 
@@ -473,6 +543,7 @@ sub _pending_callbacks {
 sub _cancel_queued {
     my ($self, $op) = @_;
     my $pool = $op->{origin};
+    $self->_abandon_connect($pool, $op);
     for (my $i = 0; $i < @{ $pool->{pending} }; $i++) {
         next unless $pool->{pending}[$i] == $op;
         splice @{ $pool->{pending} }, $i, 1;
