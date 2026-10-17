@@ -29,15 +29,14 @@ BEGIN {
     }
 }
 
-use Unblock::HTTP::Client;
-use Unblock::HTTP::Server;
+use Unblock::HTTP::_Session;
 
 my $host = bless {}, 'TestTransport';
 my $quic = bless {}, 'TestQuic';
 
-my $client = Unblock::HTTP::Client->new(protocol => 'h2', transport => $host);
+my $client = Unblock::HTTP::_Session->_new('Client', protocol => 'h2', transport => $host);
 isa_ok($client->backend, 'Unblock::HTTP2::Client');
-is($client->request(method => 'GET', target => '/'), 'transaction', 'request result passed through');
+is($client->backend->request(method => 'GET', target => '/'), 'transaction', 'low-level request result passed through');
 is_deeply($client->backend->{request_args}, [method => 'GET', target => '/'], 'request args unchanged');
 
 for my $case (
@@ -48,7 +47,7 @@ for my $case (
     [ { transport => $host, quic => $quic }, qr/both quic and transport/ ],
 ) {
     my ($options, $error) = @$case;
-    my $success = eval { Unblock::HTTP::Client->new(%$options); 1 };
+    my $success = eval { Unblock::HTTP::_Session->_new('Client', %$options); 1 };
     ok(!$success, 'bad protocol/transport combination rejected');
     like($@, $error, 'specific error');
 }
