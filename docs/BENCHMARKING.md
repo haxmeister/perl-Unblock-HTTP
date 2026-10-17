@@ -9,9 +9,9 @@ and transport correctness.
 
     perl Makefile.PL
     make
-    perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 5000 500
+    perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 5000 500 5
 
-The two numeric arguments are measured completed requests and warmup requests.
+The arguments are measured completed requests, warmup requests and rounds.
 The harness runs the same short GET/200 loopback workload in two modes:
 
 - direct: application uses Unblock::HTTP1::Client or
