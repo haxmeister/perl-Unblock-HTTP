@@ -2,7 +2,7 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Status: Server, Client pool and Alt-Svc CI verified; request deadline slice in validation. Not a release candidate.
+Status: Server, Client pool, Alt-Svc and optional deadlines CI verified. Not a release candidate.
 
 ## Implemented
 
@@ -200,7 +200,15 @@ cancellation remains separate and does not invoke on_error.
 
 t/18-client-timeouts.t supplies deterministic framework-timer and fake
 transport tests, including late factory readiness, queue release and
-callback ordering. CI validation for this slice is pending below.
+callback ordering. The live HTTP1/H2 tests also use actual framework timers,
+confirming successful operation cleanup.
+
+Run 39064100968 passed at commit f8be6219a7db440b8fe38acbcf5741066f7c488d:
+10 distribution test files / 371 checks and two live TCP/QUIC test files /
+17 checks. After this run, the upper Client and t/15 gained an additional
+terminal callback dispatch guard and regression: a request enqueued inside
+H1 on_finish must wait for the next framework deferred turn instead of
+reentering the engine. Final CI for this guard is pending.
 
 ## Later design milestones
 
