@@ -200,7 +200,9 @@ sub _usable {
 
 sub _pump {
     my ($self, $pool) = @_;
-    return if $pool->{pumping};
+    # Application on_finish can synchronously enqueue another request.
+    # Wait for the engine terminal callback to unwind before reusing H1.
+    return if $pool->{pumping} || $pool->{callback_depth};
     local $pool->{pumping} = 1;
     $pool->{connections} = [
         grep {
@@ -453,6 +455,7 @@ sub _dispatch {
     $engine_callback{on_finish} = sub {
         my ($tx) = @_;
         return if $op->is_terminal;
+        local $pool->{callback_depth} = ($pool->{callback_depth} || 0) + 1;
         $op->{transaction} ||= $tx;
         $op->{state} = $op->{timeout_error} ? 'error'
             : $tx->is_cancelled ? 'cancelled'
