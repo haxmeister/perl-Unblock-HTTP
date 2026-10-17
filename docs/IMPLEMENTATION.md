@@ -267,6 +267,31 @@ available; the notification may race other QUIC users, so another failed
 admission simply re-arms the signal. The pool does not infer or cache
 a fabricated stream limit.
 
+## Opt-in idle connection expiry (2026-10-17)
+
+The shared Client accepts idle_timeout as a positive duration in seconds,
+with no default expiration. It requires the existing framework
+schedule_timer(seconds, callback) contract. A connection with zero active
+transactions and no queued demand for its origin gets one cancellable
+one-shot timer. Reusing it cancels the pending timer; a stale timer cannot
+close that active engine. Completion begins a fresh idle lifetime. Queued
+H2 SETTINGS-limited and H3 credit-limited operations hold their connection
+in an active pool without idle eviction.
+
+release_connection(host, engine, protocol, reason) is an optional framework
+cleanup hook called once per retired connection. The Client releases
+idle-expired, non-reusable and capacity-evicted engines; when the hook is
+absent, it invokes engine close when available, otherwise the QUIC
+connection close. Empty idle origin pools are removed. Frameworks own
+the actual socket cleanup and should use the hook when required.
+
+t/20-client-idle.t covers reuse and timer invalidation, H2 multiplex
+lifetimes, peer-zero-credit demand, H3 resource cleanup, retirement at a
+strict connection cap, empty origin deletion and validation. The live
+QUIC suite is extended to issue eight independent POST transactions on
+one real H3 connection and verify each request and response by identity
+without assuming stream completion order. CI verification follows.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, retries after engine dispatch,
