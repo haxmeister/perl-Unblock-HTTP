@@ -320,7 +320,13 @@ observability, not a new cross-protocol buffering layer.
 t/21-client-network.t covers factory cancellation, repeated changes,
 stale ready suppression, active HTTP2 retention, stale Alt-Svc,
 idle timer cleanup, H3 credit-blocked migration, and read-only
-snapshot contents. Final CI must pass before marking this verified.
+snapshot contents.
+
+Verified CI 39073823298 on source/test commit
+9727113f5f85382f69026af74b67e7b5ac643aaf:
+13 distribution test files / 540 checks PASS; two live H1/H2/H3
+TCP/QUIC files / 78 checks PASS. No engine or transport dependency
+source was edited; subsequent commits change only documentation.
 
 ## Later design milestones
 
