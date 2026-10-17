@@ -191,6 +191,21 @@ sub _pump {
             next;
         }
         last if $pool->{connecting};
+        if (@{ $pool->{connections} } >= $self->{limit}{max_connections_per_origin}) {
+            # Never strand a strict request behind an idle, unusable engine.
+            for (my $i = 0; $i < @{ $pool->{connections} }; $i++) {
+                my $idle = $pool->{connections}[$i];
+                next if $idle->{active};
+                my $unusable = !_compatible($op->{version}, $idle->{protocol});
+                $unusable ||= $idle->{protocol} eq 'h2'
+                    && $idle->{engine}->can('can_open_transaction')
+                    && !$idle->{engine}->can_open_transaction;
+                next unless $unusable;
+                splice @{ $pool->{connections} }, $i, 1;
+                $idle->{engine}->close if $idle->{engine}->can('close');
+                last;
+            }
+        }
         last if @{ $pool->{connections} } >= $self->{limit}{max_connections_per_origin};
         $self->_connect($pool, $op);
         last if $pool->{connecting};
