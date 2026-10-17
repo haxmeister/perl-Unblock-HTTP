@@ -3,7 +3,7 @@
 Updated: 2026-10-17
 Repository: haxmeister/perl-Unblock-HTTP
 Branch: feature/high-level-client-server
-Status: Server verified; first Client factory/pooling slice CI verified.
+Status: Server, Client pool and authenticated Alt-Svc slices CI verified.
 
 ## Resume here
 
@@ -94,8 +94,21 @@ Coherent next slice:
    expiry, clear, failure fallback, unsafe replay guards; run distribution
    and live integration CI. Update docs and this handoff as tested.
 
-This section initially records the proposed implementation sequence; do not
-call it verified until a real passing source CI run is recorded below.
+Implemented in _AltSvc.pm and Client.pm on this upper feature branch.
+Same-host h3=":port" advertisements are accepted from authenticated HTTPS
+responses only, and the QUIC factory must attest TLS authentication for
+the original origin before dispatch. Expiry, Age, ma, clear and bounded
+in-memory entries are covered. Cross-host Alt-Svc is not implemented.
+Unsent advertised QUIC requests (including POST) may fall back once to TCP;
+already dispatched requests are never replayed, even GET.
+
+Verification: CI run 39062960467 passed at source commit
+557cb101e5cd2342368d43f18afc400e69546634 with 9 distribution files /
+316 top-level checks and 2 live TCP/QUIC tests / 15 checks.
+Additional API documentation and verified_origin normalization commits were
+also CI-green (39063045212, 39063081185, 39063084160). The latter are
+source/documentation corrections, not new engine dependency changes.
+No speedup or zero-copy claim has been made.
 
 ## Current implementation
 
@@ -193,9 +206,11 @@ and inspection inputs only; never publish modifications there.
 1. Ordinary Server milestone is complete. Upper run 39059172525 passed the
    182 distribution checks and 15 live TCP/QUIC checks.
 2. Preserve this milestone on feature branches, with no release or merge.
-3. The first Client factories/operation/scheduling/pooling slice passes CI
-   run 39062105591 (256 distribution checks and 15 live tests). Next:
-   validated Alt-Svc, retry and timeout policy, plus wider pool stress tests.
+3. First Client factories/pooling passes CI run 39062105591, and same-host
+   authenticated Alt-Svc + pre-dispatch fallback passes CI 39062960467
+   (316 distribution checks and 15 live tests). Remaining: timeout policy,
+   network change/cache invalidation, retries only with verifiable safe
+   eligibility, peer-aware pool capacity, and wider live pool stress tests.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
