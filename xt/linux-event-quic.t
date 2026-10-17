@@ -8,7 +8,9 @@ use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Address;
 use Linux::Event::Kernel::Timer;
 use Linux::Event::Loop;
+use Net::QUIC::Driver;
 use Unblock::HTTP::QUIC;
+use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
 
 my $dir = tempdir(CLEANUP => 1);
@@ -23,7 +25,7 @@ if ($openssl != 0) {
 }
 
 my $loop = Linux::Event::Loop->new;
-my ($server, $client, $server_timer, $client_timer, $client_socket);
+my ($server, $client, $client_driver, $server_timer, $client_timer, $client_socket);
 my ($body, $error, $requests, $ready) = ('', undef, 0, 0);
 my ($header_request, $header_tx, $received_body);
 my @server_events;
@@ -78,28 +80,60 @@ $server = Unblock::HTTP::QUIC->server(
 );
 $server->start;
 
+# The server uses the small QUIC helper. The client instead uses
+# Net::QUIC::Driver directly as the framework transport, handing the
+# authenticated ready connection to the shared Client's factory.
+my ($ready_factory, $client_quic, $attached);
+my $check_ready = sub {
+    return unless $ready_factory && $client_quic && $client_quic->ready;
+    return if $attached++;
+    $ready++;
+    $ready_factory->(
+        connection => $client_quic,
+        verified_origin => 1,
+    );
+};
+
 $client_socket = Linux::Event::IO::Sock::Dgram->connect(
     loop => $loop, host => '127.0.0.1', port => $server_socket->local->port,
     on_ready => sub ($socket) {
-        $client = Unblock::HTTP::QUIC->client(
+        $client = Unblock::HTTP::Client->new(
+            http3 => {},
+            max_connections_per_origin => 1,
+            connect_quic => sub {
+                my ($origin, $callback) = @_;
+                $ready_factory = $callback;
+            },
+            defer => sub {
+                my ($callback) = @_;
+                $loop->defer($callback);
+            },
+        );
+        my $operation = $client->request(
+            method => 'POST', url => 'https://localhost/',
+            body => "request over quic\n",
+            http_version => '3',
+            on_response => sub ($tx, $response) {
+                $error = "HTTP/3 status " . $response->status
+                    unless $response->status == 200;
+                $body = $response->body;
+            },
+            on_error => sub ($tx, $e) {
+                $error = "HTTP/3: $e";
+                $loop->stop;
+            },
+            on_finish => sub ($tx) {
+                $error ||= 'HTTP/3 request was not complete'
+                    unless $tx->is_complete;
+                $loop->stop;
+            },
+        );
+        $client_driver = Net::QUIC::Driver->client(
             local => $socket->local->sockaddr,
             peer => $socket->peer->sockaddr,
-            server_name => 'localhost', ca_file => $cert,
-            on_ready => sub ($http, $manager) {
-                $ready++;
-                $http->request(
-                    method => 'POST', target => '/', scheme => 'https',
-                    body => "request over quic\n",
-                    authority => 'localhost',
-                    on_response => sub ($tx, $response) {
-                        $error = "HTTP/3 status " . $response->status
-                            unless $response->status == 200;
-                    },
-                    on_body => sub ($tx, $response, $bytes) { $body .= $bytes },
-                    on_complete => sub ($tx) { $loop->stop },
-                    on_error => sub ($tx, $e) { $error = "HTTP/3: $e"; $loop->stop },
-                );
-            },
+            alpn => 'h3',
+            server_name => 'localhost',
+            ca_file => $cert,
             send => sub ($datagram) { $socket->send($datagram->data) },
             set_timeout => sub ($seconds) {
                 $client_timer->cancel if $client_timer && $client_timer->is_active;
@@ -107,17 +141,31 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 if (defined $seconds) {
                     $client_timer = Linux::Event::Kernel::Timer->new(
                         loop => $loop, after => $seconds,
-                        on_timer => sub ($t) { undef $client_timer; $client->timeout },
+                        on_timer => sub ($t) {
+                            undef $client_timer;
+                            $client_driver->timeout;
+                            $check_ready->();
+                        },
                     );
                 }
             },
         );
-        $client->start;
+        $client_quic = $client_driver->connection;
+        $client_driver->start;
+        $check_ready->();
     },
     on_datagram => sub ($socket, $bytes, $peer) {
-        $client->receive($bytes, $socket->local->sockaddr, $peer->sockaddr) if $client;
+        if ($client_driver) {
+            $client_driver->receive(
+                $bytes, $socket->local->sockaddr, $peer->sockaddr,
+            );
+            $check_ready->();
+        }
     },
-    on_drain => sub ($socket) { $client->writable if $client },
+    on_drain => sub ($socket) {
+        $client_driver->writable if $client_driver;
+        $check_ready->();
+    },
     on_error => sub ($socket, $e) { $error = "client UDP: $e"; $loop->stop },
 );
 my $limit = Linux::Event::Kernel::Timer->new(
