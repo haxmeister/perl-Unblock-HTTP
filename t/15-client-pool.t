@@ -355,4 +355,71 @@ is(scalar(@quiet_ready), 1, 'quiet connection remains reusable without scheduled
 $quiet_second->transaction->finish;
 is(scalar(@quiet_defer), 0, 'second quiet completion also avoids redundant defer');
 
+# Observe the scheduler boundary without changing the engine/transport.
+# A ready multiplexed connection may dispatch immediately without a full
+# queue scan, but saturated or idle-managed connections still use _pump.
+package PoolTest::TrackedClient;
+our @ISA = ('Unblock::HTTP::Client');
+sub _pump {
+    $_[0]{pump_calls}++;
+    $_[0]->SUPER::_pump($_[1]);
+}
+package main;
+
+my (@fast_ready, @fast_defer);
+my $fast = PoolTest::TrackedClient->new(
+    http2 => {},
+    max_connections_per_origin => 1,
+    max_streams_per_connection => 2,
+    connect_stream => sub { push @fast_ready, $_[2] },
+    defer => sub { push @fast_defer, $_[0] },
+);
+my $fast_one = $fast->request(
+    url => 'https://fastpool.test/one', http_version => '2',
+);
+$fast_ready[0]->(transport => PoolTest::Transport->new, alpn => 'h2');
+my $scans_before = $fast->{pump_calls};
+my $fast_two = $fast->request(
+    url => 'https://fastpool.test/two', http_version => '2',
+);
+is($fast_two->state, 'active', 'fast pooled request dispatched on native H2 engine');
+is($fast->{pump_calls}, $scans_before, 'available H2 connection skips redundant pool scan');
+is(refaddr($fast_one->transaction->{engine}),
+   refaddr($fast_two->transaction->{engine}), 'fast path retains original engine identity');
+is($fast->pending_count, 0, 'fast request never enters the pending queue');
+
+my $fast_three = $fast->request(
+    url => 'https://fastpool.test/three', http_version => '2',
+);
+is($fast_three->state, 'queued', 'saturated connection uses bounded pending queue');
+ok($fast->{pump_calls} > $scans_before,
+   'saturated request still visits general scheduler');
+$fast_one->transaction->finish;
+is($fast_three->state, 'queued', 'terminal unwind still prevents reentrant H2 queue dispatch');
+shift(@fast_defer)->() if @fast_defer;
+is($fast_three->state, 'active', 'deferred capacity wake dispatches third operation');
+$fast_two->transaction->finish;
+$fast_three->transaction->finish;
+shift(@fast_defer)->() while @fast_defer;
+
+my @idle_fast_ready;
+my $idle_fast = PoolTest::TrackedClient->new(
+    http1 => {},
+    idle_timeout => 1,
+    schedule_timer => sub {
+        my ($seconds, $callback) = @_;
+        return sub {};
+    },
+    connect_stream => sub { push @idle_fast_ready, $_[2] },
+    defer => sub {},
+);
+my $idle_one = $idle_fast->request(url => 'http://idle-fast.test/one');
+$idle_fast_ready[0]->(transport => PoolTest::Transport->new);
+$idle_one->transaction->finish;
+my $scans_idle = $idle_fast->{pump_calls};
+my $idle_two = $idle_fast->request(url => 'http://idle-fast.test/two');
+ok($idle_fast->{pump_calls} > $scans_idle,
+   'idle timer lifecycle bypasses fast dispatch shortcut');
+$idle_two->transaction->finish;
+
 done_testing;
