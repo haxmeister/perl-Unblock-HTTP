@@ -209,9 +209,11 @@ sub _connect {
         return if $called++;
         $pool->{connecting} = 0;
         my %result = @_;
-        my $ok = eval { $self->_connected($pool, $op, $version, \%result); 1 };
+        my $engine;
+        my $ok = eval { $engine = $self->_connected($pool, $op, $version, \%result); 1 };
         $self->_fail_pending($pool, $op, "$@") unless $ok;
         $self->_pump($pool);
+        return $engine;
     };
     my @alpn = $version eq 'tcp' ? $self->alpn_protocols : ($version);
     my $ok = eval {
@@ -260,6 +262,7 @@ sub _connected {
         engine => $engine, host => $host, protocol => $protocol,
         active => 0,
     };
+    return $engine;
 }
 
 sub _dispatch {
