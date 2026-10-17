@@ -5,10 +5,12 @@ HTTP/2, HTTP/3, and eventually WebSocket. Protocol parsing stays in the
 existing engines. This distribution adds no XS.
 
 This feature branch is under development. The reusable Server and direct
-connection attachment are implemented. Client pooling, automatic connection
-creation and WebSocket transitions are not implemented yet. Bounded buffered
-and streamed Server callbacks now require the coordinated engine feature branches. Read [implementation status](docs/IMPLEMENTATION.md) before
-using the branch. It is not a release candidate.
+connection attachment are implemented, along with the first shared Client
+factory, request-handle, bounded queue and pooling slice. WebSocket transitions,
+validated Alt-Svc, retry and timeout policy are not implemented yet. The
+buffered and streamed callbacks require the coordinated engine feature
+branches. Read [implementation status](docs/IMPLEMENTATION.md) before using
+the branch. It is not a release candidate.
 
 ## One Server, many connections
 
