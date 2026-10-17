@@ -271,7 +271,34 @@ per-origin caps; CI for the H3 feature and upper pinned integration.
 Update the upper CI pin only to a verified H3 feature source SHA.
 No release, version bump, merge, or changes to main.
 
-This is an implementation plan until verified CI results are recorded.
+Implemented and published on upper feature branch:
+- HTTP3 source 9bfd9314fb66f19860a96a20ec6eb082e86e3ce5 is
+  pinned in .github/workflows/linux-event-integration.yml.
+- The shared Client passes H3 on_request_available at engine creation,
+  preserving its existing QUIC ownership. The callback weakly references
+  the pooled connection and schedules (not inlines) a scheduler pump.
+- If H3 request() returns undef before any QUIC stream was opened,
+  the Client restores that exact operation to the head of the bounded
+  queue and flags the connection credit-blocked. It cannot resend a
+  transmitted request or create a synthetic Transaction.
+- Bidi availability clears credit-blocked and schedules a deferred
+  admission attempt. Cancellation or timeout removes the queued
+  operation, and late credit notifications cannot resurrect it.
+- t/19-client-admission.t now covers blocked -> notified -> dispatched,
+  another blocked request behind it, callback deferral, cancellation,
+  deadline while blocked, queue bounds, and exactly-once callbacks.
+- Verified source/test CI run 39069827594 PASS at source checkpoint
+  5887d192c82110bd991e65a7dda5234bdd357fe8:
+  11 distribution files / 444 checks and 2 live files / 19 checks.
+  That run includes the pinned new H3 dependency.
+- The live QUIC test was then upgraded to use a framework-owned
+  Net::QUIC::Driver and shared multi-origin Client connection factory;
+  unlike the previous test's low-level QUIC manager, this verifies
+  the application Client path over authenticated real sockets. Await
+  its separate final CI run before marking live adaptation verified.
+No main/ref changes, releases, version bumps, merges or changes to
+Net::QUIC / Uniform::HTTP. H3 engine unit/matrix CI and interop are
+recorded in its own Handoff.md.
 
 ## Current implementation
 
