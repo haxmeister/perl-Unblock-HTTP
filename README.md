@@ -7,7 +7,7 @@ existing engines. This distribution adds no XS.
 This feature branch is under development. The reusable Server and direct
 connection attachment are implemented, along with the first shared Client
 factory, request-handle, bounded queue and pooling slice. WebSocket transitions,
-validated Alt-Svc, retry and timeout policy are not implemented yet. The
+cross-host Alt-Svc, post-dispatch retries and timeout policy are not implemented yet. The
 buffered and streamed callbacks require the coordinated engine feature
 branches. Read [implementation status](docs/IMPLEMENTATION.md) before using
 the branch. It is not a release candidate.
@@ -138,8 +138,15 @@ headers arrive, then `on_data($tx, $chunk)`, `on_end($tx)`, and terminal
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
 one request at a time. The limits are adjustable. Pool idle expiry, validated
-Alt-Svc, retries, WebSocket upgrades and convenience framework connector
-classes are future milestones. This is **not** a release candidate.
+DNS HTTPS discovery, WebSocket upgrades and convenience framework connector
+classes are future milestones. Authenticated same-host Alt-Svc now permits
+future requests to select HTTP/3. Advertisements are only learned when
+the TCP factory explicitly reports verified_origin => 1 after certificate
+and origin hostname verification. When advertised HTTP/3 is selected, the
+QUIC factory receives alternative_host and alternative_port and must confirm
+verified_origin => 1 before the request can be sent. A failed advertised
+QUIC connection may safely fall back before dispatch; a request already
+submitted to an engine is never automatically replayed. This is **not** a release candidate.
 
 ## Examples and tests
 
