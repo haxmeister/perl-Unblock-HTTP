@@ -17,13 +17,15 @@ use Unblock::HTTP2::Client;
 # One connection and one outstanding small GET per iteration, measuring
 # application-level client request construction / scheduling as well as
 # native engine processing. The server is the same in both modes.
-my ($sample, $warmup) = @ARGV;
+my ($sample, $warmup, $rounds) = @ARGV;
 $sample = 1000 unless defined $sample;
 $warmup = 100 unless defined $warmup;
-die "usage: perl bench/client-vs-direct.pl [samples>0] [warmup>0]\n"
+$rounds = 3 unless defined $rounds;
+die "usage: perl bench/client-vs-direct.pl [samples>0] [warmup>0] [rounds>0]\n"
     unless $sample =~ /\A[1-9][0-9]*\z/
         && $warmup =~ /\A[1-9][0-9]*\z/
-        && $sample <= 100000 && $warmup <= 10000;
+        && $rounds =~ /\A[1-9][0-9]*\z/
+        && $sample <= 100000 && $warmup <= 10000 && $rounds <= 25;
 
 our ($LOOP, $SERVER, $PROTOCOL, $MODE, $READY_CALLBACK, $ENGINE, $CLIENT,
     $SOCKET, $FAILED, $DONE, $TOTAL, $WARMUP, $START, $ELAPSED, $RESPONSES,
@@ -200,15 +202,28 @@ sub run_one {
 
 print "# Real TCP loopback client dispatch; server is identical in both modes.\n";
 print "# Includes Uniform request construction, HTTP parsing and framework overhead.\n";
-print "# No statistical confidence, copy/allocation counts or slow-receiver claims.\n";
+print "# Not statistically controlled; no copy/allocation or slow-receiver measurements.\n";
+print "# Rounds alternate direct-first and unified-first to reduce ordering bias.\n";
 for my $protocol ('http/1.1', 'h2') {
-    my %result;
-    for my $mode ('direct', 'unified') {
-        my $seconds = run_one($mode, $protocol);
-        $result{$mode} = $seconds;
-        printf "%-9s %-7s %5d requests in %.5f s (%.0f req/s)\n",
-            $protocol, $mode, $sample, $seconds, $sample/$seconds;
+    my %samples;
+    for my $round (1 .. $rounds) {
+        my @order = $round % 2 ? ('direct', 'unified') : ('unified', 'direct');
+        for my $mode (@order) {
+            my $seconds = run_one($mode, $protocol);
+            push @{ $samples{$mode} }, $seconds;
+            printf "%-9s %-7s round=%-2d %5d requests in %.5f s (%.0f req/s)\n",
+                $protocol, $mode, $round, $sample, $seconds, $sample/$seconds;
+        }
     }
-    printf "# %s unified/direct wall-time ratio (lower is better): %.3f\n",
-        $protocol, $result{unified}/$result{direct};
+    my %median;
+    for my $mode ('direct', 'unified') {
+        my @sorted = sort { $a <=> $b } @{ $samples{$mode} };
+        $median{$mode} = $sorted[int(@sorted / 2)];
+        if (@sorted % 2 == 0) {
+            $median{$mode} = ($sorted[@sorted/2-1] + $sorted[@sorted/2]) / 2;
+        }
+    }
+    printf "# %s median direct %.5fs; unified %.5fs; wall-time ratio %.3f\n",
+        $protocol, $median{direct}, $median{unified},
+        $median{unified} / $median{direct};
 }
