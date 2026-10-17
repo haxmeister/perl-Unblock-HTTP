@@ -297,6 +297,31 @@ a0b8a0164e741e55010c954b1f35f0e7ee350e98:
 12 distribution files / 487 checks and 2 live TCP/QUIC files /
 78 checks. No performance claims or code changes to the three engines.
 
+## Explicit network-change invalidation and pool stats (2026-10-17)
+
+The upper Client adds explicit network_changed(), called by the framework
+when network topology or identity changes. It clears cached Alt-Svc
+entries, abandons outstanding factory attempts with their optional
+cancellation hooks, keeps queued operations and their timeouts intact,
+and schedules fresh establishment on the next framework turn.
+Old factory readiness can never attach afterward. Idle stale engines
+are immediately released through the one-shot framework cleanup hook.
+Active transactions remain on their original engines until they
+terminate, at which time the old connection is retired; no user
+request is automatically replayed after dispatch. A stale connection's
+late response cannot repopulate Alt-Svc for the new network.
+
+pool_stats() provides a copied snapshot of aggregate and per-origin
+counts: active, idle, retiring, connecting, pending, credit-blocked,
+and connection totals. It returns no live engines/sockets/QUIC instances
+and does not mutate the pool or schedule any work. This is
+observability, not a new cross-protocol buffering layer.
+
+t/21-client-network.t covers factory cancellation, repeated changes,
+stale ready suppression, active HTTP2 retention, stale Alt-Svc,
+idle timer cleanup, H3 credit-blocked migration, and read-only
+snapshot contents. Final CI must pass before marking this verified.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
