@@ -3,7 +3,7 @@
 Updated: 2026-10-17
 Repository: haxmeister/perl-Unblock-HTTP
 Branch: feature/high-level-client-server
-Status: Server verified; shared Client factory/pooling slice in CI validation.
+Status: Server verified; first Client factory/pooling slice CI verified.
 
 ## Resume here
 
@@ -54,8 +54,13 @@ No dependency source changes were needed. CI source 700dbd20 passed all
 245 distribution checks; the live test still used the former Client and
 failed. The converted live test then exposed H2 Server-only CONNECT option
 leaking into Client constructors; that and the H3 equivalent are corrected.
-Added regression checks and strict idle-connection eviction. Current CI must
-still be checked. No performance benchmark has run.
+Added regression checks and strict idle-connection eviction. Upper integration
+run 39062105591 PASSED on feature commit
+5d956aa1e0f83ebe83a03b447d2f4377fab27e01: 7 distribution files /
+256 top-level checks plus 2 live TCP/QUIC files / 15 checks. H1 and H2
+live requests use new shared Client factories; H3 low-level manager returns
+the real engine. Later docs/handoff commits do not change that tested source.
+No performance benchmark has run.
 
 Do not infer Alt-Svc, retries, WebSocket, DNS HTTPS discovery, timed factory
 cancellation or final pool capacity policy from this first slice.
@@ -156,9 +161,9 @@ and inspection inputs only; never publish modifications there.
 1. Ordinary Server milestone is complete. Upper run 39059172525 passed the
    182 distribution checks and 15 live TCP/QUIC checks.
 2. Preserve this milestone on feature branches, with no release or merge.
-3. Client definition, callback factories, request-operation handle, bounded
-   scheduling/pooling have implementation and new tests, but require final
-   CI confirmation. Next: validated Alt-Svc, retry and timeout policy.
+3. The first Client factories/operation/scheduling/pooling slice passes CI
+   run 39062105591 (256 distribution checks and 15 live tests). Next:
+   validated Alt-Svc, retry and timeout policy, plus wider pool stress tests.
 4. Later: WebSocket transitions/permissions, transaction construction hooks,
    H1 successor-consumer routing, H2/H3 stream composition and pause/resume.
    The optional LinuxEvent adapter is currently server-only.
