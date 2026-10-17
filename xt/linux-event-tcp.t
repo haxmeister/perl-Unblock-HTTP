@@ -21,59 +21,12 @@ sub http_server ($self) { $main::SERVER }
 
 package TestHTTPClient;
 use parent 'Linux::Event::IO::Sock::Stream';
-use Scalar::Util qw(weaken);
 sub on_ready ($self) {
-    my $stream = $self;
-    weaken($stream);
-    $self->{client} = Unblock::HTTP::Client->new(
-        http1 => {}, http2 => {},
-        connect_stream => sub {
-            my ($origin, $alpn, $ready) = @_;
-            my $engine = $ready->(
-                transport => $stream, alpn => $main::PROTOCOL,
-            );
-            $stream->{http} = $engine if $stream;
-        },
-        defer => sub {
-            my ($callback) = @_;
-            $main::LOOP->defer($callback);
-        },
-        schedule_timer => sub {
-            my ($seconds, $callback) = @_;
-            my $timer = Linux::Event::Kernel::Timer->new(
-                loop => $main::LOOP,
-                after => $seconds,
-                on_timer => sub { $callback->() },
-            );
-            return sub {
-                $timer->cancel if $timer->is_active;
-                $main::TIMER_CANCELLATIONS++;
-            };
-        },
+    my $ready = delete $self->{http_ready}
+        or die 'client transport has no waiting engine factory';
+    $self->{http} = $ready->(
+        transport => $self, alpn => $main::PROTOCOL,
     );
-    for my $index (1 .. $main::REQUESTS) {
-        $self->{client}->request(
-            method => 'GET',
-            url => 'http://localhost/test' . $index,
-            timeout => 5,
-            http_version => $main::PROTOCOL eq 'h2' ? '2' : '1.1',
-            on_response => sub ($tx, $response) {
-                $main::FAILED = "unexpected status: " . $response->status
-                    unless $response->status == 200;
-                $main::BODY .= $response->body;
-            },
-            on_error => sub ($tx, $error) {
-                $main::FAILED = "request failed: $error";
-                $main::LOOP->stop;
-            },
-            on_finish => sub ($tx) {
-                $main::FAILED ||= 'request ended without success'
-                    unless $tx->is_complete;
-                $main::COMPLETED++;
-                $main::LOOP->stop if $main::COMPLETED == $main::REQUESTS;
-            },
-        );
-    }
 }
 sub on_data ($self, $bytes) { $self->{http}->input($bytes) }
 sub on_eof ($self) { $self->{http}->input_eof if $self->{http} && $self->{http}->want_read }
@@ -113,18 +66,66 @@ for my $protocol ('http/1.1', 'h2') {
         after => 10,
         on_timer => sub ($t) { $FAILED = 'timeout'; $LOOP->stop },
     );
-    my $client = TestHTTPClient->connect(
-        loop => $LOOP,
-        host => '127.0.0.1',
-        port => $listener->port,
+    my @client_streams;
+    my $client = Unblock::HTTP::Client->new(
+        http1 => {}, http2 => {},
+        max_connections_per_origin => 2,
+        connect_stream => sub {
+            my ($origin, $alpn, $ready) = @_;
+            my $stream = TestHTTPClient->connect(
+                loop => $LOOP, host => '127.0.0.1', port => $listener->port,
+            );
+            $stream->{http_ready} = $ready;
+            push @client_streams, $stream;
+        },
+        defer => sub {
+            my ($callback) = @_;
+            $LOOP->defer($callback);
+        },
+        schedule_timer => sub {
+            my ($seconds, $callback) = @_;
+            my $timer = Linux::Event::Kernel::Timer->new(
+                loop => $LOOP, after => $seconds,
+                on_timer => sub { $callback->() },
+            );
+            return sub {
+                $timer->cancel if $timer->is_active;
+                $TIMER_CANCELLATIONS++;
+            };
+        },
     );
+    for my $index (1 .. $REQUESTS) {
+        $client->request(
+            method => 'GET',
+            url => 'http://localhost/test' . $index,
+            timeout => 5,
+            http_version => $PROTOCOL eq 'h2' ? '2' : '1.1',
+            on_response => sub ($tx, $response) {
+                $FAILED = "unexpected status: " . $response->status
+                    unless $response->status == 200;
+                $BODY .= $response->body;
+            },
+            on_error => sub ($tx, $error) {
+                $FAILED = "request failed: $error";
+                $LOOP->stop;
+            },
+            on_finish => sub ($tx) {
+                $FAILED ||= 'request ended without success'
+                    unless $tx->is_complete;
+                $COMPLETED++;
+                $LOOP->stop if $COMPLETED == $REQUESTS;
+            },
+        );
+    }
     $LOOP->run;
     is($FAILED, undef, "$protocol completes without error");
     is($SERVER_REQUESTS, $REQUESTS, "$protocol delivered all requests");
     is($COMPLETED, $REQUESTS, "$protocol all requests finished");
     is($BODY, ("hello from $protocol\n" x $REQUESTS), "$protocol bodies complete");
     is($TIMER_CANCELLATIONS, $REQUESTS, "$protocol cancels all operation timers");
-    $client->close unless $client->is_closed;
+    for my $stream (@client_streams) {
+        $stream->close unless $stream->is_closed;
+    }
     $listener->close if $listener->can('close');
     $timer->cancel if $timer->is_active;
 }
