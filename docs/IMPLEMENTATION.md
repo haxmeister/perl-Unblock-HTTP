@@ -208,7 +208,9 @@ Run 39064100968 passed at commit f8be6219a7db440b8fe38acbcf5741066f7c488d:
 17 checks. After this run, the upper Client and t/15 gained an additional
 terminal callback dispatch guard and regression: a request enqueued inside
 H1 on_finish must wait for the next framework deferred turn instead of
-reentering the engine. Final CI for this guard is pending.
+reentering the engine. Run 39064232198 passed with that guard and test:
+10 distribution files / 375 top-level checks plus 2 live files /
+17 checks. This Client deadline and factory lifecycle slice is verified.
 
 ## Later design milestones
 
