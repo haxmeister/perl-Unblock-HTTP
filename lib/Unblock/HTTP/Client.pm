@@ -580,10 +580,16 @@ Unblock::HTTP::Client - Reusable HTTP client with framework transport factories
             my ($callback) = @_;
             # Framework schedules callback for a later event-loop turn.
         },
+        schedule_timer => sub {
+            my ($seconds, $callback) = @_;
+            # Framework schedules a one-shot timer, then returns a coderef
+            # that cancels it when the request finishes.
+        },
     );
 
     my $operation = $client->request(
         method => 'GET', url => 'https://example.com/',
+        timeout => 15,  # Optional, seconds; requires schedule_timer.
         on_response => sub {
             my ($tx, $response) = @_;
             print $response->status, "\n";
@@ -633,6 +639,15 @@ C<defer($callback)> MUST arrange a later event-loop turn, not call inline.
 This prevents queued requests from reentering an HTTP/1 engine before its
 previous on_finish callback has unwound.
 
+C<schedule_timer($seconds, $callback)> is an optional framework factory
+used only when a request has a positive C<timeout> in seconds. It must
+schedule a one-shot callback for a future event-loop turn and return a
+coderef that cancels that timer. Timer cancellation is invoked once at
+terminal cleanup. No event loop, timers or blocking waits are created
+inside the core. The timeout covers the ENTIRE request lifetime, including
+pending queue time, connection setup and response completion. With no
+C<timeout>, no Client operation timer is created.
+
 =head1 REQUESTS AND SCHEDULING
 
 C<request(method =E<gt> 'GET', url =E<gt> $url, ...)> constructs a
@@ -654,6 +669,10 @@ time on each connection; HTTP/2 and HTTP/3 multiplex within the stated
 per-connection cap, also obeying available engine admission signals.
 Connections are reused by origin and the requested protocol policy.
 An operation can be cancelled while still queued/connecting.
+A connect factory may return a cancellation coderef to abort establishment
+if the initiating operation is cancelled or times out. Later readiness from
+an abandoned attempt is ignored, never attached to an HTTP engine, and the
+factory is responsible for disposing of any unused transport it created.
 
 With no on_data, the engine buffers the complete response within the
 configured per-protocol max_buffered_body_bytes (1 MiB by default);
@@ -670,10 +689,21 @@ been transmitted. The Client never automatically replays a dispatched
 transaction, even a GET: transport errors cannot establish whether a peer
 processed it. A strict HTTP version cannot fall back.
 
+A C<timeout =E<gt> $seconds> requires C<schedule_timer> on the Client.
+Expiry before dispatch reports on_error(operation, "request timed out ...")
+followed by on_finish(operation); no fake engine Transaction is created.
+Expiry after dispatch cancels the real engine transaction using its native
+C<cancel()> method, reports on_error($tx, $timeout_error) before
+on_finish($tx), and sets the operation state to C<error>. The engine
+transaction itself records a cancellation because no protocol parser
+error has been invented. An intentional user C<cancel()> remains distinct:
+it does not manufacture an on_error callback. No timed-out request is
+automatically replayed.
+
 =head1 LIMITATIONS
 
 WebSocket upgrades, cross-host Alt-Svc, retries after dispatch, DNS HTTPS
-discovery, timeouts, pool idle expiry, and optional framework convenience
+discovery, pool idle expiry, and optional framework convenience
 classes are not implemented. Frameworks must retain their network transports and use
 their normal writable readiness/QUIC timer paths. This branch requires the
 coordinated receive/lifecycle engine feature branches, not released engines.
