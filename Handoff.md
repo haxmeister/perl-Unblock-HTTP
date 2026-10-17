@@ -450,8 +450,61 @@ Implement narrow, measurable validation before optimizing:
    No throughput/latency gains or copies avoided will be asserted without
    measured before/after results.
 
-This is a work plan, not a verification report. Maintain source/test
-checkpoints and avoid main, release, tag, merge and version changes.
+Completed and verified on the upper feature branch:
+- xt/linux-event-streaming.t exercises three concurrent POST requests
+  under both H1 and H2 with 1,179,648-byte uploads and responses.
+  Incoming server and client on_data callbacks process data incrementally
+  across multiple chunks, with SHA-256 integrity, exact byte counts,
+  native transaction identity and header/end/finish callback ordering.
+  Both receive sides use the existing engine-owned stream/buffer path;
+  no extra per-chunk forwarding layer was added to Unblock::HTTP.
+- The live QUIC/TLS test additionally mixes a 1,179,648-byte streamed
+  upload/response with seven ordinary buffered HTTP3 POSTs on one QUIC
+  connection. It checks per-stream identity, body digests, final callbacks
+  and isolation despite out-of-order completion.
+- Controlled backpressure in the test TCP framework returns defined false
+  after it has ACCEPTED bytes, and then invokes the real engine
+  resume_output method on a framework timer. Both H1 and H2 survive
+  this test and deliver every byte once. This is a protocol-contract
+  stress test, NOT a claim of testing an actual slow peer or bounded
+  socket memory under sustained congestion.
+- Integration workflow now executes xt/linux-event-streaming.t alongside
+  H1/H2 and QUIC live tests. Verified source CI run 39075534537 PASS:
+  13 distribution files / 540 checks and 3 live files / 145 checks.
+  Additional H3-streamed run 39075394995 passed 540/141 before
+  synthetic transport-pressure checks were added.
+- bench/client-vs-direct.pl compares real H1/H2 client engines against
+  the upper Client using the SAME upper Server and LinuxEvent sockets,
+  warmed single-request-at-a-time loopback traffic, and alternating
+  direct-first/unified-first rounds. docs/BENCHMARKING.md documents
+  its limits and how to reproduce it. The CI workflow smoke-runs
+  1000 timed requests / 100 warmup per mode in 3 rounds and has no
+  rate threshold.
+- First repeated baseline, CI 39076051442 (pre-optimization):
+  median H1 direct 0.28021 s, unified 0.37543 s per 1000 requests
+  (ratio 1.340); H2 direct 0.26195, unified 0.35947 (1.372).
+- Removed a redundant scheduled pool-maintenance pass after a healthy
+  completion with no queued demand, idle timer, or connection retirement.
+  Preserved deferred reentrancy, idle timers and stale-connection cleanup.
+  Added three deterministic tests in t/15-client-pool.t.
+  CI 39076255077 PASS at source/test commit
+  55b8b85636a7d886a314080c9db1450e67ec15c3:
+  13 distribution files / 543 checks and 3 live files / 145 checks.
+  Repeated benchmark medians (1000 requests): H1 direct 0.27318 s,
+  unified 0.35407 s (1.296); H2 direct 0.25810, unified 0.34514
+  (1.337). Direction is encouraging but runner-to-runner differences
+  mean this is NOT proof of a stable percent speedup.
+- No source edits to H1/H2/H3, Net::QUIC or Uniform::HTTP. All changes
+  are on the upper feature branch; main remains unchanged. No merge,
+  release, tag or version bump.
+
+Remaining work: controlled profiling to separate URI/request creation,
+pool dispatch, framework scheduling and engine work; realistic sustained
+slow-consumer/backpressure with memory queue limits; H2/H3 concurrent
+fairness and direct H3 baseline; high-load latency percentiles, copies
+and allocation measurements. The observed unified Client overhead
+in this constrained workload is still material and must not be hidden.
+No unmeasured "zero-copy" or broad performance claims should be made.
 
 ## Current implementation
 
