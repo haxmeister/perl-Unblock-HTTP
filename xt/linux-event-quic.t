@@ -86,7 +86,8 @@ $server->start;
 my ($ready_factory, $client_quic, $attached);
 my $check_ready = sub {
     return unless $ready_factory && $client_quic && $client_quic->ready;
-    return if $attached++;
+    return if $attached;
+    $attached = 1;
     $ready++;
     $ready_factory->(
         connection => $client_quic,
