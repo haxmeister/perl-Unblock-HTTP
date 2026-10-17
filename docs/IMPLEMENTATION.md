@@ -2,7 +2,7 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Status: Server, Client pool and authenticated Alt-Svc slices CI verified. Not a release candidate.
+Status: Server, Client pool and Alt-Svc CI verified; request deadline slice in validation. Not a release candidate.
 
 ## Implemented
 
@@ -176,6 +176,31 @@ Alt-Svc source/test commit 557cb101e5cd2342368d43f18afc400e69546634
 passed integration CI run 39062960467: 9 distribution test files, 316 checks,
 and 2 live H1/H2/H3 tests, 15 checks. Source and POD were reviewed again
 after that run. Server and all three engine branch sources remain unchanged.
+
+## Optional request deadlines and factory cancellation (2026-10-17)
+
+A Client now accepts optional schedule_timer(seconds, callback) returning a
+timer cancellation coderef. Requests may specify timeout as a positive number
+of seconds covering time spent queued, connecting and active. No native timer
+or event-loop dependency is introduced. The timer is cancelled when the
+operation reaches a terminal state.
+
+A connecting operation can abandon its in-flight factory without keeping
+the per-origin connection slot occupied. If the factory returned a cancellation
+coderef it is called; any late ready() is ignored. The framework must dispose
+of a transport it created after cancellation. The operation retains native
+engine identity and no unprocessed request is automatically replayed.
+
+Pre-dispatch expiry emits on_error(operation, reason) before
+on_finish(operation). After dispatch the real engine Transaction is cancelled
+and the Client emits on_error(tx, timeout reason) before on_finish(tx). The
+operation records an error, while the underlying transaction reflects the
+actual cancellation, not a fabricated protocol failure. Explicit user
+cancellation remains separate and does not invoke on_error.
+
+t/18-client-timeouts.t supplies deterministic framework-timer and fake
+transport tests, including late factory readiness, queue release and
+callback ordering. CI validation for this slice is pending below.
 
 ## Later design milestones
 
