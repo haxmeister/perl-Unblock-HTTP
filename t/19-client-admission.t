@@ -110,7 +110,7 @@ my $flush = sub {
     my $one = $client->request(url => 'https://zero.test/one');
     my $two = $client->request(url => 'https://zero.test/two');
     is($calls, 1, 'H2 peer limit zero does not cause connection churn');
-    is($one->state, 'connecting', 'initiating request waits for capacity');
+    is($one->state, 'queued', 'connected request waits for peer stream capacity');
     is($two->state, 'queued', 'second request queued');
     is($client->pending_count, 2, 'unadmitted work occupies bounded queue');
     ok(!$engines[0]{closed}, 'idle zero-credit H2 remains open');
