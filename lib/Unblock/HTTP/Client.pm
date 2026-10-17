@@ -832,13 +832,31 @@ This prevents queued requests from reentering an HTTP/1 engine before its
 previous on_finish callback has unwound.
 
 C<schedule_timer($seconds, $callback)> is an optional framework factory
-used only when a request has a positive C<timeout> in seconds. It must
+used when a request has a positive C<timeout> or when the Client is
+configured with C<idle_timeout>. It must
 schedule a one-shot callback for a future event-loop turn and return a
 coderef that cancels that timer. Timer cancellation is invoked once at
 terminal cleanup. No event loop, timers or blocking waits are created
 inside the core. The timeout covers the ENTIRE request lifetime, including
 pending queue time, connection setup and response completion. With no
 C<timeout>, no Client operation timer is created.
+
+C<idle_timeout =E<gt> $seconds> is an optional positive idle connection
+lifetime. It requires C<schedule_timer> and defaults to disabled. A
+connection's timer is armed after its last transaction finishes and no
+operations are queued for that origin; it is cancelled upon reuse and
+rearmed after the next quiet period. Queued requests waiting for H2 peer
+SETTINGS or H3 QUIC stream credit prevent idle expiration. Expiration never
+cancels an active transaction.
+
+C<release_connection($host, $engine, $protocol, $reason)> is an optional
+framework hook for reclaiming the socket, QUIC resources, and attached
+engine exactly once. The reason is C<idle_timeout>, C<evicted>, C<closed>,
+or C<draining>. If the callback is omitted, the Client calls the engine's
+C<close()> when supported, otherwise the connection's C<close()>. Framework
+adapters that own transport lifecycle should provide the hook to clean up
+their actual socket/QUIC objects. Idle timeouts use one cancellable timer
+per idle connection; there is no global polling loop.
 
 =head1 REQUESTS AND SCHEDULING
 
@@ -855,7 +873,8 @@ in-memory cache. Cross-host alternatives and DNS HTTPS discovery are not
 supported. No connection-establishment racing occurs.
 
 Defaults: max_pending_requests = 128, max_connections_per_origin = 4,
-max_streams_per_connection = 32. Every limit must be positive.
+max_streams_per_connection = 32. Idle expiration is disabled unless
+C<idle_timeout> is explicitly set. Every limit must be positive.
 The request queue rejects overflow. HTTP/1 handles one request at a
 time on each connection. HTTP/2 admission also honors the real engine's
 C<can_open_transaction()>, including the peer's advertised concurrent
@@ -909,8 +928,7 @@ automatically replayed.
 =head1 LIMITATIONS
 
 WebSocket upgrades, cross-host Alt-Svc, retries after dispatch, DNS HTTPS
-discovery, pool idle expiry, and optional framework convenience
-classes are not implemented. Frameworks must retain their network transports and use
+discovery and optional framework convenience classes are not implemented. Frameworks must retain their network transports and use
 their normal writable readiness/QUIC timer paths. This branch requires the
 coordinated receive/lifecycle engine feature branches, not released engines.
 
