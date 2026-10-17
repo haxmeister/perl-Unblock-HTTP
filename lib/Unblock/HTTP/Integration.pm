@@ -15,10 +15,11 @@ Unblock::HTTP::Integration - Attach framework transports to HTTP engines
 
 =head1 IMPLEMENTATION STATUS
 
-This feature-branch checkpoint supplies reusable Server policy and direct
-engine attachment. It retains engine callback timing. Buffered application
-callbacks, automatic WebSocket transitions, client pooling and transport
-factories are later stages. See docs/IMPLEMENTATION.md in the repository.
+This feature branch supplies reusable Server policy and direct engine
+attachment, with bounded buffered or streamed Server callbacks. It requires
+the coordinated engine feature branches. Automatic WebSocket transitions,
+client pooling and transport factories are later stages.
+See docs/IMPLEMENTATION.md in the repository.
 
 =head1 TCP AND TLS SERVERS
 

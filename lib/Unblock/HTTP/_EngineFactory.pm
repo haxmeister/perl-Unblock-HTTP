@@ -19,6 +19,11 @@ sub create {
     my $module = $ENGINE{$protocol} . '::' . $role;
     (my $file = $module) =~ s{::}{/}g;
     require "$file.pm";
+    if ($role eq 'Server') {
+        my $transaction = $ENGINE{$protocol} . '::Transaction';
+        croak "$module needs the receive/lifecycle engine feature branch (on_data and on_finish)"
+            unless $transaction->can('on_data') && $transaction->can('on_finish');
+    }
     return $module->new(%options);
 }
 

@@ -26,7 +26,7 @@ sub _new {
             unless blessed($server) && $server->isa('Unblock::HTTP::Server');
         croak 'server(): HTTP/3 is disabled on the Server definition'
             unless $server->supports('h3');
-        for my $reserved (qw(http3 on_request on_body on_request_end on_error)) {
+        for my $reserved (qw(http3 on_headers on_request on_body on_request_end on_error)) {
             croak "server(): configure $reserved on the Server definition"
                 if exists $option{$reserved};
         }

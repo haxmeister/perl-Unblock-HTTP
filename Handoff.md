@@ -3,172 +3,136 @@
 Updated: 2026-10-17
 Repository: haxmeister/perl-Unblock-HTTP
 Branch: feature/high-level-client-server
-Base: ad8ed8989a6c8fd9abd934f911a184116152be67
-Status: implementation started; not release ready.
+Base main: ad8ed8989a6c8fd9abd934f911a184116152be67
+Status: implementation checkpoint; H3/coordinated live validation pending.
 
 ## Resume here
 
-The maintainer approved the implementation plan on 2026-10-17 and asked
-that this file be updated frequently so another chat can continue.
-Read this file, docs/design-handoff.txt, docs/IMPLEMENTATION.md, and
-docs/ENGINE-CONTRACTS.md first.
-Check git status and the current branch before editing. Do not modify main.
+Read this file, docs/design-handoff.txt, docs/IMPLEMENTATION.md and
+docs/ENGINE-CONTRACTS.md. Inspect git status and branch before editing.
+The user requested frequent handoff updates so work can continue in a new chat.
 
-Current checkpoint: reusable Server attachment and policy are implemented.
-Client redesign and final Server callback/body semantics are NOT implemented.
-Read docs/IMPLEMENTATION.md for the exact engine prerequisites and next steps.
+The user explicitly authorized changes to perl-Unblock-HTTP and its HTTP1,
+HTTP2, HTTP3 dependencies. Keep ALL main branches untouched. Do not merge,
+release, or change Net::QUIC/Uniform::HTTP. The dependency source checkouts
+under deps are build inputs only, not authorized development targets.
 
-Run: prove -lr t
-Current result: 5 files / 164 assertions PASS (isolated engine doubles).
-Native dependencies are absent locally. Published commit 2003eb8 passed CI:
-164 isolated assertions and 10 live assertions (H1/H2 TCP, H3 QUIC/TLS).
-Run: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
-Benchmarks and broader protocol/lifecycle coverage remain unverified.
+Upper branch: feature/high-level-client-server.
+All three engines: feature/unified-receive-lifecycle.
+The user confirmed publication and coordinated CI on 2026-10-17. All three
+dependency feature branches are published; further feature fixes are authorized.
+Previous upper-layer feature publication was authorized. Do not push the new
+upper code until its CI pins identify the new published engine commits.
 
-Next action: obtain explicit authorization for feature branches in
-perl-Unblock-HTTP1, perl-Unblock-HTTP2, and perl-Unblock-HTTP3 to implement the
-first concrete milestone in docs/ENGINE-CONTRACTS.md: bounded reception,
-per-transaction on_data, and exactly-once on_finish. No other repositories
-have been modified. Transaction subclasses and WebSocket transitions follow
-in later dependency milestones; they are not prerequisites for ordinary
-buffered/streamed Server callbacks.
-Do not claim the first complete Server milestone is done: default bounded
-buffering, early on_headers, per-tx on_data and automatic WebSocket are pending.
-The old engine callback timing remains explicitly documented at this checkpoint.
+## Current implementation
 
-Files changed: Server, private _Policy/_EngineFactory, client _Session factory
-use, QUIC manager, optional adapter, tests, README/POD, examples and CI branch
-trigger. docs/design-handoff.txt preserves the original uploaded specification.
-This file records the approved implementation plan and progress.
+- Shared Server policy and direct real-engine attachment are implemented.
+- Ordinary Server now maps on_headers to engine on_request, and application
+  on_request to engine on_request_end. Callback references are mapped once.
+- Buffered by default, 1 MiB per protocol; tune max_buffered_body_bytes in its
+  protocol hash. receive_body is managed by the upper layer.
+- tx->on_data at headers selects streaming. Same transaction/message identity;
+  no extra body accumulator, wrappers, reblessing, or injected methods.
+- tx->on_finish observes complete/error/cancelled once, after normal/error
+  callbacks. Cancellation does not manufacture an error.
+- Old upper on_body/on_request_end constructor options are removed, no aliases.
+- Attachment checks on_data/on_finish capabilities and rejects released engines.
+- H1/H2 add bounded receive buffers; H3 reuses its buffer/Reader. Engine default
+  modes remain H1/H2 stream and H3 buffered, with a 64 MiB buffered limit.
+- Empty already-frozen messages carry an empty string from construction.
+  Public native ABI layouts/discovery paths are unchanged.
+- H3 body-limit failure now resets its stream. Streamed request completion
+  freezes the message before application notification.
 
-## Authorization and boundaries
+## Validation checkpoint
 
-Change only perl-Unblock-HTTP. Reading dependency sources is authorized.
-Do not modify other repositories, merge, or release without approval.
-The maintainer approved publishing this feature branch on 2026-10-17 and then
-asked to continue the plan here. Keep its continuation records current on this
-branch. This does not authorize main changes or work in dependency repositories.
-Verify the remote branch on resume.
-The uploaded design handoff supersedes the former roadmap, especially its
-old exclusion of connection pooling. The package is Unblock::HTTP.
-Unblock::Web is reserved for future UserAgent/web-application facilities.
+Local Perl 5.38.2:
 
-## Approved implementation plan
+- HTTP1 full suite: 36 files / 320 top-level tests and subtests PASS.
+- HTTP2 full suite: 30 files / 525 top-level tests and subtests PASS.
+- Upper suite: 6 files / 182 top-level tests and subtests PASS; t/14 uses real
+  H1/H2 engines, other files use doubles.
+- H3 native, ownership and terminal callbacks: 3 files / 92 checks PASS using
+  a local upstream nghttp3 build. Full H3/live QUIC suite NOT RUN: Net::QUIC
+  is absent. Live t/24 is prepared; see the H3 handoff for exact build details.
 
-1. Record contracts, callback order, cancellation, ownership and limits.
-   Identify minimal engine prerequisites rather than injecting methods,
-   reblessing objects, or adding transaction wrappers.
-2. Turn Server into one reusable definition with attach_stream() and
-   attach_quic(). Turn Client into a multi-destination manager. Use private
-   policy/engine-construction helpers and return actual engines on attach.
-   Absent http1/http2/http3 disables that protocol; {} enables it.
-3. Implement Server first: bounded ordinary request buffering, on_headers
-   before body delivery, on_request after successful body completion.
-   Streaming selection uses per-transaction on_data registration. WebSocket
-   handshakes dispatch early; H1 switches the whole connection, H2/H3 only
-   the CONNECT stream. Preserve H1 remainder bytes and output ordering.
-4. Define a shared optional framework factory for TCP/TLS, QUIC, listeners,
-   and scheduling/cancellation. Support attachment, composition and subclass
-   convenience APIs. Client owns bounded pending requests, connection reuse,
-   capacity scheduling, and removal of failed/draining connections.
-5. Add in-memory validated Alt-Svc discovery, strict http_version selection,
-   conservative fallback, and client WebSocket connections. Never send the
-   same request twice merely to race connections. DNS HTTPS is optional.
-6. Test callback/lifecycle ordering, cancel/error/timeouts, backpressure,
-   bounded memory, TLS ALPN, multiplexing, WebSocket, and QUIC timers with
-   real engines/sockets. Benchmark integrated versus direct engines.
-7. Update README, POD, examples and CI. Keep adapter-author documentation
-   separate from application usage. Release work requires later approval.
+H1 build: PERL5LIB=../deps/Uniform-HTTP/lib perl Makefile.PL; make.
+H2 local build uses /tmp/http2-system-Makefile.PL, derived from the repository
+configuration with real nghttp2 1.59.0 system library and matching headers.
+Repository Makefile.PL is unchanged. CI must still validate the normal Alien
+installation path. Scratch build inputs are reproducible, not published.
 
-## Architectural constraints
+From each H1/H2 repo: PERL5LIB=../deps/Uniform-HTTP/lib make test
+From upper repo, add these to PERL5LIB and run prove -lr t:
+  ../deps/Uniform-HTTP/lib
+  ../perl-Unblock-HTTP1/blib/lib
+  ../perl-Unblock-HTTP1/blib/arch
+  ../perl-Unblock-HTTP2/blib/lib
+  ../perl-Unblock-HTTP2/blib/arch
 
-Pure-Perl orchestration, no required XS added here. Existing engines and
-Net::QUIC retain their protocol responsibilities. Frameworks own sockets,
-TLS, network queues, readiness and timers (seconds). Pool/discovery selection
-stays off the per-byte path. Preserve native ABI/borrowed-buffer routes.
-Use real engine transactions; no required forwarding connection object.
-No method injection, multiple inheritance, compatibility aliases, or futures.
-Code and POD use ASCII; POD belongs below code. Performance follows correctness.
+The prior published foundation at 2003eb834e5ab7be2b88dfe78f32a42faa84a445 passed
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
+(164 isolated, 10 live TCP/QUIC assertions). It does NOT validate current changes.
+The latest published upper head before this work is 9860cf453f865252334ffda1ca9ef79ae958d897.
 
-Transport unblock_send accepts the WHOLE buffer or throws. True/undef means
-ready for more; defined false means accepted but congested. Do not reinterpret
-false as a partial write. Hard limits and oversized-write rejection still
-need explicit contracts and tests. Avoid duplicate network buffering.
+## Remaining work for this milestone
 
-Deferred: multipart/file storage, redirects/cookies/routing/middleware,
-0-RTT, preconnect(), optional dedicated WebSocket policies.
+1. Local diff/POD review, focused edge-case tests and feature commits are
+   complete. H3 full/live validation remains outstanding.
+2. Publication is authorized and complete for all three engines. Run their CI,
+   and fix failures. Record exact commits and workflow results in every handoff.
+3. The integration workflow now pins the local engine commits listed below.
+   Publish dependencies first and verify their remote SHAs. If publication
+   creates new commit IDs, update these pins before publishing the upper branch.
+   Run upper real-socket TCP and QUIC tests.
+4. Mark ordinary Server milestone verified only after those results pass.
+   No performance improvement or zero-copy claim has been established.
 
-## Findings and prerequisites
+## Later milestones
 
-Reviewed H1/H2 0.11 and H3 0.12 source interfaces. Transactions currently
-lack public on_data(), pause()/resume(), is_websocket_request(), and
-accept_websocket(). respond() accepts stream_body, not the proposed stream.
-Concrete transaction classes are created directly by the engines. There is
-no supported transaction-class factory in the inspected creation paths.
-A clean implementation of those exact methods needs engine extension points;
-do not silently use private-field mutation to fake their availability.
+Client redesign, factories, pooling, Alt-Svc, WebSocket transitions, complete
+WebSocket policy enforcement, pause/resume and transaction-class hooks remain
+pending. The optional LinuxEvent adapter remains server-only. Engine response
+sugar already exists. See the full original design rather than improvising a
+new API. No release/version bump is part of this checkpoint.
 
-Existing engine on_request/on_response are header notifications. The upper
-layer must delay its ordinary application notifications to body completion.
-H1/H2 deliver chunks through on_body. H3 has bounded receive modes.
-The exact body buffering and cancellation hooks need implementation checks.
+## Continuation prompt
 
-H1 on_switch/take_remainder support a manual handoff. Direct input through
-the same engine after upgrade needs a supported successor-consumer hook,
-including the native path; do not add a permanent forwarding layer by default.
-H2 WebSocket integration must respect parser reentrancy restrictions.
-H2 has auto_consume/consume, but this is not yet the common pause/resume API.
+Continue the four coordinated Unblock HTTP feature branches. Read the upper
+Handoff.md and each engine Handoff.md first. Main must remain unchanged.
+Ordinary Server receive/lifecycle code is implemented, H1/H2 local tests pass,
+and H3/coordinated CI is the outstanding validation gate. Preserve actual engine
+transactions, avoid duplicate buffering, and update handoffs after each milestone.
 
-QUIC manager currently scans all tracked connections after every packet,
-timeout and writable event. Benchmark and examine lifecycle notification
-support before claiming scalable constant-cost dispatch.
+## Initial local engine commits (superseded by published commits)
 
-Cold Client request return value: approved plan recommends a small cancellable
-request-operation handle for queued/connecting work, not a proxy transaction.
-Callbacks receive actual transactions after creation. Precisely specify
-pre-transaction failures and finish callbacks before implementing this.
+- HTTP1: ea85251c3601fed3f2ec2bb0e7d86245112c4188
+- HTTP2: 68dcb3ee32ffc952d6b0e9c3507ee1cd075c9a97
+- HTTP3: 01e779e9c06674eaf983a511a752d7068b6f450f
 
-## Checkpoints
+These are local commits, not remote publication confirmations. The repository
+working trees are clean after checkpointing. Git main refs remain at the
+recorded baselines. Engine CI workflows run on feature-branch pushes.
 
-- 2026-10-17: reviewed baseline; created feature branch; recorded full plan.
-- 2026-10-17: implemented _Policy, _EngineFactory, reusable Server attachment,
-  and shared-definition QUIC/LinuxEvent integration. The isolated suite passes
-  5 files / 154 assertions. Examples and live test sources have been migrated;
-  native live execution is still unavailable. Callback semantics intentionally
-  remain engine-level; they are NOT the final buffered application contract.
-- 2026-10-17: added startup reentrancy and closed-during-start QUIC regressions,
-  circular policy validation, detailed dependency prerequisites, and migrated
-  README/POD/examples. Isolated suite: 5 files / 164 assertions PASS.
-  POD parsing, manifest presence and whitespace checks passed. The source scan
-  found no non-ASCII text in code, tests, examples or continuation documents.
-  Local implementation checkpoint was 46c4905. Publishing through the GitHub
-  app reproduced the exact tree as 24b50e5, followed by remote head 2003eb8.
-  Local and remote histories were synchronized after verifying equal trees.
-- 2026-10-17: maintainer approved publishing this feature branch. Continuation
-  records updated before the push. Check the remote head and CI on resume.
+Shell git can fetch but previously lacked credentials for GitHub push. The
+connected GitHub create_tree/create_commit/create_branch/update_ref tools can
+publish authorized feature work. Those tools may produce different commit IDs;
+verify identical trees, update the upper workflow pins, fetch the published
+branches, and synchronize local history without losing files. Never force-push
+or update main. Record the actual published refs and CI results here.
 
-- 2026-10-17: inspected successful CI job 117451338945 from run 39051664280.
-  All 164 isolated and 10 live assertions passed. Recorded concrete engine
-  receive/lifecycle contracts in docs/ENGINE-CONTRACTS.md and pinned future CI
-  dependency commits with SHA logging. Workflow YAML, embedded Bash syntax,
-  manifest presence and diff whitespace checks passed. Publishing continuation
-  updates on the approved feature branch; dependency changes still need approval.
-  The pinned workflow has not yet run at the time of this record.
+## Authorized publication checkpoint
 
-## Continuing in another chat
+The user answered yes to publishing the engine feature branches and running
+coordinated CI. Do not request confirmation again for this work.
+Published engine commits (trees verified against the local checkpoints):
 
-Use this prompt to continue from the published feature branch:
+- HTTP1: 82dfc4bf691001aff50f96bb7a92e6fce3fbb229
+  test run 39058702399; framework examples run 39058702329.
+- HTTP2: 90639bf52394098296be4115e5485606ba6d7f92
+  test run 39058704851; interop run 39058704842.
+- HTTP3: d486f682530b436f4dc00f532f80cac669236db6
+  test run 39058707266; interop run 39058707246.
 
-    Continue haxmeister/perl-Unblock-HTTP on feature/high-level-client-server.
-    Read Handoff.md and docs/IMPLEMENTATION.md before editing. The original
-    approved design is docs/design-handoff.txt. Main must remain untouched.
-    The attachment/policy foundation is implemented and has 164 isolated
-    passing assertions. Final buffered callbacks, streaming and WebSocket
-    require supported engine hooks; other repositories still need explicit
-    authorization. Do not mistake this checkpoint for completed Server or
-    Client APIs. Update Handoff.md after every substantial milestone.
-
-Fetch feature/high-level-client-server from GitHub and inspect its latest
-commit before continuing. Keep updates on the approved feature branch;
-never push main or infer cross-repository permission. The published checkpoint passed the CI run recorded above.
-Check the latest branch workflow for the follow-up contracts/CI-pin commit.
+These CI runs are in progress, not yet verified. Upper integration workflow
+now pins these exact published commits. All main refs remain unchanged.

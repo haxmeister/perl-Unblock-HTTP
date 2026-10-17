@@ -27,8 +27,17 @@ sub new {
             if $websocket;
         for my $key (keys %$config) {
             croak "$name option '$key' is managed by Unblock::HTTP"
-                if $key =~ /\Aon_/ || $key =~ /\A(?:transport|quic|protocol|alpn)\z/;
+                if $key =~ /\Aon_/ || $key =~ /\A(?:transport|quic|protocol|alpn|receive_body)\z/;
         }
+        $config->{receive_body} = 'buffered';
+        $config->{max_buffered_body_bytes} = 1_048_576
+            unless exists $config->{max_buffered_body_bytes};
+        croak "$name max_buffered_body_bytes must be a positive integer"
+            unless defined($config->{max_buffered_body_bytes})
+                && !ref($config->{max_buffered_body_bytes})
+                && $config->{max_buffered_body_bytes} =~ /\A[0-9]+\z/
+                && $config->{max_buffered_body_bytes} > 0
+                && $config->{max_buffered_body_bytes} <= (~0);
         if ($protocol eq 'h2') {
             croak 'http2 enable_connect_protocol conflicts with disabled WebSocket support'
                 if $config->{enable_connect_protocol};

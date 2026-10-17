@@ -3,6 +3,17 @@ use warnings;
 use Test::More;
 
 BEGIN {
+    package Unblock::HTTP1::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP2::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP3::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package main;
+
     $INC{'Net/QUIC/Driver.pm'} = __FILE__;
     package Net::QUIC::Driver;
     sub server { my ($class, %opt) = @_; bless { options => \%opt, fresh => [], events => [] }, $class }
@@ -60,7 +71,7 @@ $q1->{ready} = 1;
 $server->timeout;
 is(scalar $server->sessions, 1, 'ready connection gets HTTP/3 Server');
 is(scalar @server_ready, 1, 'on_ready invoked once');
-is($server_ready[0]->{opt}{on_request}, $callback, 'handler forwarded to HTTP/3');
+is($server_ready[0]->{opt}{on_request_end}, $callback, 'completed handler forwarded to HTTP/3');
 is($server_ready[0]->{started}, 1, 'HTTP/3 started once');
 $server->writable;
 is(scalar @server_ready, 1, 'no duplicate on_ready');

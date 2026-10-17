@@ -3,6 +3,17 @@ use warnings;
 use Test::More;
 
 BEGIN {
+    package Unblock::HTTP1::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP2::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP3::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package main;
+
     $INC{'Linux/Event/IO/Sock/Stream.pm'} = __FILE__;
     package Linux::Event::IO::Sock::Stream;
     sub new { bless { sent => [], closed => 0 }, shift }
@@ -52,7 +63,7 @@ $h1->on_ready;
 isa_ok($h1->http, 'Unblock::HTTP1::Server');
 $h1->on_data('abc');
 is_deeply($h1->http->{received}, ['abc'], 'incoming data reaches underlying engine');
-$h1->http->{options}{on_request}->('tx','request');
+$h1->http->{options}{on_request_end}->('tx','request');
 is($request_seen, 1, 'application request callback dispatches');
 $h1->on_eof;
 is($h1->http->{eof}, 1, 'EOF forwarded');

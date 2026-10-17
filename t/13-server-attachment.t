@@ -4,6 +4,17 @@ use Test::More;
 use Scalar::Util qw(refaddr weaken);
 
 BEGIN {
+    package Unblock::HTTP1::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP2::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package Unblock::HTTP3::Transaction;
+    sub on_data { }
+    sub on_finish { }
+    package main;
+
     package TestEngine;
     sub new {
         my ($class, %options) = @_;
@@ -13,6 +24,7 @@ BEGIN {
     sub input {
         my ($self, $tx, $request) = @_;
         $self->{options}{on_request}->($tx, $request);
+        $self->{options}{on_request_end}->($tx, $request);
     }
     for my $version (1 .. 3) {
         my $package = "Unblock::HTTP${version}::Server";
@@ -63,7 +75,9 @@ isa_ok($h1, 'Unblock::HTTP1::Server');
 isnt(refaddr($h1), refaddr($second), 'separate engines for separate connections');
 is($h1->{options}{transport}, $host1, 'first transport retained by its engine');
 is($second->{options}{transport}, $host2, 'second transport independent');
-is($h1->{options}{on_request}, $callback, 'callback identity retained without a trampoline');
+is($h1->{options}{on_request_end}, $callback, 'completed callback identity retained without a trampoline');
+is($h1->{options}{receive_body}, 'buffered', 'bounded buffering selected');
+is($h1->{options}{max_buffered_body_bytes}, 1_048_576, 'one MiB default limit');
 ok(!exists $h1->{options}{websocket}, 'upper-layer policy is not an engine option');
 ok(!$server->can('input'), 'definition is not on byte input path');
 ok(!$server->can('backend'), 'definition is not a connection wrapper');
@@ -136,7 +150,10 @@ for my $case (
     [ { http2 => { settings => [] } }, qr/settings must be/ ],
     [ { http3 => { enable_extended_connect => 1 } }, qr/conflicts/ ],
     [ { http1 => {}, transport => $host1 }, qr/unknown option/ ],
-    [ { http1 => {}, on_headers => $callback }, qr/unknown option/ ],
+    [ { http1 => {}, on_body => $callback }, qr/unknown option/ ],
+    [ { http1 => {}, on_request_end => $callback }, qr/unknown option/ ],
+    [ { http1 => { receive_body => 'stream' } }, qr/managed/ ],
+    [ { http2 => { max_buffered_body_bytes => 0 } }, qr/positive integer/ ],
     [ { http1 => {}, on_request => undef }, qr/coderef/ ],
 ) {
     ok(!eval { Unblock::HTTP::Server->new(on_request => $callback, %{ $case->[0] }); 1 }, 'invalid definition rejected');

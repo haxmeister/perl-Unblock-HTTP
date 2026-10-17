@@ -48,9 +48,10 @@ over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
 
 =head1 IMPLEMENTATION STATUS
 
-This feature branch implements reusable Server attachment. Callback timing
-still follows the engines. Buffered application delivery, WebSocket transitions,
-client pooling and transport factories remain planned. See docs/IMPLEMENTATION.md.
+This feature branch implements reusable Server attachment, bounded buffered
+requests, and per-transaction streaming. It requires the coordinated engine
+receive/lifecycle branches. WebSocket transitions, client pooling and transport
+factories remain planned. See docs/IMPLEMENTATION.md.
 
 =head1 CLASSES
 

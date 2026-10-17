@@ -2,179 +2,113 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Base: ad8ed8989a6c8fd9abd934f911a184116152be67
-This is an incomplete development checkpoint, not a release candidate.
+Status: development checkpoint, not a release candidate.
 
-## Implemented in this checkpoint
+## Implemented
 
-- Server is a reusable definition with shared callbacks and protocol policy.
-- attach_stream returns an actual HTTP1/HTTP2 Server engine.
-- attach_quic returns a started actual HTTP3 Server engine.
-- Only explicitly enabled protocols can be attached. TCP/TLS ALPN choices
-  exclude H3 and disabled protocols. Unknown negotiation results fail.
-- Configuration containers are copied at construction and attachment.
-  Connection-local changes cannot modify the shared settings of other engines.
-- The optional LinuxEvent adapter feeds the selected engine directly.
-- QUIC server managers use one supplied Server definition. Ready callbacks
-  receive the actual H3 engine. Startup reentrancy cannot attach twice.
-- Transactions and callbacks retain their engine identity. No transaction
-  subclassing, reblessing, method injection, or forwarding wrapper was added.
-- The original whole-buffer output contract is unchanged.
+Server is a reusable definition with shared protocol policy. attach_stream
+returns the actual H1/H2 Server engine; attach_quic returns the actual started
+H3 Server engine. Frameworks retain those engines and own sockets and timers.
+The optional LinuxEvent adapter feeds the selected engine directly. QUIC
+server managers attach each ready connection through the shared definition.
 
-Client is still the old single-connection interface. _Session remains only
-for Client and uses the shared _EngineFactory. This is staging, not an attempt
-to preserve the old API permanently. The former Server constructor and its
-connection forwarding methods were removed without compatibility aliases.
+Only explicitly enabled protocols can attach. Settings containers are copied.
+No transaction wrapper, subclass, reblessing, or method injection is used.
+The whole-buffer output contract is unchanged.
 
-## Deliberate incomplete behavior
+Ordinary Server callbacks now have the intended application timing:
 
-Server callbacks still have their existing engine meanings:
+- on_headers($tx, $request): incoming headers, before body delivery.
+- on_request($tx, $request): successful complete body and trailers.
+- on_error($tx, $error, optional code): underlying engine failure.
 
-- on_request: request headers have arrived;
-- on_body: incoming body chunk;
-- on_request_end: body and trailers have completed;
-- on_error: engine failure.
+Each protocol defaults to buffered reception capped at 1 MiB. Change the
+positive max_buffered_body_bytes option in that protocol's tuning hash.
+Register tx->on_data during on_headers to select streaming without a full
+body accumulator. on_request still runs once on successful streamed reception.
+Register tx->on_finish before terminal state to observe complete/error/cancelled.
+A completed request can still have an unfinished response.
 
-The design requires a later application on_request callback, bounded buffering,
-on_headers, and per-transaction on_data. Those are NOT implemented here.
-The callback identity and timing tests protect only this foundation; revise
-those tests when introducing the final application callback contract.
+The engine owns reception and installs the body before freezing the same
+Uniform message. The upper layer stores no body chunks and maps callbacks
+once when constructing the shared definition. There is no per-chunk forwarding
+closure in the unified layer.
 
-WebSocket enabling is rejected explicitly. H2/H3 Extended CONNECT advertising
-is disabled, and conflicting engine settings are rejected. This does not yet
-provide a complete H1 WebSocket permission gate: advanced code can still
-invoke an engine's raw 101 response behavior. Full acceptance policy belongs
-to the next transaction/transition stage. Do not claim WebSocket policy
-conformance from the zero-valued option alone.
+Old upper-layer on_body and on_request_end constructor options are removed,
+without aliases. They remain low-level interfaces in the individual engines.
 
-The optional adapter is still server-only. There is no transport factory,
-URL request API, request-operation handle, pool, Alt-Svc cache, or automatic
-WebSocket connection API yet. The full approved design remains the target.
+## Coordinated dependency branches
 
-## Next concrete dependency scope
+The user explicitly authorized changes to HTTP1, HTTP2, HTTP3 and this repo.
+All dependency work is on feature/unified-receive-lifecycle. Main branches
+remain untouched. See ENGINE-CONTRACTS.md and each engine's Handoff.md.
 
-See ENGINE-CONTRACTS.md for the proposed first engine milestone: bounded
-receive-body modes, per-transaction on_data selection at headers, and exactly
-once on_finish. This comes before transaction subclassing and WebSocket hooks.
-The detailed proposal is ready for maintainer review. No dependency repository
-has been modified.
+H1/H2 add bounded buffering while retaining their default stream mode. H3
+retains its buffered default and reuses its existing accumulator/Reader.
+All add on_data and on_finish. H3 body-limit failure now resets its stream
+instead of failing the connection. Native ABI layouts remain unchanged.
 
-## Engine work requiring separate repository authorization
-
-The following findings came from H1/H2 0.11 and H3 0.12 source review.
-Do not modify these distributions from this branch without approval.
-
-1. Supported transaction construction extension.
-
-   H1 Client/Server and H2 Client/Server instantiate their concrete Transaction
-   classes directly; H3 Connection also constructs its Transaction directly.
-   The real transactions lack the proposed on_data, pause/resume, and
-   WebSocket convenience methods.
-
-   Proposed minimal extension: an optional validated transaction_class, defaulting
-   to the engine's own Transaction class. It must preserve the existing native
-   construction path and permit a single-inheritance subclass owned by
-   Unblock::HTTP. This lets the upper layer implement WebSocket conveniences
-   without making individual engines depend on WebSocket or adding wrappers.
-   Establish the constructor contract and benchmark it before choosing this
-   approach over adding common receive/lifecycle methods to engine transactions.
-   Do not implement by reblessing already-created transactions.
-
-2. Receive-mode selection and completion before message freeze.
-
-   H1 Server::_complete_request and H2 Server::_request_end freeze the Uniform
-   request BEFORE invoking on_request_end. Their body callbacks deliver chunks;
-   the upper layer cannot install one final buffered body at completion through
-   the public Message API. Updating Message->body for every chunk would risk
-   repeated copying; modifying private fields or thawing it is unacceptable.
-
-   Preferred primitive: bounded engine receive-body buffering with per-transaction
-   selection during the header callback, followed by one final body installation
-   before freezing the message. H3 already has bounded receive modes; verify how
-   to select them per transaction before the first body callback. A supported
-   pre-freeze completion hook is an alternative if the upper layer owns the
-   only body accumulator. Do not implement both accumulators.
-
-3. Terminal notification and receive flow control.
-
-   Add or expose a terminal observer that runs once for complete, cancelled,
-   and error outcomes, including locally initiated cancellation. This is needed
-   for on_finish, pool capacity release, and deterministic cleanup without polling.
-   An intentional cancel must not be turned into an application error.
-
-   H2 auto_consume/consume provides a starting point for receive credit. Check
-   H3 Body::Reader/QUIC credit and H1 transport read control. Define pause/resume
-   with bounded already-received data and preserve other multiplexed streams.
-   Existing response on_complete alone does not establish the full terminal
-   observer needed for both client and server.
-
-4. HTTP/1 successor-consumer attachment.
-
-   H1 already exposes on_switch and take_remainder. Its ordinary input path
-   currently stops parsing at the switch and collects remainder bytes; its
-   native path reports switched status. It does not transparently feed a new
-   consumer through the same public/native input target.
-
-   Proposed primitive: a generic successor consumer installed at the protocol
-   boundary, after handshake output is accepted. Route bytes, EOF, errors,
-   writable events, and native borrowed input consistently. Preserve same-read
-   remainder exactly once. Keep WebSocket knowledge in Unblock::HTTP.
-   Benchmark against a one-time adapter target update before fixing the ABI.
-
-5. Safe H2/H3 stream composition and readiness.
-
-   WebSocket's integration guide requires H2 output flushing after parser
-   callbacks return. Verify or provide a supported post-dispatch mechanism so
-   the upper layer does not depend on framework-specific polling or forbidden
-   reentry. Retain bounded protocol-required queues only.
-
-   Audit H3 stream capacity and connection lifecycle notifications before pool
-   scheduling. The current QUIC manager scans all tracked connections per
-   Driver event. Do not claim constant-cost lifecycle work. Net::QUIC's reviewed
-   Connection API does not expose negotiated ALPN in its documented public
-   interface; direct attach_quic callers must supply an H3 connection. The QUIC
-   manager fixes its Driver ALPN to h3. A future generic factory needs verified
-   negotiation metadata rather than assuming any ready QUIC connection is H3.
-
-## Next implementation order
-
-1. Agree the minimal dependency hook contracts and obtain authorization for
-   their repositories. Preserve this branch while dependency work occurs.
-2. Implement the final Server callback/body contract and transaction conveniences
-   using those supported primitives; test nonempty and failed bodies first.
-3. Implement internal H1 switching and H2/H3 WebSocket stream attachment with
-   the same application policy on client and server.
-4. Implement shared framework factories, bounded pending requests and Client
-   scheduling. Specify pre-transaction error/cancel behavior for the recommended
-   cancellable request-operation handle. Callbacks still receive real engine
-   transactions once created; the handle must not become a body-method proxy.
-5. Add reuse/capacity, strict version selection, validated in-memory Alt-Svc,
-   conservative retry/fallback, and connect_websocket.
-6. Complete live stress tests, direct-engine comparisons, and application versus
-   adapter documentation before release consideration.
+Released H1/H2 0.11 and H3 0.12 lack these methods. Attachment rejects old
+engines explicitly. Feature versions have not been bumped for release.
+Do not install this upper branch with released engines and expect it to work.
 
 ## Validation
 
-2026-10-17: prove -lr t passes 5 files / 164 assertions. This includes independent
-connections, protocol gating, configuration ownership, direct transaction and
-callback identity, QUIC readiness/startup reentrancy, and invalid API arguments.
+Local Perl 5.38.2, 2026-10-17:
 
-The isolated tests use doubles for native dependencies. They do not establish
-wire correctness, native ABI compatibility, final callback semantics, or
-performance. Real engine dependencies are not installed in this environment.
-Live test sources were migrated but have not been executed here.
+- HTTP1: 36 files, 320 top-level tests/subtests pass.
+- HTTP2: 30 files, 525 top-level tests/subtests pass.
+- Upper layer: 6 files, 182 top-level tests/subtests pass. Five files use engine
+  doubles; t/14-server-receive.t runs real H1/H2 attached engines.
 
-The published commit 2003eb834e5ab7be2b88dfe78f32a42faa84a445 passed GitHub
-Actions run 39051664280:
+The new engine tests cover buffered/streamed bodies, limits, empty bodies,
+cancellation, object identity, callback ordering and native/portable parity.
+H1 also covers chunked trailers, truncation, and throwing completion/error
+callbacks. H2 covers simultaneous streams and overflow isolation.
+
+H1 uses Uniform::HTTP 0.06 from the read-only dependency checkout. H2 was built
+against the actual system nghttp2 1.59.0 shared library and matching upstream
+headers, using a scratch build configuration because Alien::nghttp2 is absent.
+The repository Makefile.PL is unchanged.
+
+H3 native/ownership/terminal tests pass locally: 3 files, 92 top-level checks.
+The native XS was built against upstream nghttp3 d29ceea176cebc1f41c9d818c3b1825143d3f813
+(1.18.90 development), with Test-Simple and Term-Table source checkouts as test
+inputs. This is not the released Alien dependency configuration. Net::QUIC
+remains unavailable locally, so full H3 and live QUIC/TLS validation are pending.
+t/24-receive-lifecycle.t is prepared for the existing GitHub workflow.
+Do not claim full H3 correctness until that workflow passes.
+
+Prior foundation commit 2003eb834e5ab7be2b88dfe78f32a42faa84a445 passed
 https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
+with 164 isolated assertions and 10 live H1/H2 TCP and H3 QUIC/TLS assertions.
+That run predates these changes and does not validate the new callback contract.
 
-The inspected logs confirm 164 isolated assertions and 10 live assertions:
-H1/H2 cleartext TCP and H3 QUIC/TLS handshake, request, and response. Installed
-versions were H1 0.11, H2 0.11, H3 0.12, Net::QUIC 0.04, Linux::Event 0.117,
-and Uniform::HTTP 0.06. This does not cover H1/H2 TLS ALPN, streamed request
-bodies, concurrent clients, WebSocket, or the proposed final callbacks.
+## Next steps
 
-A follow-up workflow change pins dependency commits and prints each tested SHA.
-That change has not run in CI yet; do not retroactively attribute its selected
-SHAs to the successful run above, which installed repository heads. No
-benchmark result is claimed.
+1. Local review and feature-branch checkpoints are complete; preserve the handoffs.
+2. Confirm publication of the new dependency branches, following the user's
+   preference for confirmation before pushes. Run their full CI suites.
+3. The upper workflow pins the prepared local engine commits. Publish those
+   dependencies first, verify their remote SHAs, and adjust pins if publication
+   changes commit IDs. Then publish upper changes and run live TCP/QUIC
+   integration against those exact revisions.
+4. Resolve H3 and coordinated integration failures before marking this ordinary
+   Server milestone verified. No benchmark improvement is claimed.
+
+## Later design milestones
+
+Client remains the old single-connection interface. The shared Client, transport
+factories, request-operation handle, bounded scheduling, connection pooling,
+validated Alt-Svc cache and retry policy are pending.
+
+WebSocket enablement is rejected. H2/H3 Extended CONNECT advertising is disabled.
+The raw H1 engine can still issue 101; a complete WebSocket permission gate and
+protocol handoff are pending. Needed engine work includes supported transaction
+construction extensions, H1 successor-consumer routing, H2/H3 safe stream
+composition, and bounded pause/resume. These are not part of this first receive
+milestone. No Net::QUIC modifications are authorized.
+
+Complete live stress tests, direct-engine benchmarks, and final application
+versus adapter documentation before considering a release. The original
+approved design remains in design-handoff.txt.

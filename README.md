@@ -6,8 +6,8 @@ existing engines. This distribution adds no XS.
 
 This feature branch is under development. The reusable Server and direct
 connection attachment are implemented. Client pooling, automatic connection
-creation, buffered application callbacks, and WebSocket transitions are not
-implemented yet. Read [implementation status](docs/IMPLEMENTATION.md) before
+creation and WebSocket transitions are not implemented yet. Bounded buffered
+and streamed Server callbacks now require the coordinated engine feature branches. Read [implementation status](docs/IMPLEMENTATION.md) before
 using the branch. It is not a release candidate.
 
 ## One Server, many connections
@@ -31,10 +31,19 @@ my $server = Unblock::HTTP::Server->new(
 An omitted protocol is disabled. Each protocol hash can carry engine tuning
 options. `websocket => 0` is accepted; enabling it currently fails explicitly.
 
-At this checkpoint, `on_request` still runs when headers arrive, using the
-existing engine contract. `on_body` receives body chunks and `on_request_end`
-runs after the body and trailers. The planned default buffering and later
-application `on_request` timing need additional engine support.
+`on_headers($tx, $request)` runs first. By default the engine buffers up to
+1 MiB, then calls `on_request($tx, $request)` with the complete frozen request.
+Set `max_buffered_body_bytes` in a protocol hash to change that positive limit.
+
+For streaming, register `$tx->on_data(sub { my ($tx, $bytes) = @_; ... })`
+during `on_headers`. This suppresses full-body accumulation. `on_request`
+still runs after successful body completion. Failed or cancelled bodies do
+not reach it. Register `$tx->on_finish(...)` before the transaction is terminal
+to observe completion, error, or cancellation exactly once.
+
+This requires `feature/unified-receive-lifecycle` in HTTP1, HTTP2 and HTTP3.
+Released H1/H2 0.11 and H3 0.12 lack these primitives. Attachment checks the
+required methods and gives an explicit error for an older engine.
 
 ## Framework attachment
 
