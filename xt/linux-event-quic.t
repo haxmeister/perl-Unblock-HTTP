@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test::More;
 use Scalar::Util qw(refaddr);
+use Digest::SHA qw(sha256_hex);
 use File::Temp qw(tempdir);
 use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Address;
@@ -28,6 +29,13 @@ my $loop = Linux::Event::Loop->new;
 my ($server, $client, $client_driver, $server_timer, $client_timer, $client_socket);
 my ($error, $requests, $ready, $completed) = (undef, 0, 0, 0);
 my $total = 8;
+# Exercise a >1 MiB streamed request/response alongside seven ordinary
+# buffered transactions on the SAME H3 connection.
+my $large_target = '/job8';
+my $large_request = '0123456789ABCDEF' x 73728;
+my $large_response = 'fedcba9876543210' x 73728;
+my ($incoming_bytes, $incoming_chunks, $outgoing_bytes, $outgoing_chunks) = (0, 0, 0, 0);
+my ($incoming_digest, $outgoing_digest) = (Digest::SHA->new(256), Digest::SHA->new(256));
 my (%header_request, %header_tx, %received_body, %response_body,
     %server_events, %client_events, %completed_index);
 
@@ -49,6 +57,15 @@ $server = Unblock::HTTP::QUIC->server(
             $header_request{$target} = $request;
             $header_tx{$target} = $tx;
             push @{ $server_events{$target} }, 'headers';
+            if ($target eq $large_target) {
+                $tx->on_data(sub ($data_tx, $chunk) {
+                    $error ||= "H3 large upload transaction changed"
+                        if refaddr($data_tx) != refaddr($tx);
+                    $incoming_bytes += length($chunk);
+                    $incoming_chunks++;
+                    $incoming_digest->add($chunk);
+                });
+            }
             $tx->on_finish(sub ($finished) {
                 push @{ $server_events{$target} }, 'finish:' . $finished->state;
             });
@@ -57,14 +74,23 @@ $server = Unblock::HTTP::QUIC->server(
             my $target = $request->target;
             $requests++;
             push @{ $server_events{$target} }, 'request';
-            $received_body{$target} = $request->body;
+            $received_body{$target} = $request->body
+                unless $target eq $large_target;
             is(refaddr($request), refaddr($header_request{$target}),
                 "$target H3 request identity");
             is(refaddr($tx), refaddr($header_tx{$target}),
                 "$target H3 transaction identity");
             ok($request->is_complete && !$request->is_mutable,
                 "$target H3 request complete and frozen");
-            $tx->respond(status => 200, body => "hello over quic $target\n");
+            if ($target eq $large_target) {
+                is($incoming_bytes, length($large_request),
+                    'H3 streamed upload byte count');
+                is($incoming_digest->hexdigest, sha256_hex($large_request),
+                    'H3 streamed upload digest');
+                $tx->respond(status => 200, body => $large_response);
+            } else {
+                $tx->respond(status => 200, body => "hello over quic $target\n");
+            }
         },
     ),
     send => sub ($datagram) {
@@ -120,12 +146,24 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
             my $target = '/job' . $index;
             $client->request(
                 method => 'POST', url => "https://localhost$target",
-                body => "request over quic $target\n",
+                body => $target eq $large_target
+                    ? $large_request : "request over quic $target\n",
                 http_version => '3',
+                ($target eq $large_target ? (
+                    on_data => sub ($tx, $chunk) {
+                        $outgoing_bytes += length($chunk);
+                        $outgoing_chunks++;
+                        $outgoing_digest->add($chunk);
+                    },
+                    on_end => sub ($tx) {
+                        push @{ $client_events{$target} }, 'end';
+                    },
+                ) : ()),
                 on_response => sub ($tx, $response) {
                     $error = "HTTP/3 status " . $response->status
                         unless $response->status == 200;
-                    $response_body{$target} = $response->body;
+                    $response_body{$target} = $response->body
+                        unless $target eq $large_target;
                     push @{ $client_events{$target} }, 'response';
                 },
                 on_error => sub ($tx, $e) {
@@ -183,7 +221,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
     on_error => sub ($socket, $e) { $error = "client UDP: $e"; $loop->stop },
 );
 my $limit = Linux::Event::Kernel::Timer->new(
-    loop => $loop, after => 15,
+    loop => $loop, after => 30,
     on_timer => sub ($t) { $error = 'timeout'; $loop->stop },
 );
 $loop->run;
@@ -193,13 +231,26 @@ is($requests, $total, 'HTTP/3 server receives all concurrent requests');
 is($completed, $total, 'HTTP/3 client completes all concurrent requests');
 for my $index (1 .. $total) {
     my $target = '/job' . $index;
-    is($received_body{$target}, "request over quic $target\n",
-        "$target H3 received complete buffered body");
-    is($response_body{$target}, "hello over quic $target\n",
-        "$target H3 response body");
+    if ($target eq $large_target) {
+        is($incoming_bytes, length($large_request),
+            "$target H3 streamed request length");
+        is($outgoing_bytes, length($large_response),
+            "$target H3 streamed response length");
+        is($outgoing_digest->hexdigest, sha256_hex($large_response),
+            "$target H3 streamed response digest");
+        ok($incoming_chunks > 1, "$target incoming body is chunked");
+        ok($outgoing_chunks > 1, "$target outgoing body is chunked");
+    } else {
+        is($received_body{$target}, "request over quic $target\n",
+            "$target H3 received complete buffered body");
+        is($response_body{$target}, "hello over quic $target\n",
+            "$target H3 response body");
+    }
     is_deeply($server_events{$target}, [ 'headers', 'request', 'finish:complete' ],
         "$target H3 server lifecycle");
-    is_deeply($client_events{$target}, [ 'response', 'finish' ],
+    is_deeply($client_events{$target},
+        $target eq $large_target ? [ 'response', 'end', 'finish' ]
+                                : [ 'response', 'finish' ],
         "$target H3 client lifecycle");
     is($completed_index{$target}, 1, "$target finished exactly once");
 }
