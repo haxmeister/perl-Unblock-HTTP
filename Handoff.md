@@ -19,6 +19,36 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Client milestone continuation (2026-10-17)
+
+Branch/ref verification: all four published heads matched the supplied handoff at
+start of this session; shell clone/fetch is unavailable in this workspace (DNS).
+GitHub connector is the only publication path. No repository files in a local
+git working tree were available at session start. Use connector refs with
+explicit branch selection; do not modify main.
+
+Concrete implementation order:
+
+1. Replace the old one-connection Client with a reusable definition accepting
+   http1/http2/http3 policy, asynchronous connect_stream/connect_quic framework
+   factories, and a framework defer callback. No socket/TLS/timer management in
+   the core. Explicit selection honors strict per-request http_version.
+2. Return a request-operation handle immediately (including before a connect
+   completes); keep the actual engine Transaction in operation->transaction
+   once issued. The operation is not a transaction wrapper.
+3. Enforce a finite request queue and finite per-origin connection/stream
+   capacities; reuse idle H1 connections and H2/H3 multiplexed capacity.
+   Schedule next requests via framework defer after transaction completion to
+   avoid invoking H1 again inside its on_finish stack.
+4. Map early streaming on_response/on_data/on_end and late buffered on_response
+   onto native callbacks. Use the engine's one receive buffer and native tx.
+5. Add isolated factory/queue/cancellation/pooling tests, then live engine tests.
+   Next milestone after this slice: validated Alt-Svc cache/discovery, safe
+   method/transport-aware retries, and WebSocket upgrades later.
+
+NOTE: this section records the plan, not successful implementation. Update it
+with actual code and test results before marking any stage complete.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
