@@ -506,6 +506,32 @@ and allocation measurements. The observed unified Client overhead
 in this constrained workload is still material and must not be hidden.
 No unmeasured "zero-copy" or broad performance claims should be made.
 
+## Client request-path profiling continuation (2026-10-17)
+
+Starting feature refs verified: upper e755e2405b954ccbcf7cc7c390caaff91cf6c911;
+H1 99edf2fa99816a383915cd1a0989dda93036a495;
+H2 51fb1ad9ef97ff7a4451b10d14a505df4d55fae4;
+H3 b093bcf8c05bacaa8e674896cb342c797d7ef138.
+All four main refs unchanged. Latest upper CI 39076525306 PASS
+(543 distribution / 145 live checks). The previous handoff's measured
+three-round benchmark ratio remained ~1.30 H1 and ~1.34 H2.
+
+Next validated profiling slice:
+- Extend the identical direct vs unified live TCP benchmark to report
+  time spent synchronously in each mode's request() call versus elapsed
+  round-trip wall time, without adding a runtime dependency or changing
+  native engine hooks. Instrument both sides identically and report
+  warmup-free per-request mean; keep this benchmark out of CI pass/fail
+  thresholds.
+- Add an isolated URI/Uniform construction microbenchmark as supporting
+  evidence only, not a substitute for profiling actual sockets.
+- Use measurements to select a narrow optimization; never remove URI
+  validation, request identity, callback sequencing or backpressure.
+- Verify with CI, leave all engine and read-only dependency sources alone,
+  update this handoff with results, and preserve main/release restrictions.
+
+This is a plan until new source CI and profiler output are recorded.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
