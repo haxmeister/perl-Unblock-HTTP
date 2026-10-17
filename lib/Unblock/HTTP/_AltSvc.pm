@@ -149,6 +149,12 @@ sub invalidate {
     return;
 }
 
+sub clear {
+    my ($self) = @_;
+    $self->{entries} = {};
+    return;
+}
+
 1;
 
 __END__
