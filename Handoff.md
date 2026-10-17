@@ -149,3 +149,9 @@ now pins these exact published commits. All main refs remain unchanged.
 - Upper H3 pin updated to that fix; live QUIC test now sends a POST and checks
   full buffered body, message/transaction identity, freeze and lifecycle order.
   Await the new integration run before marking this milestone verified.
+
+The strengthened upper run 39058944806 failed during Alien::nghttp2 install,
+before project tests. CI now installs system libnghttp2 development files
+(as the H2 matrix does) and prints the cpanm build log on failure.
+H3 credit fix 3824e7b91012f2a73143ca46eb0d077db6d1af6a is pinned;
+its full test run 39059118633 and interop 39059118732 are in progress.
