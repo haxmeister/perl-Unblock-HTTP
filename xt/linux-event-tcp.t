@@ -11,7 +11,8 @@ use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
 use Unblock::HTTP::Adapter::LinuxEvent;
 
-our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $SERVER, $TIMER_CANCELLATIONS);
+our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $SERVER, $TIMER_CANCELLATIONS,
+     $COMPLETED, $REQUESTS);
 
 package TestHTTPServer;
 use parent 'Unblock::HTTP::Adapter::LinuxEvent';
@@ -50,26 +51,29 @@ sub on_ready ($self) {
             };
         },
     );
-    $self->{operation} = $self->{client}->request(
-        method => 'GET',
-        url => 'http://localhost/',
-        timeout => 5,
-        http_version => $main::PROTOCOL eq 'h2' ? '2' : '1.1',
-        on_response => sub ($tx, $response) {
-            $main::FAILED = "unexpected status: " . $response->status
-                unless $response->status == 200;
-            $main::BODY = $response->body;
-        },
-        on_error => sub ($tx, $error) {
-            $main::FAILED = "request failed: $error";
-            $main::LOOP->stop;
-        },
-        on_finish => sub ($tx) {
-            $main::FAILED ||= 'request ended without success'
-                unless $tx->is_complete;
-            $main::LOOP->stop;
-        },
-    );
+    for my $index (1 .. $main::REQUESTS) {
+        $self->{client}->request(
+            method => 'GET',
+            url => 'http://localhost/test' . $index,
+            timeout => 5,
+            http_version => $main::PROTOCOL eq 'h2' ? '2' : '1.1',
+            on_response => sub ($tx, $response) {
+                $main::FAILED = "unexpected status: " . $response->status
+                    unless $response->status == 200;
+                $main::BODY .= $response->body;
+            },
+            on_error => sub ($tx, $error) {
+                $main::FAILED = "request failed: $error";
+                $main::LOOP->stop;
+            },
+            on_finish => sub ($tx) {
+                $main::FAILED ||= 'request ended without success'
+                    unless $tx->is_complete;
+                $main::COMPLETED++;
+                $main::LOOP->stop if $main::COMPLETED == $main::REQUESTS;
+            },
+        );
+    }
 }
 sub on_data ($self, $bytes) { $self->{http}->input($bytes) }
 sub on_eof ($self) { $self->{http}->input_eof if $self->{http} && $self->{http}->want_read }
@@ -88,7 +92,9 @@ sub unblock_abort ($self, $reason) { $self->close }
 
 package main;
 for my $protocol ('http/1.1', 'h2') {
-    ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $TIMER_CANCELLATIONS) = ($protocol, Linux::Event::Loop->new, '', undef, 0, 0);
+    ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS,
+        $TIMER_CANCELLATIONS, $COMPLETED, $REQUESTS) =
+        ($protocol, Linux::Event::Loop->new, '', undef, 0, 0, 0, 12);
     $SERVER = Unblock::HTTP::Server->new(
         http1 => {}, http2 => {},
         on_request => sub ($tx, $request) {
@@ -114,9 +120,10 @@ for my $protocol ('http/1.1', 'h2') {
     );
     $LOOP->run;
     is($FAILED, undef, "$protocol completes without error");
-    is($SERVER_REQUESTS, 1, "$protocol delivered one request");
-    is($BODY, "hello from $protocol\n", "$protocol body complete");
-    is($TIMER_CANCELLATIONS, 1, "$protocol cancels its operation timer on completion");
+    is($SERVER_REQUESTS, $REQUESTS, "$protocol delivered all requests");
+    is($COMPLETED, $REQUESTS, "$protocol all requests finished");
+    is($BODY, ("hello from $protocol\n" x $REQUESTS), "$protocol bodies complete");
+    is($TIMER_CANCELLATIONS, $REQUESTS, "$protocol cancels all operation timers");
     $client->close unless $client->is_closed;
     $listener->close if $listener->can('close');
     $timer->cancel if $timer->is_active;
