@@ -1,6 +1,6 @@
-# Engine prerequisites for the next Server milestone
+# Engine contracts for ordinary Server reception
 
-Status: authorized on 2026-10-17; implementation in progress on feature branches.
+Status: implemented and CI verified on feature branches, 2026-10-17.
 Date: 2026-10-17
 Scope: perl-Unblock-HTTP1, perl-Unblock-HTTP2, perl-Unblock-HTTP3.
 Do not change main in any repository. Do not merge or release these changes.

@@ -72,29 +72,32 @@ headers, using a scratch build configuration because Alien::nghttp2 is absent.
 The repository Makefile.PL is unchanged.
 
 H3 native/ownership/terminal tests pass locally: 3 files, 92 top-level checks.
-The native XS was built against upstream nghttp3 d29ceea176cebc1f41c9d818c3b1825143d3f813
-(1.18.90 development), with Test-Simple and Term-Table source checkouts as test
-inputs. This is not the released Alien dependency configuration. Net::QUIC
-remains unavailable locally, so full H3 and live QUIC/TLS validation are pending.
-t/24-receive-lifecycle.t is prepared for the existing GitHub workflow.
-Do not claim full H3 correctness until that workflow passes.
+The local native build uses upstream nghttp3 1.18.90 development and cannot
+run live QUIC because Net::QUIC is not installed locally.
 
-Prior foundation commit 2003eb834e5ab7be2b88dfe78f32a42faa84a445 passed
-https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
-with 164 isolated assertions and 10 live H1/H2 TCP and H3 QUIC/TLS assertions.
-That run predates these changes and does not validate the new callback contract.
+Full GitHub CI now passes for all three engines, including live H3 tests:
+
+- HTTP1 test 39058702399 and framework examples 39058702329.
+- HTTP2 test 39058704851 and interoperability 39058704842.
+- HTTP3 test 39059118633 (26 files / 942 top-level tests/subtests) on
+  Perl 5.20, 5.28, 5.36, 5.44, with distribution/POD/installed ABI checks.
+  Interoperability 39059118732 also passed.
+
+CI uses the released dependency configuration. The upper workflow pins the
+published engine source revisions listed in Handoff.md. Initial integration
+39058779436 passed; strengthened final integration 39059172525 also passed
+(182 distribution checks and 15 live TCP/QUIC checks).
+It checks H1/H2 TCP and an H3 POST over QUIC/TLS, including complete body,
+transaction/message identity, frozen message and lifecycle order.
 
 ## Next steps
 
-1. Local review and feature-branch checkpoints are complete; preserve the handoffs.
-2. Confirm publication of the new dependency branches, following the user's
-   preference for confirmation before pushes. Run their full CI suites.
-3. The upper workflow pins the prepared local engine commits. Publish those
-   dependencies first, verify their remote SHAs, and adjust pins if publication
-   changes commit IDs. Then publish upper changes and run live TCP/QUIC
-   integration against those exact revisions.
-4. Resolve H3 and coordinated integration failures before marking this ordinary
-   Server milestone verified. No benchmark improvement is claimed.
+1. Ordinary Server receive/lifecycle milestone is complete and CI verified.
+2. Keep all four feature branches; no merge, release or version bump is authorized.
+3. Publication and CI fixes are already authorized. Do not ask for the same
+   confirmation again. Main branches and read-only dependencies stay unchanged.
+4. Continue the original design after verifying this ordinary Server milestone.
+   No benchmark improvement is claimed.
 
 ## Later design milestones
 
