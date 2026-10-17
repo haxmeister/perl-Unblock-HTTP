@@ -15,6 +15,8 @@ sub new {
         state       => 'queued',
         error       => undef,
         transaction => undef,
+        timer_cancel => undef,
+        timeout_error => undef,
     }, $class;
     weaken($self->{client});
     return $self;
@@ -25,6 +27,13 @@ sub error       { $_[0]{error} }
 sub transaction { $_[0]{transaction} }
 sub is_terminal { $_[0]{state} =~ /\A(?:complete|error|cancelled)\z/ ? 1 : 0 }
 
+sub _cancel_timer {
+    my ($self) = @_;
+    my $cancel = delete $self->{timer_cancel} or return;
+    eval { $cancel->(); 1 } or warn "request timer cancellation failed: $@";
+    return;
+}
+
 sub cancel {
     my ($self) = @_;
     return 0 if $self->is_terminal;
@@ -33,6 +42,7 @@ sub cancel {
         return 1;
     }
     $self->{state} = 'cancelled';
+    $self->_cancel_timer;
     my $client = $self->{client};
     $client->_cancel_queued($self) if $client;
     return 1;
@@ -54,7 +64,9 @@ Transaction once the request is issued, without an HTTP transaction wrapper.
 
 C<state()> is queued, connecting, active, complete, error, or cancelled.
 C<error()> reports a connection or transaction error, if any.
-C<is_terminal()> and C<cancel()> work before and after dispatch.
+C<is_terminal()> and C<cancel()> work before and after dispatch. An
+optional per-request positive timeout uses the framework timer; it does
+not create a blocking timer or another network queue.
 
 Cancellation before dispatch never creates an engine Transaction. In that
 case C<on_finish> is called with the operation handle, not a made-up
