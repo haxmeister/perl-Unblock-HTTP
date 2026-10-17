@@ -136,3 +136,16 @@ Published engine commits (trees verified against the local checkpoints):
 
 These CI runs are in progress, not yet verified. Upper integration workflow
 now pins these exact published commits. All main refs remain unchanged.
+
+## CI progress after publication
+
+- HTTP1 test 39058702399 and framework examples 39058702329: PASS.
+- HTTP2 test 39058704851 and interop 39058704842: PASS.
+- Upper initial integration 39058779436 at 71b0c8ac9f1f63a5d53b5edd3f2506659b0c0ed6: PASS.
+- H3 initial interop 39058707246: PASS. Full suite 39058707266 failed.
+  Fixed rejected-stream reset bookkeeping and test expectations/identity checks
+  at e204bae55414e08b7994c9d33ca1dd91b3ceaee1.
+  Replacement test 39058891647 and interop 39058891709 are pending.
+- Upper H3 pin updated to that fix; live QUIC test now sends a POST and checks
+  full buffered body, message/transaction identity, freeze and lifecycle order.
+  Await the new integration run before marking this milestone verified.

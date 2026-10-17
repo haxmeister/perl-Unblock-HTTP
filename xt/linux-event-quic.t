@@ -2,6 +2,7 @@ use v5.36;
 use strict;
 use warnings;
 use Test::More;
+use Scalar::Util qw(refaddr);
 use File::Temp qw(tempdir);
 use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Address;
@@ -24,6 +25,8 @@ if ($openssl != 0) {
 my $loop = Linux::Event::Loop->new;
 my ($server, $client, $server_timer, $client_timer, $client_socket);
 my ($body, $error, $requests, $ready) = ('', undef, 0, 0);
+my ($header_request, $header_tx, $received_body);
+my @server_events;
 
 my $server_socket = Linux::Event::IO::Sock::Dgram->new(
     loop => $loop, host => '127.0.0.1', port => 0,
@@ -38,8 +41,21 @@ $server = Unblock::HTTP::QUIC->server(
     certificate_file => $cert, private_key_file => $key,
     server => Unblock::HTTP::Server->new(
         http3 => {},
+        on_headers => sub ($tx, $request) {
+            $header_request = $request;
+            $header_tx = $tx;
+            push @server_events, 'headers';
+            $tx->on_finish(sub ($finished) {
+                push @server_events, 'finish:' . $finished->state;
+            });
+        },
         on_request => sub ($tx, $request) {
             $requests++;
+            push @server_events, 'request';
+            $received_body = $request->body;
+            is(refaddr($request), refaddr($header_request), 'same H3 request at headers and completion');
+            is(refaddr($tx), refaddr($header_tx), 'same H3 engine transaction');
+            ok($request->is_complete && !$request->is_mutable, 'H3 request complete and frozen');
             $tx->respond(status => 200, body => "hello over quic\n");
         },
     ),
@@ -72,7 +88,8 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
             on_ready => sub ($http, $manager) {
                 $ready++;
                 $http->request(
-                    method => 'GET', target => '/', scheme => 'https',
+                    method => 'POST', target => '/', scheme => 'https',
+                    body => "request over quic\n",
                     authority => 'localhost',
                     on_response => sub ($tx, $response) {
                         $error = "HTTP/3 status " . $response->status
@@ -111,6 +128,8 @@ $loop->run;
 is($error, undef, 'no QUIC or HTTP/3 error');
 is($ready, 1, 'one ready client');
 is($requests, 1, 'HTTP/3 server receives request');
+is($received_body, "request over quic\n", 'unified H3 callback receives complete buffered body');
+is_deeply(\@server_events, ['headers', 'request', 'finish:complete'], 'unified H3 lifecycle order');
 is($body, "hello over quic\n", 'HTTP/3 body received');
 $server_timer->cancel if $server_timer && $server_timer->is_active;
 $client_timer->cancel if $client_timer && $client_timer->is_active;
