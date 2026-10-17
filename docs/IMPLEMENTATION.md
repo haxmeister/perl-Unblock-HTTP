@@ -328,6 +328,50 @@ Verified CI 39073823298 on source/test commit
 TCP/QUIC files / 78 checks PASS. No engine or transport dependency
 source was edited; subsequent commits change only documentation.
 
+## Large-body streaming, backpressure and first benchmark (2026-10-17)
+
+New xt/linux-event-streaming.t tests three concurrent uploads and
+downloads of 1,179,648 bytes under each of H1 and H2. It registers
+server per-transaction on_data at headers and uses the public Client
+on_data/on_end streaming callbacks for the response. Default buffered
+receive limits are 1 MiB, so the oversized bodies must remain streamed.
+The live test checks byte counts, incremental SHA-256, callback ordering,
+transaction identity, exact one-time completion and timer cleanup.
+
+The live H3/QUIC socket suite also mixes one large streamed POST/response
+with seven ordinary buffered requests on the same connection, checking
+isolation, integrity and independent callback lifetimes.
+
+Controlled framework output-pressure injection returns false AFTER fully
+accepting bytes and resumes the actual H1/H2 engine on a future framework
+timer. This validates the accepted-then-blocked contract, not sustained
+slow-receiver socket throughput or queue memory high-water.
+
+CI 39075534537 PASSED with 13 distribution files / 540 checks
+and 3 live TCP/QUIC files / 145 checks. No engine source changes.
+
+bench/client-vs-direct.pl uses real LinuxEvent sockets and compares
+the direct H1/H2 Client with Unblock::HTTP::Client using the same Server.
+Repeated 1000-request/100-warmup, 3-round alternate-order smoke in CI
+39076051442 showed median unified/direct elapsed-time ratios of 1.340
+for H1 and 1.372 for H2 on that runner. This is a low-concurrency
+application API cost, not a claim about concurrent/production traffic.
+
+Removed an unnecessary framework defer after healthy transactions
+with no queued work, idle timer or retiring connection. Additional
+regression assertions preserve H1 on_finish reentrancy, idle expiry,
+and asynchronous queue progress. CI 39076255077 PASSED with
+13 distribution files / 543 checks and 3 live files / 145 checks.
+Its repeated benchmark ratios were 1.296 H1 and 1.337 H2. These
+separate CI machines do not prove an exact speedup; meaningful
+remaining overhead must be profiled before more optimization.
+
+See docs/BENCHMARKING.md for comparable workload scope and
+reproducibility limitations. Outstanding: sustained slow receivers,
+measured buffer high-water and partial writes, stream-body producer
+backpressure, H3 direct-engine baseline, concurrency fairness and
+runtime/CPU/allocation profiling.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
