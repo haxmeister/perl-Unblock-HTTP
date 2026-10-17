@@ -520,28 +520,29 @@ sub _dispatch {
         warn $@ unless $ok;
         $self->_schedule($pool);
     };
+    my $no_credit = 0;
     my $ok = eval {
         $op->{transaction} = $conn->{engine}->request(
             $op->{request},
             stream_body => $op->{stream_body},
             %engine_callback,
         );
-        # No QUIC bidirectional stream was opened; no request was sent.
-        # Preserve the SAME unsent operation and wait for the H3 engine's
-        # request-availability signal rather than fabricating a failure.
-        if (!defined($op->{transaction}) && !$op->is_terminal
-            && $conn->{protocol} eq 'h3') {
-            $conn->{active}--;
-            $conn->{credit_blocked} = 1;
-            $op->{state} = 'queued';
-            unshift @{ $pool->{pending} }, $op;
-            $self->{pending_count}++;
-            return 0;
-        }
+        # HTTP/3 returns undef before opening a QUIC bidi stream.
+        # Defer the SAME unsent operation until the engine signals credit.
+        $no_credit = 1 if !defined($op->{transaction})
+            && !$op->is_terminal && $conn->{protocol} eq 'h3';
         die "$conn->{protocol} request was not admitted by its engine\n"
-            unless defined($op->{transaction}) || $op->is_terminal;
+            unless $no_credit || defined($op->{transaction}) || $op->is_terminal;
         1;
     };
+    if ($ok && $no_credit) {
+        $conn->{active}--;
+        $conn->{credit_blocked} = 1;
+        $op->{state} = 'queued';
+        unshift @{ $pool->{pending} }, $op;
+        $self->{pending_count}++;
+        return 0;
+    }
     unless ($ok) {
         if (!$op->is_terminal) {
             $conn->{active}--;
