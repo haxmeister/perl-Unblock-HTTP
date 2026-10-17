@@ -307,4 +307,33 @@ isa_ok($required->transaction->{engine}, 'Unblock::HTTP2::Client');
 $required->transaction->finish;
 shift(@strict_defer)->() if @strict_defer;
 
+
+# Creating a new request inside on_finish must not reenter the H1 engine
+# before the prior terminal callback has returned.
+my (@reentry_ready, @reentry_defer);
+my $reentry = Unblock::HTTP::Client->new(
+    http1 => {},
+    connect_stream => sub { push @reentry_ready, $_[2] },
+    defer => sub { push @reentry_defer, $_[0] },
+    max_connections_per_origin => 1,
+);
+my $next_from_finish;
+my $initial = $reentry->request(
+    url => 'http://reentry.test/first',
+    on_finish => sub {
+        $next_from_finish = $reentry->request(
+            url => 'http://reentry.test/second',
+        );
+    },
+);
+$reentry_ready[0]->(transport => PoolTest::Transport->new);
+$initial->transaction->finish;
+ok($next_from_finish, 'application can enqueue in on_finish');
+is($next_from_finish->state, 'queued', 'on_finish does not reenter an H1 engine');
+is(scalar(@reentry_ready), 1, 'no extra connection allocated during on_finish');
+shift(@reentry_defer)->();
+is($next_from_finish->state, 'active', 'deferred continuation dispatches after unwind');
+$next_from_finish->transaction->finish;
+shift(@reentry_defer)->() if @reentry_defer;
+
 done_testing;
