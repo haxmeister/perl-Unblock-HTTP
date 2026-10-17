@@ -307,6 +307,36 @@ No main/ref changes, releases, version bumps, merges or changes to
 Net::QUIC / Uniform::HTTP. H3 engine unit/matrix CI and interop are
 recorded in its own Handoff.md.
 
+## Client idle connection lifecycle continuation (2026-10-17)
+
+Read/verified the four upper design handoffs and the existing Client.
+Current upper feature ref 51570c966a2a523427d67a7f2ecbd47ef6769aa1
+passes CI run 39070083547. Engine refs and all main refs are unchanged.
+This is a coordinated feature-only continuation, not release preparation.
+
+Design chosen for this slice:
+- Optional idle_timeout in seconds (no default idle timeout; preserve
+  existing integrations). Requires schedule_timer only when requested.
+- Optional release_connection($host, $engine, $protocol, $reason) callback
+  for frameworks to dispose of transports/QUIC resources. The core can
+  close an engine/QUIC connection if no hook is supplied; engine close is
+  not a substitute for a framework-owned stream when the hook is used.
+- One timer for each actually idle pooled connection; cancel on reuse.
+  Re-arm at latest completion, never while active requests are present
+  or while queued demand is blocked on peer SETTINGS/QUIC credit.
+- When the timer fires, retire only if still idle/current in its pool.
+  Do not close active streams or make a queued operation terminal.
+  Clean empty origin pools and stale closed/retired engines. Release
+  callbacks are at most once for each transport/engine pair, including
+  explicit capacity eviction.
+- Deterministic timer/connection tests, protocol-specific retirement,
+  real TCP/QUIC smoke, and wider H3 multiplexing test. Record verified CI.
+- No event-loop integration in the production Client, native callback
+  wrappers, unbounded timers, or automatic post-dispatch retry.
+No source edits to H1/H2/H3/QUIC/Uniform are expected.
+
+This is a plan until source CI passes.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
