@@ -395,7 +395,35 @@ Implementation contract for this slice:
   Verify CI and refresh this handoff after source/test commits.
 
 No fabricated post-dispatch retry, no network sniffing in Client, no
-unbounded buffers or per-body event wrappers. This is a plan until CI passes.
+unbounded buffers or per-body event wrappers.
+
+Implemented and published to the upper feature branch:
+- Client->network_changed explicitly clears every Alt-Svc entry, abandons
+  connecting factories and ignores their late ready callbacks. Pending
+  operations retain the same identity, queue positions and deadlines.
+  Advertised h3 preference in unsent work returns to ordinary TCP policy.
+- Idle old-network connections and timers are released immediately through
+  the one-time framework hook. Active engines remain alive but are marked
+  stale and released only after terminal callbacks; queue resumes on fresh
+  sockets without replaying already-issued requests.
+- Old-network connections are prohibited from populating new Alt-Svc hints
+  after invalidation. Repeated network_changed calls are harmless.
+- Client->pool_stats returns a detached numeric aggregate and per-origin
+  snapshot of pending, connecting, connection, active, idle, retiring and
+  stream-credit-blocked counts, without retaining socket/engine references.
+- New t/21-client-network.t (53 checks) exercises factory cancellation,
+  late readiness, active H2 survival, stale cache, idle-timer cleanup,
+  repeated changes, H3 credit-blocked migration and snapshot immutability.
+- Source/test and MANIFEST CI 39073823298 PASS at
+  9727113f5f85382f69026af74b67e7b5ac643aaf:
+  13 distribution test files / 540 checks and 2 live TCP/QUIC files /
+  78 checks. Subsequent changes update POD, README and docs only.
+- No H1/H2/H3/Net::QUIC/Uniform modifications; no main edits, merges,
+  tags, version bumps or releases.
+
+Next: backpressure and large-body live stress, pooled-vs-direct-engine
+performance measurements, framework/application examples and WebSocket
+integration. Explicit network detection remains the adapter's job.
 
 ## Current implementation
 
