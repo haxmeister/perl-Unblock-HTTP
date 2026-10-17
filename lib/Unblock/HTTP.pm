@@ -52,7 +52,8 @@ This feature branch implements reusable Server attachment, bounded buffered
 requests, and per-transaction streaming. The shared Client now has callback
 connection factories, operation handles and an initial bounded per-origin
 pool. It requires the coordinated engine receive/lifecycle branches.
-WebSocket transitions, validated Alt-Svc and retry policy remain planned.
+WebSocket transitions, cross-host Alt-Svc and retries after dispatch remain
+planned; authenticated same-host Alt-Svc and pre-dispatch fallback are implemented.
 See docs/IMPLEMENTATION.md.
 
 =head1 CLASSES
