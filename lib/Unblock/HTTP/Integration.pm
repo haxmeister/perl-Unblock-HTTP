@@ -131,7 +131,9 @@ The shared Client requires framework callbacks for connection establishment:
     );
 
 The ready callback returns the actual H1, H2, or H3 Client engine after
-successful attachment, so the framework can retain it. Feed TCP bytes,
+successful attachment, so the framework can retain it. Every new
+connect_stream invocation requires its OWN connected byte transport;
+it must not attach a second HTTP engine to an already-owned socket. Feed TCP bytes,
 EOF, errors and recovered output capacity directly to that engine. For
 HTTP/3, preserve QUIC Driver UDP and timer operation and let HTTP/3 own
 its stream callbacks. The pooled Client is not a byte-path forwarding object.
