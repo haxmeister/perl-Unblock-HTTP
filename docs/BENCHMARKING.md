@@ -58,6 +58,29 @@ local investigation:
 The Actions workflow runs a short benchmark smoke check only to confirm
 both modes can complete the same workload. No throughput threshold is used.
 
+## Initial CI observations (not performance guarantees)
+
+GitHub Actions real-sockets on the feature branch ran 1,000 measured
+requests, 100 warmup requests and three alternating-order rounds per
+protocol and mode, using a 1-connection, 1-in-flight GET/200 workload.
+These are per-run medians from uncontrolled shared CI runners:
+
+| Source | H1 direct | H1 unified | H1 ratio | H2 direct | H2 unified | H2 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before optimization, CI 39076051442 | 0.28021s | 0.37543s | 1.340 | 0.26195s | 0.35947s | 1.372 |
+| Skip unnecessary quiet pool defer, CI 39076255077 | 0.27318s | 0.35407s | 1.296 | 0.25810s | 0.34514s | 1.337 |
+
+A ratio greater than 1 means the unified Client took longer for the
+same measured request count. The relative gap remains material in
+this narrow test. The scheduling change removes an unnecessary
+framework callback when no queued work, idle timer or retirement
+needs it, and it passed the complete correctness suites. Differences
+between CI runner machines and caching mean the two rows do not
+establish a precise improvement percentage.
+
+Do not extrapolate these numbers to bulk streaming, multiplexed H2,
+QUIC/H3, slow receivers, CPU consumption or production capacity.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
