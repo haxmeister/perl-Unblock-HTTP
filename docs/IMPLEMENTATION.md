@@ -51,6 +51,14 @@ The optional adapter is still server-only. There is no transport factory,
 URL request API, request-operation handle, pool, Alt-Svc cache, or automatic
 WebSocket connection API yet. The full approved design remains the target.
 
+## Next concrete dependency scope
+
+See ENGINE-CONTRACTS.md for the proposed first engine milestone: bounded
+receive-body modes, per-transaction on_data selection at headers, and exactly
+once on_finish. This comes before transaction subclassing and WebSocket hooks.
+The detailed proposal is ready for maintainer review. No dependency repository
+has been modified.
+
 ## Engine work requiring separate repository authorization
 
 The following findings came from H1/H2 0.11 and H3 0.12 source review.
@@ -156,8 +164,17 @@ wire correctness, native ABI compatibility, final callback semantics, or
 performance. Real engine dependencies are not installed in this environment.
 Live test sources were migrated but have not been executed here.
 
-The integration workflow now targets feature/high-level-client-server. It
-still installs engine repository heads; reproducible pins and additional live
-coverage remain work for the next stages. The maintainer approved publishing
-this checkpoint on 2026-10-17. Check the branch workflow after the push; no live
-CI result is recorded here yet. No benchmark result is claimed.
+The published commit 2003eb834e5ab7be2b88dfe78f32a42faa84a445 passed GitHub
+Actions run 39051664280:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
+
+The inspected logs confirm 164 isolated assertions and 10 live assertions:
+H1/H2 cleartext TCP and H3 QUIC/TLS handshake, request, and response. Installed
+versions were H1 0.11, H2 0.11, H3 0.12, Net::QUIC 0.04, Linux::Event 0.117,
+and Uniform::HTTP 0.06. This does not cover H1/H2 TLS ALPN, streamed request
+bodies, concurrent clients, WebSocket, or the proposed final callbacks.
+
+A follow-up workflow change pins dependency commits and prints each tested SHA.
+That change has not run in CI yet; do not retroactively attribute its selected
+SHAs to the successful run above, which installed repository heads. No
+benchmark result is claimed.

@@ -10,7 +10,8 @@ Status: implementation started; not release ready.
 
 The maintainer approved the implementation plan on 2026-10-17 and asked
 that this file be updated frequently so another chat can continue.
-Read this file, docs/design-handoff.txt, and docs/IMPLEMENTATION.md first.
+Read this file, docs/design-handoff.txt, docs/IMPLEMENTATION.md, and
+docs/ENGINE-CONTRACTS.md first.
 Check git status and the current branch before editing. Do not modify main.
 
 Current checkpoint: reusable Server attachment and policy are implemented.
@@ -19,10 +20,18 @@ Read docs/IMPLEMENTATION.md for the exact engine prerequisites and next steps.
 
 Run: prove -lr t
 Current result: 5 files / 164 assertions PASS (isolated engine doubles).
-Native dependencies are absent, so live tests and benchmarks are unverified.
+Native dependencies are absent locally. Published commit 2003eb8 passed CI:
+164 isolated assertions and 10 live assertions (H1/H2 TCP, H3 QUIC/TLS).
+Run: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39051664280
+Benchmarks and broader protocol/lifecycle coverage remain unverified.
 
-Next action: propose/approve the dependency extension contracts described in
-IMPLEMENTATION.md and obtain authorization for the relevant repositories.
+Next action: obtain explicit authorization for feature branches in
+perl-Unblock-HTTP1, perl-Unblock-HTTP2, and perl-Unblock-HTTP3 to implement the
+first concrete milestone in docs/ENGINE-CONTRACTS.md: bounded reception,
+per-transaction on_data, and exactly-once on_finish. No other repositories
+have been modified. Transaction subclasses and WebSocket transitions follow
+in later dependency milestones; they are not prerequisites for ordinary
+buffered/streamed Server callbacks.
 Do not claim the first complete Server milestone is done: default bounded
 buffering, early on_headers, per-tx on_data and automatic WebSocket are pending.
 The old engine callback timing remains explicitly documented at this checkpoint.
@@ -36,9 +45,10 @@ This file records the approved implementation plan and progress.
 
 Change only perl-Unblock-HTTP. Reading dependency sources is authorized.
 Do not modify other repositories, merge, or release without approval.
-The maintainer approved pushing this feature-branch checkpoint on 2026-10-17.
-That approval includes the continuation records. It does not authorize main
-changes or work in dependency repositories. Verify the remote branch on resume.
+The maintainer approved publishing this feature branch on 2026-10-17 and then
+asked to continue the plan here. Keep its continuation records current on this
+branch. This does not authorize main changes or work in dependency repositories.
+Verify the remote branch on resume.
 The uploaded design handoff supersedes the former roadmap, especially its
 old exclusion of connection pooling. The package is Unblock::HTTP.
 Unblock::Web is reserved for future UserAgent/web-application facilities.
@@ -131,9 +141,19 @@ pre-transaction failures and finish callbacks before implementing this.
   README/POD/examples. Isolated suite: 5 files / 164 assertions PASS.
   POD parsing, manifest presence and whitespace checks passed. The source scan
   found no non-ASCII text in code, tests, examples or continuation documents.
-  Implementation checkpoint: 46c49058b2285cca8eabdeef3810946e2950632b.
+  Local implementation checkpoint was 46c4905. Publishing through the GitHub
+  app reproduced the exact tree as 24b50e5, followed by remote head 2003eb8.
+  Local and remote histories were synchronized after verifying equal trees.
 - 2026-10-17: maintainer approved publishing this feature branch. Continuation
   records updated before the push. Check the remote head and CI on resume.
+
+- 2026-10-17: inspected successful CI job 117451338945 from run 39051664280.
+  All 164 isolated and 10 live assertions passed. Recorded concrete engine
+  receive/lifecycle contracts in docs/ENGINE-CONTRACTS.md and pinned future CI
+  dependency commits with SHA logging. Workflow YAML, embedded Bash syntax,
+  manifest presence and diff whitespace checks passed. Publishing continuation
+  updates on the approved feature branch; dependency changes still need approval.
+  The pinned workflow has not yet run at the time of this record.
 
 ## Continuing in another chat
 
@@ -149,6 +169,6 @@ Use this prompt to continue from the published feature branch:
     Client APIs. Update Handoff.md after every substantial milestone.
 
 Fetch feature/high-level-client-server from GitHub and inspect its latest
-commit before continuing. The publishing approval was for this checkpoint;
-never push main or infer cross-repository permission. CI results are not yet
-recorded here; verify the branch workflow before claiming live validation.
+commit before continuing. Keep updates on the approved feature branch;
+never push main or infer cross-repository permission. The published checkpoint passed the CI run recorded above.
+Check the latest branch workflow for the follow-up contracts/CI-pin commit.
