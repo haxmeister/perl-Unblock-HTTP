@@ -241,6 +241,38 @@ Unchanged: original-engine and Uniform identities, callback-first
 application API, transport-owned buffers, no required XS, strict HTTP
 version, timeout semantics, and no replay after dispatch.
 
+## H3 request stream credit continuation (2026-10-17)
+
+Starting feature refs: upper e540559ca43bce8b15fc8c71d148f82e863ca858;
+HTTP3 e35bd69874cb45ea37094cf58e9ed807b46ad6d9.
+Upper CI 39065824604 is green. All main refs unchanged.
+GitHub connector is the branch-specific publication path.
+
+Design: Net::QUIC::Connection already emits an on_stream_available
+callback with 'bidi' and 'uni' event types. HTTP3 must keep its existing
+ownership of that callback and forward a narrowly scoped
+on_request_available($h3_client) notification only after request()
+previously returned undef because open_bidi_stream yielded no stream.
+Events for uni streams or unrelated activity do not notify. The HTTP3
+callback is advisory, not a persistent stream-credit counter. HTTP3
+retains transport/flow-control ownership and no Net::QUIC modifications.
+
+Unblock::HTTP Client must preserve a failed-to-admit (unsent) request
+in its finite queue, not report an error or construct a fake tx.
+Mark that H3 engine credit-blocked until it notifies; then defer the
+scheduler through the framework and reattempt only the still-unissued
+request. The real transaction remains the engine's returned object
+once admitted. Strict version and timeout/cancel rules remain intact.
+No automatic retry for any dispatched request.
+
+Tests: H3 engine fake QUIC bidi exhaustion and bidi/uni notifications;
+upper deterministic blocked queue, callback wakeup, cancellation and
+per-origin caps; CI for the H3 feature and upper pinned integration.
+Update the upper CI pin only to a verified H3 feature source SHA.
+No release, version bump, merge, or changes to main.
+
+This is an implementation plan until verified CI results are recorded.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
