@@ -182,20 +182,41 @@ sub _compatible {
     return $protocol eq 'h2' || $protocol eq 'http/1.1';
 }
 
+# Connection retirement and temporary peer stream exhaustion are different.
+# A SETTINGS limit of zero can later increase; do not close an idle H2
+# connection merely because it cannot currently open a request.
+sub _retired {
+    my ($conn) = @_;
+    my $engine = $conn->{engine};
+    if ($conn->{protocol} eq 'h2') {
+        return $engine->can('draining') && $engine->draining ? 1 : 0;
+    }
+    if ($conn->{protocol} eq 'h3') {
+        return 1 if $engine->can('shutdown_started') && $engine->shutdown_started;
+        return 1 if $engine->can('remote_shutdown_id')
+            && defined $engine->remote_shutdown_id;
+    }
+    return 0;
+}
+
+sub _closed {
+    my ($conn) = @_;
+    return $conn->{protocol} eq 'h3'
+        ? ($conn->{engine}->failed || $conn->{host}->closed)
+        : $conn->{engine}->is_closed;
+}
+
 sub _usable {
     my ($self, $conn, $version) = @_;
     return 0 unless _compatible($version, $conn->{protocol});
-    my $engine = $conn->{engine};
-    my $protocol = $conn->{protocol};
-    return 0 if $protocol eq 'h3'
-        ? ($engine->failed || $conn->{host}->closed)
-        : $engine->is_closed;
-    return 0 if $protocol eq 'h2'
-        && $engine->can('can_open_transaction')
-        && !$engine->can_open_transaction;
-    my $capacity = $protocol eq 'http/1.1'
+    return 0 if _closed($conn) || _retired($conn);
+    my $capacity = $conn->{protocol} eq 'http/1.1'
         ? 1 : $self->{limit}{max_streams_per_connection};
-    return $conn->{active} < $capacity;
+    return 0 if $conn->{active} >= $capacity;
+    return 0 if $conn->{protocol} eq 'h2'
+        && $conn->{engine}->can('can_open_transaction')
+        && !$conn->{engine}->can_open_transaction;
+    return 1;
 }
 
 sub _pump {
@@ -204,13 +225,10 @@ sub _pump {
     # Wait for the engine terminal callback to unwind before reusing H1.
     return if $pool->{pumping} || $pool->{callback_depth};
     local $pool->{pumping} = 1;
+    my $attempt_budget = $self->{limit}{max_connections_per_origin};
     $pool->{connections} = [
-        grep {
-            $_->{active} ||
-            ($_->{protocol} eq 'h3'
-                ? !($_->{engine}->failed || $_->{host}->closed)
-                : !$_->{engine}->is_closed)
-        } @{ $pool->{connections} }
+        grep { $_->{active} || (!_closed($_) && !_retired($_)) }
+        @{ $pool->{connections} }
     ];
     while (@{ $pool->{pending} }) {
         my $op = $pool->{pending}[0];
@@ -233,10 +251,8 @@ sub _pump {
             for (my $i = 0; $i < @{ $pool->{connections} }; $i++) {
                 my $idle = $pool->{connections}[$i];
                 next if $idle->{active};
-                my $unusable = !_compatible($op->{version}, $idle->{protocol});
-                $unusable ||= $idle->{protocol} eq 'h2'
-                    && $idle->{engine}->can('can_open_transaction')
-                    && !$idle->{engine}->can_open_transaction;
+                my $unusable = !_compatible($op->{version}, $idle->{protocol})
+                    || _closed($idle) || _retired($idle);
                 next unless $unusable;
                 splice @{ $pool->{connections} }, $i, 1;
                 $idle->{engine}->close if $idle->{engine}->can('close');
@@ -244,6 +260,9 @@ sub _pump {
             }
         }
         last if @{ $pool->{connections} } >= $self->{limit}{max_connections_per_origin};
+        # A synchronous factory can produce a connection that immediately
+        # refuses streams. Never spin forever creating/replacing engines.
+        last unless $attempt_budget--;
         $self->_connect($pool, $op);
         last if $pool->{connecting};
     }
@@ -374,6 +393,11 @@ sub _connected {
     # These advertise Server capabilities; Client constructors reject them.
     delete $options->{enable_connect_protocol} if $protocol eq 'h2';
     delete $options->{enable_extended_connect} if $protocol eq 'h3';
+    if ($protocol eq 'h2') {
+        # A peer may raise its advertised stream limit later. Wake the pool
+        # after processing SETTINGS, not from the byte/stream data path.
+        $options->{on_settings} = sub { $self->_schedule($pool) };
+    }
     my $engine = Unblock::HTTP::_EngineFactory->create(
         'Client', $protocol, %$options, %arg,
     );
@@ -480,11 +504,18 @@ sub _dispatch {
             stream_body => $op->{stream_body},
             %engine_callback,
         );
+        # HTTP/3 returns undef when QUIC has no available bidirectional
+        # stream credit. It has not created a Transaction. Do not leave a
+        # phantom active slot or replay into an arbitrary engine.
+        die "$conn->{protocol} request was not admitted by its engine\n"
+            unless defined($op->{transaction}) || $op->is_terminal;
         1;
     };
     unless ($ok) {
-        $conn->{active}--;
-        $self->_fail_active($op, "$@");
+        if (!$op->is_terminal) {
+            $conn->{active}--;
+            $self->_fail_active($op, "$@");
+        }
         $self->_schedule($pool);
     }
 }
