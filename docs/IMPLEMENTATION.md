@@ -233,6 +233,16 @@ bounded queue, prevents reentry on that H3 connection, and schedules a
 deferred admission attempt when the callback runs. Active transactions
 are never replayed; queued cancellation and timeout remain effective.
 
+Verified: H3 feature CI 39069441321 (full Perl matrix) and interoperability
+39069441276 passed with this contract. The upper CI now pins tested H3
+commit 9bfd9314fb66f19860a96a20ec6eb082e86e3ce5 and passed run
+39069934513: 11 distribution files / 444 checks and 2 real-socket
+integration files / 19 checks. The live QUIC/TLS path now routes an
+authenticated H3 POST through the shared Client connection factory,
+not just the low-level QUIC manager. Peer-credit exhaustion and wakeup
+remain isolated deterministic engine and unified unit regressions;
+the live test validates normal available-credit HTTP3 admission.
+
 New t/19-client-admission.t covers peer zero/increased SETTINGS, active
 H2 GOAWAY, sync non-admitting factory, H3 unavailable stream credit,
 H3 GOAWAY, and independent multi-origin queue limits. First CI for
