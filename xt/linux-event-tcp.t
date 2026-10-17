@@ -11,7 +11,7 @@ use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
 use Unblock::HTTP::Adapter::LinuxEvent;
 
-our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $SERVER);
+our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $SERVER, $TIMER_CANCELLATIONS);
 
 package TestHTTPServer;
 use parent 'Unblock::HTTP::Adapter::LinuxEvent';
@@ -37,10 +37,23 @@ sub on_ready ($self) {
             my ($callback) = @_;
             $main::LOOP->defer($callback);
         },
+        schedule_timer => sub {
+            my ($seconds, $callback) = @_;
+            my $timer = Linux::Event::Kernel::Timer->new(
+                loop => $main::LOOP,
+                after => $seconds,
+                on_timer => sub { $callback->() },
+            );
+            return sub {
+                $timer->cancel if $timer->is_active;
+                $main::TIMER_CANCELLATIONS++;
+            };
+        },
     );
     $self->{operation} = $self->{client}->request(
         method => 'GET',
         url => 'http://localhost/',
+        timeout => 5,
         http_version => $main::PROTOCOL eq 'h2' ? '2' : '1.1',
         on_response => sub ($tx, $response) {
             $main::FAILED = "unexpected status: " . $response->status
@@ -75,7 +88,7 @@ sub unblock_abort ($self, $reason) { $self->close }
 
 package main;
 for my $protocol ('http/1.1', 'h2') {
-    ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS) = ($protocol, Linux::Event::Loop->new, '', undef, 0);
+    ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $TIMER_CANCELLATIONS) = ($protocol, Linux::Event::Loop->new, '', undef, 0, 0);
     $SERVER = Unblock::HTTP::Server->new(
         http1 => {}, http2 => {},
         on_request => sub ($tx, $request) {
@@ -103,6 +116,7 @@ for my $protocol ('http/1.1', 'h2') {
     is($FAILED, undef, "$protocol completes without error");
     is($SERVER_REQUESTS, 1, "$protocol delivered one request");
     is($BODY, "hello from $protocol\n", "$protocol body complete");
+    is($TIMER_CANCELLATIONS, 1, "$protocol cancels its operation timer on completion");
     $client->close unless $client->is_closed;
     $listener->close if $listener->can('close');
     $timer->cancel if $timer->is_active;
