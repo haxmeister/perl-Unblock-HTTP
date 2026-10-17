@@ -149,6 +149,14 @@ request stays in the bounded Client queue; the H3 engine notifies when
 request stream availability changes, and the Client retries admission
 only after framework deferral. No submitted request is replayed.
 
+The framework may call `$client->network_changed` when its network
+identity changes. This discards idle old-network sockets and Alt-Svc
+hints, while active transactions continue on their original engines
+until completion. Pending operations are retried only BEFORE dispatch
+using fresh connections; a transmitted request is never replayed.
+`$client->pool_stats` returns read-only origin and pool counts to
+inspect queued, connecting, active, idle, and retiring connections.
+
 Idle connection eviction is opt-in with `idle_timeout => $seconds`.
 When enabled, the framework supplies `schedule_timer` and may supply
 `release_connection($host, $engine, $protocol, $reason)` to close its own
