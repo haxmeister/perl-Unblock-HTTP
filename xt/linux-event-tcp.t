@@ -20,24 +20,40 @@ sub http_server ($self) { $main::SERVER }
 
 package TestHTTPClient;
 use parent 'Linux::Event::IO::Sock::Stream';
+use Scalar::Util qw(weaken);
 sub on_ready ($self) {
-    $self->{http} = Unblock::HTTP::Client->new(
-        protocol => $main::PROTOCOL,
-        transport => $self,
+    my $stream = $self;
+    weaken($stream);
+    $self->{client} = Unblock::HTTP::Client->new(
+        http1 => {}, http2 => {},
+        connect_stream => sub {
+            my ($origin, $alpn, $ready) = @_;
+            my $engine = $ready->(
+                transport => $stream, alpn => $main::PROTOCOL,
+            );
+            $stream->{http} = $engine if $stream;
+        },
+        defer => sub {
+            my ($callback) = @_;
+            $main::LOOP->defer($callback);
+        },
     );
-    $self->{http}->request(
-        method => 'GET', target => '/', scheme => 'http',
-        authority => 'localhost',
+    $self->{operation} = $self->{client}->request(
+        method => 'GET',
+        url => 'http://localhost/',
+        http_version => $main::PROTOCOL eq 'h2' ? '2' : '1.1',
         on_response => sub ($tx, $response) {
             $main::FAILED = "unexpected status: " . $response->status
                 unless $response->status == 200;
+            $main::BODY = $response->body;
         },
-        on_body => sub ($tx, $response, $bytes) {
-            $main::BODY .= $bytes;
-        },
-        on_complete => sub ($tx) { $main::LOOP->stop },
         on_error => sub ($tx, $error) {
             $main::FAILED = "request failed: $error";
+            $main::LOOP->stop;
+        },
+        on_finish => sub ($tx) {
+            $main::FAILED ||= 'request ended without success'
+                unless $tx->is_complete;
             $main::LOOP->stop;
         },
     );
