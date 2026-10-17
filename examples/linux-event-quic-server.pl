@@ -8,6 +8,7 @@ use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Kernel::Timer;
 use Linux::Event::Loop;
 use Unblock::HTTP::QUIC;
+use Unblock::HTTP::Server;
 
 my ($host, $port, $cert, $key) = @ARGV;
 $host = '127.0.0.1' unless defined $host;
@@ -22,9 +23,12 @@ my $loop = Linux::Event::Loop->new;
 my ($http, $timer);
 
 # APPLICATION CODE: identical to the TCP example, including Transaction.
-my $on_request = sub ($tx, $request) {
-    $tx->respond(status => 200, body => "hello from Unblock::HTTP/3\n");
-};
+my $server = Unblock::HTTP::Server->new(
+    http3 => {},
+    on_request => sub ($tx, $request) {
+        $tx->respond(status => 200, body => "hello from Unblock::HTTP/3\n");
+    },
+);
 
 # ADAPTER CODE: one UDP socket and one replaceable QUIC timer.
 my $socket = Linux::Event::IO::Sock::Dgram->new(
@@ -48,7 +52,7 @@ my $socket = Linux::Event::IO::Sock::Dgram->new(
 $http = Unblock::HTTP::QUIC->server(
     certificate_file => $cert,
     private_key_file => $key,
-    on_request => $on_request,
+    server => $server,
 
     send => sub ($datagram) {
         return $socket->send(

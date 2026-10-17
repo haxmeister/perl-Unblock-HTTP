@@ -30,11 +30,16 @@ BEGIN {
 }
 
 use Unblock::HTTP::Adapter::LinuxEvent;
+use Unblock::HTTP::Server;
+our $request_seen = 0;
+our $definition = Unblock::HTTP::Server->new(
+    http1 => {}, http2 => {}, on_request => sub { $request_seen++ },
+);
 
 {
     package MyStream;
     use parent -norequire, 'Unblock::HTTP::Adapter::LinuxEvent';
-    sub on_http_request { $_[0]{request_seen}++ }
+    sub http_server { $main::definition }
 }
 {
     package H2Stream;
@@ -44,17 +49,17 @@ use Unblock::HTTP::Adapter::LinuxEvent;
 
 my $h1 = MyStream->new;
 $h1->on_ready;
-is($h1->http->protocol, 'http/1.1', 'plain stream selects HTTP/1');
+isa_ok($h1->http, 'Unblock::HTTP1::Server');
 $h1->on_data('abc');
-is_deeply($h1->http->backend->{received}, ['abc'], 'incoming data reaches underlying engine');
-$h1->http->backend->{options}{on_request}->('tx','request');
-is($h1->{request_seen}, 1, 'application request callback dispatches');
+is_deeply($h1->http->{received}, ['abc'], 'incoming data reaches underlying engine');
+$h1->http->{options}{on_request}->('tx','request');
+is($request_seen, 1, 'application request callback dispatches');
 $h1->on_eof;
-is($h1->http->backend->{eof}, 1, 'EOF forwarded');
+is($h1->http->{eof}, 1, 'EOF forwarded');
 $h1->on_drain;
-is($h1->http->backend->{resumed}, 1, 'backpressure resume forwarded');
+is($h1->http->{resumed}, 1, 'backpressure resume forwarded');
 $h1->on_error('oops');
-is($h1->http->backend->{error}, 'oops', 'transport failure forwarded');
+is($h1->http->{error}, 'oops', 'transport failure forwarded');
 ok($h1->unblock_send('wire'), 'host accepted engine output');
 is_deeply($h1->{sent}, ['wire'], 'wire bytes queued');
 $h1->unblock_finish;
@@ -65,14 +70,14 @@ is($h1->{closed}, 1, 'abort closes socket');
 my $tls = MyStream->new;
 $tls->{alpn} = 'h2';
 $tls->on_ready;
-is($tls->http->protocol, 'h2', 'TLS ALPN selects H2');
+isa_ok($tls->http, 'Unblock::HTTP2::Server');
 
 my $prior = H2Stream->new;
 $prior->on_ready;
-is($prior->http->protocol, 'h2', 'explicit HTTP/2 prior knowledge selected');
+isa_ok($prior->http, 'Unblock::HTTP2::Server');
 
-$h1->http->backend->{writable} = 0;
+$h1->http->{writable} = 0;
 $h1->on_eof;
-is($h1->http->backend->{eof}, 1, 'EOF not forwarded again after read stops');
+is($h1->http->{eof}, 1, 'EOF not forwarded again after read stops');
 
 done_testing;

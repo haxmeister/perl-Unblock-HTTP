@@ -4,7 +4,7 @@ use v5.36;
 use strict;
 use warnings;
 use parent 'Linux::Event::IO::Sock::Stream';
-use Scalar::Util qw(weaken);
+use Scalar::Util qw(blessed);
 
 our $VERSION = '0.01';
 
@@ -14,47 +14,39 @@ sub http { $_[0]{unblock_http} }
 # For TLS, the adapter uses the ALPN chosen by Linux::Event instead.
 sub http_protocol { undef }
 
+sub http_server ($self) {
+    die "http_server() must return a shared Unblock::HTTP::Server definition\n";
+}
+
 sub on_ready ($self) {
-    require Unblock::HTTP::Server;
-
-    my $stream = $self;
-    weaken($stream);
-
+    my $server = $self->http_server;
+    die "http_server() must return a shared Unblock::HTTP::Server definition\n"
+        unless blessed($server) && $server->isa('Unblock::HTTP::Server');
     my $protocol = $self->http_protocol;
     my %select = defined($protocol)
         ? (protocol => $protocol)
         : (alpn => $self->selected_alpn);
-
-    $self->{unblock_http} = Unblock::HTTP::Server->new(
-        transport  => $self,
-        %select,
-        on_request => sub ($tx, $request) {
-            $stream->on_http_request($tx, $request) if $stream;
-        },
+    $self->{unblock_http} = $server->attach_stream(
+        transport => $self, %select,
     );
-    $self->{unblock_backend} = $self->{unblock_http}->backend;
-}
-
-sub on_http_request ($self, $tx, $request) {
-    die "on_http_request() must be implemented by a subclass\n";
 }
 
 sub on_data ($self, $bytes) {
-    $self->{unblock_backend}->input($bytes);
+    $self->{unblock_http}->input($bytes);
 }
 
 sub on_eof ($self) {
-    my $http = $self->{unblock_backend};
+    my $http = $self->{unblock_http};
     $http->input_eof if $http && $http->want_read;
 }
 
 sub on_error ($self, $error) {
-    my $http = $self->{unblock_backend};
+    my $http = $self->{unblock_http};
     $http->transport_error("$error") if $http;
 }
 
 sub on_drain ($self) {
-    my $http = $self->{unblock_backend};
+    my $http = $self->{unblock_http};
     $http->resume_output if $http;
 }
 
@@ -73,50 +65,28 @@ __END__
 
 =head1 NAME
 
-Unblock::HTTP::Adapter::LinuxEvent - Host Unblock HTTP/1 or HTTP/2 in a Linux::Event Stream
-
-=head1 SYNOPSIS
-
-    use v5.36;
-    use Linux::Event::Loop;
-    use Linux::Event::IO::Sock::Listener;
-    use Unblock::HTTP::Adapter::LinuxEvent;
-
-    package MyHTTPStream;
-    use parent 'Unblock::HTTP::Adapter::LinuxEvent';
-
-    sub on_http_request ($self, $tx, $request) {
-        $tx->respond(status => 200, body => "hello\n");
-    }
-
-    package main;
-
-    my $loop = Linux::Event::Loop->new;
-    my $listener = Linux::Event::IO::Sock::Listener->new(
-        loop => $loop, host => '127.0.0.1', port => 8080,
-        stream => { class => 'MyHTTPStream' },
-    );
-    $loop->run;
+Unblock::HTTP::Adapter::LinuxEvent - Attach Linux::Event streams to a shared Server
 
 =head1 DESCRIPTION
 
-This optional adapter is a normal Linux::Event Stream subclass. A listener
-accepts it as its stream class. It attaches Unblock::HTTP on readiness,
-forwards network reads and EOF, and handles output and backpressure. You
-only implement C<on_http_request> in an application subclass.
+This optional Stream subclass forwards input directly to the real HTTP engine.
+Override C<http_server()> to return one shared L<Unblock::HTTP::Server> definition.
+See examples/linux-event-server.pl for a complete program separating application
+behavior from adapter code.
 
-TLS uses the framework's negotiated C<selected_alpn> after the handshake.
-A plain connection defaults to HTTP/1.1. To use prior-knowledge cleartext
-HTTP/2, override C<http_protocol> to return C<h2>.
+C<http()> returns the attached engine, not a unified connection wrapper.
+C<on_data>, C<on_eof>, C<on_error>, and C<on_drain> deliver transport events.
+C<unblock_send>, C<unblock_finish>, and C<unblock_abort> map engine output to
+the Stream's existing queue and shutdown operations.
 
-The hot read path calls the underlying engine directly, avoiding a second
-per-chunk dispatcher call. The C<http> method returns the unified connection
-after readiness. The
-framework owns the Stream and socket. The Unblock engine remains a separate
-composed object, not an inherited HTTP implementation.
+TLS uses C<selected_alpn> after readiness. Configure the listener's TLS ALPN
+choices from the Server's C<alpn_protocols> list. Plaintext defaults to HTTP/1.1
+when enabled. Override C<http_protocol()> to return C<h2> for a cleartext
+prior-knowledge listener.
 
-Linux::Event is not a required dependency for normal Unblock::HTTP users.
-Loading this optional adapter does require Linux::Event 0.117 or later.
+This is still the server adapter. A shared client/server transport factory
+is planned separately. It needs Perl 5.36 and Linux::Event 0.117 or newer;
+normal framework-neutral use does not load this module.
 
 =head1 LICENSE
 

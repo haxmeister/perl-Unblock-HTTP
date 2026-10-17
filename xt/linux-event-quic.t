@@ -8,6 +8,7 @@ use Linux::Event::Address;
 use Linux::Event::Kernel::Timer;
 use Linux::Event::Loop;
 use Unblock::HTTP::QUIC;
+use Unblock::HTTP::Server;
 
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
@@ -35,10 +36,13 @@ my $server_socket = Linux::Event::IO::Sock::Dgram->new(
 
 $server = Unblock::HTTP::QUIC->server(
     certificate_file => $cert, private_key_file => $key,
-    on_request => sub ($tx, $request) {
-        $requests++;
-        $tx->respond(status => 200, body => "hello over quic\n");
-    },
+    server => Unblock::HTTP::Server->new(
+        http3 => {},
+        on_request => sub ($tx, $request) {
+            $requests++;
+            $tx->respond(status => 200, body => "hello over quic\n");
+        },
+    ),
     send => sub ($datagram) {
         $server_socket->send(
             $datagram->data,

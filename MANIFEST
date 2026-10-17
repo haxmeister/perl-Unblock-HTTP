@@ -18,3 +18,7 @@ t/00-load.t
 t/10-selector.t
 t/11-quic-manager.t
 t/12-linux-event-adapter.t
+lib/Unblock/HTTP/_Policy.pm
+lib/Unblock/HTTP/_EngineFactory.pm
+t/13-server-attachment.t
+docs/IMPLEMENTATION.md

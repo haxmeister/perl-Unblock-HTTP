@@ -17,16 +17,20 @@ Unblock::HTTP - One application interface for HTTP/1, HTTP/2, and HTTP/3
 
     use Unblock::HTTP::Server;
 
-    my $http = Unblock::HTTP::Server->new(
-        transport  => $stream,
-        alpn       => $negotiated_alpn,
+    my $server = Unblock::HTTP::Server->new(
+        http1 => {},
+        http2 => {},
         on_request => sub {
             my ($tx, $request) = @_;
             $tx->respond(status => 200, body => "hello\n");
         },
     );
 
-    $http->input($bytes);
+    my $engine = $server->attach_stream(
+        transport => $stream,
+        alpn => $negotiated_alpn,
+    );
+    $engine->input($bytes);
 
 =head1 DESCRIPTION
 
@@ -34,13 +38,19 @@ This is the event-loop-neutral application layer over Unblock::HTTP1,
 Unblock::HTTP2, and Unblock::HTTP3. It uses their common Client, Server,
 and Transaction vocabulary while leaving protocol parsing to the engines.
 
-The first version selects a protocol from the supplied ALPN result or an
-explicit C<protocol> option. An unnegotiated TCP connection defaults to
-HTTP/1.1. HTTP/3 uses an existing Net::QUIC connection.
+The attachment API selects a protocol from the supplied ALPN result or an
+explicit C<protocol> option. An unnegotiated TCP connection selects
+HTTP/1.1 only when enabled. HTTP/3 uses an existing Net::QUIC connection.
 
 It does not create sockets, negotiate TLS, or require any particular event
 loop. The optional L<Unblock::HTTP::QUIC> class manages HTTP/3 sessions
 over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
+
+=head1 IMPLEMENTATION STATUS
+
+This feature branch implements reusable Server attachment. Callback timing
+still follows the engines. Buffered application delivery, WebSocket transitions,
+client pooling and transport factories remain planned. See docs/IMPLEMENTATION.md.
 
 =head1 CLASSES
 
@@ -48,11 +58,11 @@ over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
 
 =item L<Unblock::HTTP::Client>
 
-One outgoing HTTP connection.
+Currently one outgoing HTTP connection; the multi-destination API is planned.
 
 =item L<Unblock::HTTP::Server>
 
-One incoming HTTP connection.
+One reusable server definition shared by incoming connections.
 
 =item L<Unblock::HTTP::Adapter::LinuxEvent>
 

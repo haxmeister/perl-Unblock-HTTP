@@ -1,20 +1,26 @@
 # Unblock::HTTP
 
-Unblock::HTTP provides one application interface for HTTP/1, HTTP/2, and
-HTTP/3. It builds on Unblock::HTTP1, Unblock::HTTP2, Unblock::HTTP3, and
-Uniform::HTTP.
+Unblock::HTTP is the framework-neutral application layer above HTTP/1,
+HTTP/2, HTTP/3, and eventually WebSocket. Protocol parsing stays in the
+existing engines. This distribution adds no XS.
 
-The implementation is pure Perl. It selects an existing protocol engine;
-it does not parse HTTP frames itself or wrap every Transaction.
+This feature branch is under development. The reusable Server and direct
+connection attachment are implemented. Client pooling, automatic connection
+creation, buffered application callbacks, and WebSocket transitions are not
+implemented yet. Read [implementation status](docs/IMPLEMENTATION.md) before
+using the branch. It is not a release candidate.
 
-## Server
+## One Server, many connections
+
+Application code creates one definition:
 
 ```perl
 use Unblock::HTTP::Server;
 
-my $http = Unblock::HTTP::Server->new(
-    transport  => $stream,
-    alpn       => $negotiated_alpn,
+my $server = Unblock::HTTP::Server->new(
+    http1 => {},
+    http2 => {},
+    http3 => {},
     on_request => sub {
         my ($tx, $request) = @_;
         $tx->respond(status => 200, body => "hello\n");
@@ -22,127 +28,107 @@ my $http = Unblock::HTTP::Server->new(
 );
 ```
 
-The event-framework stream feeds incoming decrypted bytes to
-`$http->input($bytes)`. It implements `unblock_send`, `unblock_finish`,
-and `unblock_abort` to accept outgoing bytes. This is the same attached
-transport contract for HTTP/1 and HTTP/2.
+An omitted protocol is disabled. Each protocol hash can carry engine tuning
+options. `websocket => 0` is accepted; enabling it currently fails explicitly.
 
-## Linux::Event adapter
+At this checkpoint, `on_request` still runs when headers arrive, using the
+existing engine contract. `on_body` receives body chunks and `on_request_end`
+runs after the body and trailers. The planned default buffering and later
+application `on_request` timing need additional engine support.
 
-Linux::Event users can avoid writing repeated input/output integration code.
-Create one small subclass and implement the application handler:
+## Framework attachment
 
-```perl
-use Unblock::HTTP::Adapter::LinuxEvent;
-
-package MyHTTPStream;
-use parent 'Unblock::HTTP::Adapter::LinuxEvent';
-
-sub on_http_request ($self, $tx, $request) {
-    $tx->respond(status => 200, body => "hello\n");
-}
-
-# Use in a Linux::Event listener:
-# stream => { class => 'MyHTTPStream' }
-```
-
-The adapter uses the TLS-negotiated ALPN when available, defaults to HTTP/1.1
-on plaintext connections, and allows HTTP/2 prior knowledge by overriding
-`http_protocol` to return `h2`. It forwards socket reads directly
-to the selected engine to avoid unnecessary calls in the hot path.
-
-See `examples/linux-event-server.pl` for a complete program.
-
-## Client
+For each incoming TCP/TLS connection, the adapter attaches its stream:
 
 ```perl
-use Unblock::HTTP::Client;
-
-my $http = Unblock::HTTP::Client->new(
+my $engine = $server->attach_stream(
     transport => $stream,
-    alpn      => $negotiated_alpn,
+    alpn => $negotiated_alpn,
 );
 
-$http->request(
-    method    => 'GET',
-    target    => '/',
-    authority => 'example.test',
-    on_response => sub {
-        my ($tx, $response) = @_;
-        print $response->status, "\n";
-    },
-);
+$engine->input($bytes);
 ```
 
-Application callbacks receive the underlying Transaction, with common
-`respond`, `write`, `end`, and lifecycle methods. Advanced protocol-specific
-features remain available through `$http->backend`.
+The returned object is the actual HTTP1 or HTTP2 Server engine. Transactions
+also come directly from that engine. There is no forwarding connection object.
+The framework retains the engine and continues to own its socket and buffers.
 
-## Selecting the protocol
+The stream supplies `unblock_send`, `unblock_finish`, and `unblock_abort`.
+`unblock_send` accepts the entire buffer or throws. A defined false result
+means the bytes were accepted but the host is congested. The framework calls
+`resume_output()` when it has capacity again.
 
-- Empty or absent ALPN on a byte stream uses HTTP/1.1.
-- `h2` selects HTTP/2.
-- `h3` uses an existing Net::QUIC connection instead of a byte stream.
+Configure TLS using `$server->alpn_protocols`. This returns enabled TCP choices,
+with H2 preferred. Empty ALPN selects H1 only when H1 is enabled. Unknown or
+disabled protocols fail. For cleartext H2 prior knowledge, pass
+`protocol => 'h2'` instead of `alpn`.
 
-A cleartext HTTP/2 prior-knowledge connection can pass `protocol => 'h2'`.
-Only the negotiated TLS ALPN result should be passed as `alpn`.
-
-For HTTP/3:
+A ready HTTP/3 QUIC connection uses:
 
 ```perl
-my $http = Unblock::HTTP::Server->new(
-    quic       => $ready_quic_connection,
-    on_request => $on_request,
-);
-$http->start;
+my $engine = $server->attach_quic(connection => $ready_h3_connection);
 ```
 
-The host integrates UDP and the timer through Net::QUIC::Driver, as before.
-A convenience manager can now create and activate all HTTP/3 sessions:
+It returns a started HTTP3 Server engine. UDP and timer events continue to go
+to `Net::QUIC::Driver`. The framework is responsible for supplying a connection
+negotiated for H3. A QUIC manager can attach all ready connections to the same
+definition:
 
 ```perl
-use Unblock::HTTP::QUIC;
-
 my $endpoint = Unblock::HTTP::QUIC->server(
+    server => $server,
     certificate_file => $cert,
     private_key_file => $key,
-    send        => $send_datagram,
+    send => $send_datagram,
     set_timeout => $replace_timer,
-    on_request  => $on_request,
 );
 $endpoint->start;
-# Forward UDP events with $endpoint->receive, timeout, and writable.
 ```
 
-This avoids writing the connection-discovery and handshake-readiness loop.
-The host still manages its own UDP socket and timer.
+Read `perldoc Unblock::HTTP::Integration` for the adapter contract.
 
-## Scope
+## Client status
 
-The top layer is event-loop neutral and creates no sockets or TLS contexts.
-It does not implement an HTTP user agent, connection pool, redirects,
-cookies, or framework-specific adapter. It selects and delegates to the
-existing protocol engines. Protocol detection and richer QUIC integration
-will be built as separate, tested features.
+Client still represents one existing connection at this checkpoint:
 
-Requires Perl 5.20 or newer because the included HTTP/3 engine requires it.
+```perl
+my $client = Unblock::HTTP::Client->new(
+    transport => $stream,
+    alpn => $negotiated_alpn,
+);
+$client->request(
+    method => 'GET', target => '/', authority => 'example.test',
+    on_response => sub { my ($tx, $response) = @_; },
+);
+```
 
-The Linux::Event examples are `examples/linux-event-server.pl` for H1/H2 and
-`examples/linux-event-quic-server.pl` for H3.
+Its existing callbacks follow the engine contract. The approved next stages
+replace this with one Client managing destinations, bounded request scheduling,
+connection reuse, protocol selection, and discovery. Redirects, cookies,
+routing and middleware remain outside this distribution.
 
-Read `perldoc Unblock::HTTP::Integration` for the precise transport contract.
+## Examples and tests
 
-## Integration tests
+The optional Linux::Event examples are:
 
-Run the isolated distribution tests with `make test`. A separate
-Linux::Event suite runs real HTTP/1.1, HTTP/2, and HTTP/3 exchanges over
-local TCP and UDP sockets:
+- `examples/linux-event-server.pl`: a shared Server with H1/H2 attachment.
+- `examples/linux-event-quic-server.pl`: a shared Server with a QUIC manager.
 
-    prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t
+Each separates application behavior from framework plumbing. The core does
+not require Linux::Event. Core requires Perl 5.20; this optional adapter uses
+Perl 5.36 syntax.
 
-This suite needs the actual Unblock engines, Linux::Event, and Net::QUIC
-installed. It is exercised by the GitHub Actions integration workflow,
-rather than shipped as a mandatory CPAN test dependency.
+Run isolated contract tests:
+
+    prove -lr t
+
+Run the live tests after installing the real engines, Linux::Event and Net::QUIC:
+
+    prove -l xt/linux-event-tcp.t xt/linux-event-quic.t
+
+The isolated suite uses test doubles. Its success does not establish wire-level
+correctness or native ABI compatibility. The live suite currently covers basic
+cleartext H1/H2 and QUIC H3 exchanges; broader coverage is still planned.
 
 ## License
 

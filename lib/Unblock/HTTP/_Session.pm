@@ -3,6 +3,7 @@ package Unblock::HTTP::_Session;
 use strict;
 use warnings;
 use Carp qw(croak);
+use Unblock::HTTP::_EngineFactory;
 
 my %ENGINE = (
     'http/1.1' => 'Unblock::HTTP1',
@@ -42,12 +43,9 @@ sub _new {
             if $has_quic;
     }
 
-    my $module = $ENGINE{$protocol} . '::' . $role;
-    (my $file = $module) =~ s{::}{/}g;
-    $file .= '.pm';
-    require $file;
-
-    my $backend = $module->new(%option);
+    my $backend = Unblock::HTTP::_EngineFactory->create(
+        $role, $protocol, %option,
+    );
 
     return bless {
         protocol => $protocol,

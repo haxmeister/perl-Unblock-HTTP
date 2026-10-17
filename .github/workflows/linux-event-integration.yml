@@ -3,7 +3,7 @@ name: Linux::Event integration
 on:
   push:
     branches:
-      - feature/unified-http-layer
+      - feature/high-level-client-server
       - main
   pull_request:
   workflow_dispatch:

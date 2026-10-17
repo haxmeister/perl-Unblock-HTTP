@@ -8,17 +8,15 @@ use Linux::Event::Kernel::Timer;
 use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Unblock::HTTP::Client;
+use Unblock::HTTP::Server;
 use Unblock::HTTP::Adapter::LinuxEvent;
 
-our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS);
+our ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS, $SERVER);
 
 package TestHTTPServer;
 use parent 'Unblock::HTTP::Adapter::LinuxEvent';
 sub http_protocol ($self) { $main::PROTOCOL }
-sub on_http_request ($self, $tx, $request) {
-    $main::SERVER_REQUESTS++;
-    $tx->respond(status => 200, body => "hello from $main::PROTOCOL\n");
-}
+sub http_server ($self) { $main::SERVER }
 
 package TestHTTPClient;
 use parent 'Linux::Event::IO::Sock::Stream';
@@ -62,6 +60,13 @@ sub unblock_abort ($self, $reason) { $self->close }
 package main;
 for my $protocol ('http/1.1', 'h2') {
     ($PROTOCOL, $LOOP, $BODY, $FAILED, $SERVER_REQUESTS) = ($protocol, Linux::Event::Loop->new, '', undef, 0);
+    $SERVER = Unblock::HTTP::Server->new(
+        http1 => {}, http2 => {},
+        on_request => sub ($tx, $request) {
+            $SERVER_REQUESTS++;
+            $tx->respond(status => 200, body => "hello from $PROTOCOL\n");
+        },
+    );
     my $listener = Linux::Event::IO::Sock::Listener->new(
         loop => $LOOP,
         host => '127.0.0.1',

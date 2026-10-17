@@ -1,3 +1,10 @@
+Development - feature/high-level-client-server
+    - Make Server a reusable policy definition with direct engine attachment.
+    - Enforce enabled protocols and expose TCP/TLS ALPN choices.
+    - Share Server definitions across the optional adapter and QUIC manager.
+    - Record the full implementation plan and missing engine prerequisites.
+    - This is an incomplete feature branch, not a release candidate.
+
 Revision history for Unblock::HTTP
 
 0.01  Development

@@ -43,6 +43,12 @@ Unblock::HTTP::Client - One HTTP client connection using the selected protocol
         },
     );
 
+=head1 IMPLEMENTATION STATUS
+
+This feature-branch checkpoint retains the existing one-connection Client.
+The reusable Server API has changed separately. Multi-destination requests,
+connection factories, pooling and discovery are planned, not implemented.
+
 =head1 DESCRIPTION
 
 Each Client represents one HTTP connection. It forwards requests to the

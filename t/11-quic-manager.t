@@ -22,8 +22,9 @@ BEGIN {
     sub started { $_[0]{started} || 0 }
     sub request { my ($self, @arg) = @_; $self->{request} = \@arg; return 'fake tx' }
     package Unblock::HTTP3::Server;
+    our $ON_START;
     sub new { my ($class, %opt) = @_; bless { opt => \%opt }, $class }
-    sub start { $_[0]{started}++; $_[0] }
+    sub start { $_[0]{started}++; $ON_START->($_[0]) if $ON_START; $_[0] }
     sub started { $_[0]{started} || 0 }
 }
 
@@ -35,12 +36,14 @@ BEGIN {
 }
 
 use Unblock::HTTP::QUIC;
+use Unblock::HTTP::Server;
 
 my @server_ready;
 my $callback = sub {};
+my $definition = Unblock::HTTP::Server->new(http3 => {}, on_request => $callback);
 my $server = Unblock::HTTP::QUIC->server(
     certificate_file => 'cert', private_key_file => 'key',
-    on_request => $callback,
+    server => $definition,
     send => sub {}, set_timeout => sub {},
     on_ready => sub { push @server_ready, shift },
 );
@@ -57,8 +60,8 @@ $q1->{ready} = 1;
 $server->timeout;
 is(scalar $server->sessions, 1, 'ready connection gets HTTP/3 Server');
 is(scalar @server_ready, 1, 'on_ready invoked once');
-is($server_ready[0]->backend->{opt}{on_request}, $callback, 'handler forwarded to HTTP/3');
-is($server_ready[0]->backend->{started}, 1, 'HTTP/3 started once');
+is($server_ready[0]->{opt}{on_request}, $callback, 'handler forwarded to HTTP/3');
+is($server_ready[0]->{started}, 1, 'HTTP/3 started once');
 $server->writable;
 is(scalar @server_ready, 1, 'no duplicate on_ready');
 $q2->{ready} = 1;
@@ -90,11 +93,37 @@ $client->driver->{client}{closed} = 1;
 $client->writable;
 ok(!defined $client->session, 'closed client session released');
 
+my $reentrant = TestQuic->new;
+$reentrant->{ready} = 1;
+push @{ $server->driver->{fresh} }, $reentrant;
+my $start_calls = 0;
+{
+    local $Unblock::HTTP3::Server::ON_START = sub {
+        $start_calls++;
+        $server->writable if $start_calls == 1;
+    };
+    $server->receive('ready', 'local', 'peer');
+}
+is($start_calls, 1, 'reentrant Driver progress does not attach twice');
+is(scalar @server_ready, 3, 'one ready callback for reentrant attachment');
+
+my $closing = TestQuic->new;
+$closing->{ready} = 1;
+push @{ $server->driver->{fresh} }, $closing;
+{
+    local $Unblock::HTTP3::Server::ON_START = sub { $closing->{closed} = 1 };
+    $server->receive('closing', 'local', 'peer');
+}
+is(scalar @server_ready, 3, 'connection closed during start is not announced ready');
+is(scalar $server->sessions, 2, 'connection closed during start is released');
+
 for my $bad (
-    [ sub { Unblock::HTTP::QUIC->server(send => sub {}, set_timeout => sub {}) }, qr/on_request/ ],
+    [ sub { Unblock::HTTP::QUIC->server(send => sub {}, set_timeout => sub {}) }, qr/server must be/ ],
     [ sub { Unblock::HTTP::QUIC->client(alpn => 'h2', send => sub {}, set_timeout => sub {}) }, qr/Only the h3 ALPN/ ],
-    [ sub { Unblock::HTTP::QUIC->server(on_request => sub {}, http3 => { on_request => sub {} }) }, qr/specified twice/ ],
+    [ sub { Unblock::HTTP::QUIC->server(server => $definition, on_request => sub {}) }, qr/configure on_request/ ],
     [ sub { Unblock::HTTP::QUIC->client(http3 => { quic => 1 }) }, qr/managed/ ],
+    [ sub { Unblock::HTTP::QUIC->client(http3 => 0) }, qr/hash reference/ ],
+    [ sub { Unblock::HTTP::QUIC->server(server => Unblock::HTTP::Server->new(http1 => {}, on_request => sub {})) }, qr/disabled/ ],
 ) {
     ok(!eval { $bad->[0]->(); 1 }, 'invalid manager options rejected');
     like($@, $bad->[1], 'actionable error');

@@ -11,93 +11,121 @@ __END__
 
 =head1 NAME
 
-Unblock::HTTP::Integration - Adapt one event framework to the HTTP family
+Unblock::HTTP::Integration - Attach framework transports to HTTP engines
 
-=head1 TCP AND TLS
+=head1 IMPLEMENTATION STATUS
 
-For each accepted or connected framework stream, construct one
-Unblock::HTTP::Server or Client. Pass the negotiated ALPN protocol to
-C<alpn>. If TLS did not negotiate ALPN, leave it undefined and the
-connection will use HTTP/1.1. For cleartext HTTP/2 prior knowledge,
-select C<protocol =E<gt> 'h2'> explicitly.
+This feature-branch checkpoint supplies reusable Server policy and direct
+engine attachment. It retains engine callback timing. Buffered application
+callbacks, automatic WebSocket transitions, client pooling and transport
+factories are later stages. See docs/IMPLEMENTATION.md in the repository.
 
-    $self->{http} = Unblock::HTTP::Server->new(
-        transport  => $self,
-        alpn       => $alpn,
-        on_request => $on_request,
+=head1 TCP AND TLS SERVERS
+
+Create one L<Unblock::HTTP::Server> definition for the service. Configure the
+framework listener's TLS ALPN choices using C<$server-E<gt>alpn_protocols>.
+The framework owns listeners, sockets, TLS, timers, and network queues.
+
+For each accepted connection, retain the actual returned engine:
+
+    $self->{http} = $server->attach_stream(
+        transport => $self,
+        alpn => $negotiated_alpn,
     );
 
-The stream implements these three methods:
-
-    unblock_send($wire_bytes)
-    unblock_finish()
-    unblock_abort($reason)
-
-C<unblock_send> must accept the entire buffer or throw an error. True or
-undefined means it may accept more output. A defined false return means
-it accepted the buffer but is now congested. Call C<resume_output()> on
-the HTTP object once the host output queue has room again.
-
-Forward framework input and shutdown events:
+The adapter passes decrypted bytes directly to that engine. There is no
+Server-definition call on the read path:
 
     $self->{http}->input($bytes);
     $self->{http}->input_eof;
     $self->{http}->transport_error($error);
 
-The attached engine delivers output automatically, including output from
-callbacks invoked long after a read. The framework owns the socket,
-TLS, and output queue. The HTTP engine holds the host weakly.
+Call C<input_eof> once when the peer's read side ends. The framework must not
+continue feeding a closed engine. Constructor and attachment errors belong
+to adapter setup; handle them before accepting further traffic.
 
-=head1 REUSABLE LINUX::EVENT SERVER ADAPTER
+For cleartext H2 prior knowledge, use C<protocol =E<gt> 'h2'> instead of
+C<alpn>. Missing or empty ALPN selects H1 only when enabled. Unknown or
+disallowed negotiation results fail. The selector does not sniff input bytes.
 
-For Linux::Event, L<Unblock::HTTP::Adapter::LinuxEvent> is an optional
-ready-made Stream subclass. It handles all the transport plumbing, using
-the selected engine directly for incoming bytes. The application only
-implements C<on_http_request> in its own subclass:
+=head1 OUTPUT CONTRACT
 
-    package MyHTTPStream;
-    use parent 'Unblock::HTTP::Adapter::LinuxEvent';
+The attached transport implements:
 
-    sub on_http_request ($self, $tx, $request) {
-        $tx->respond(status => 200, body => "hello\n");
-    }
+    unblock_send($bytes)
+    unblock_finish()
+    unblock_abort($reason)
 
-Use C<stream =E<gt> { class =E<gt> 'MyHTTPStream' }> in a
-Linux::Event::IO::Sock::Listener. TLS ALPN is read after transport
-readiness, so the same subclass can serve HTTP/1.1 or HTTP/2.
-Override C<http_protocol> to return C<h2> for plaintext prior knowledge.
-This adapter is optional and not loaded for other frameworks.
+C<unblock_send> accepts the entire buffer or throws. True or undef means it
+can accept more output. A defined false value means it accepted every byte
+but is congested. It must retain any bytes not yet written by the socket.
+False never means partial acceptance, and the engine must not resend the
+accepted buffer. When capacity returns, call:
 
-=head1 HTTP/3 AND QUIC
+    $self->{http}->resume_output;
 
-HTTP/3 uses Net::QUIC::Driver instead of the TCP transport contract.
-The framework must connect its UDP socket and timer to that Driver; see
-L<Unblock::HTTP3::Integration> for this contract.
+C<unblock_finish> asks the framework to flush accepted output and then finish
+normally. C<unblock_abort> reports failure and requests immediate teardown.
+Do not implement another independent network queue in Unblock::HTTP.
 
-Once a QUIC connection is ready, create a unified Server or Client:
+The engine holds the transport weakly. The framework must retain both the
+transport and its engine. The reusable Server does not retain attached
+engines. Callbacks shared by a Server definition should not capture every
+connection or create ownership cycles.
 
-    my $http = Unblock::HTTP::Server->new(
-        quic       => $quic,
-        on_request => $on_request,
+=head1 HTTP/3
+
+Use a ready QUIC connection already negotiated for HTTP/3:
+
+    my $engine = $server->attach_quic(connection => $ready_h3_connection);
+
+The returned HTTP3 Server is already started. Keep it alive while the QUIC
+connection is active. This attachment method does not negotiate ALPN; the
+caller supplies an H3 connection. UDP packets never go to HTTP C<input>.
+
+L<Unblock::HTTP::QUIC> can manage readiness and engine lifetime for all
+connections on a server Driver:
+
+    my $endpoint = Unblock::HTTP::QUIC->server(
+        server => $server,
+        certificate_file => $cert,
+        private_key_file => $key,
+        send => $send_datagram,
+        set_timeout => $replace_timer,
     );
-    $http->start;
+    $endpoint->start;
 
-Retain C<$http> while the QUIC connection is active. Do not feed UDP
-packets to C<input()>; Net::QUIC owns their delivery. Alternatively, use L<Unblock::HTTP::QUIC> as a higher-level manager. It
-constructs Net::QUIC::Driver and automatically starts an HTTP/3 Server for
-each ready QUIC connection. The framework then forwards UDP data and timer
-events to the manager. Only socket I/O and timer scheduling remain in the
-framework adapter. See examples/linux-event-quic-server.pl in the repository.
+Forward UDP receive events to C<receive>, timer expiry to C<timeout>, and
+recovered UDP capacity to C<writable>. Net::QUIC::Driver determines the next
+timeout in seconds; the framework replaces its timer accordingly. The manager
+sets H3 ALPN and uses the supplied reusable Server definition without overriding
+its callbacks or policy. C<on_ready> receives the real HTTP3 Server engine.
 
-=head1 LIMITS OF THE FIRST VERSION
+=head1 EXISTING CLIENT
 
-There is no TLS/ALPN negotiation, HTTP/1 Upgrade to HTTP/2, automatic
-HTTP/2 preface sniffing, DNS, TCP connection establishment, UDP listener,
-client connection pool, redirect policy, or automatic protocol fallback.
+The current Client is still a single-connection object. Construct it with
+C<transport> and C<alpn>, then use its request and input/output methods.
+A future stage replaces this API with destination management and a shared
+framework connection factory. Do not infer pooling or automatic connection
+creation from the new Server API.
 
-The selector uses the host's explicit transport negotiation result;
-it does not guess based on network bytes. An unknown ALPN value is
-rejected rather than silently selecting the wrong protocol.
+=head1 OPTIONAL LINUX::EVENT ADAPTER
+
+L<Unblock::HTTP::Adapter::LinuxEvent> is an optional Stream subclass.
+Override C<http_server()> to return the shared Server definition. It attaches
+on readiness and feeds input directly to the selected engine. Application
+callbacks belong to the definition, not to each Stream subclass.
+
+See examples/linux-event-server.pl and examples/linux-event-quic-server.pl.
+This adapter is a reference integration; it is not loaded by core classes.
+
+=head1 REMAINING CONTRACT WORK
+
+The final application API requires transaction receive-mode selection,
+terminal notification, per-stream pause/resume, and protocol transition hooks.
+The existing whole-buffer transport contract remains in force. Hard buffer
+limits, oversized writes, borrowed-buffer ownership across transitions, and
+all terminal paths still need cross-engine verification.
 
 =head1 LICENSE
 

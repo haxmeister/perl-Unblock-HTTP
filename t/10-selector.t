@@ -35,29 +35,6 @@ use Unblock::HTTP::Server;
 my $host = bless {}, 'TestTransport';
 my $quic = bless {}, 'TestQuic';
 
-my $h1 = Unblock::HTTP::Server->new(transport => $host, on_request => sub {});
-is($h1->protocol, 'http/1.1', 'default is HTTP/1.1');
-isa_ok($h1->backend, 'Unblock::HTTP1::Server');
-is($h1->backend->{options}{transport}, $host, 'host passed through');
-ok(!exists $h1->backend->{options}{alpn}, 'ALPN not forwarded to engine');
-$h1->input('abc');
-$h1->input_eof;
-$h1->resume_output;
-is_deeply($h1->backend->{events}, [['input', 'abc'], ['eof'], ['resume']], 'stream events are delegated');
-
-my $h2 = Unblock::HTTP::Server->new(alpn => 'h2', transport => $host, on_request => sub {});
-isa_ok($h2->backend, 'Unblock::HTTP2::Server');
-is($h2->protocol, 'h2', 'H2 protocol remembered');
-is($h2->started, 1, 'byte stream engine is already started');
-
-my $h3 = Unblock::HTTP::Server->new(quic => $quic, on_request => sub {});
-isa_ok($h3->backend, 'Unblock::HTTP3::Server');
-is($h3->protocol, 'h3', 'QUIC selects HTTP/3');
-is($h3->started, 0, 'H3 awaits start');
-$h3->start;
-is($h3->started, 1, 'H3 start delegated');
-like(eval { $h3->input('udp'); 1 } ? '' : $@, qr/QUIC streams/, 'H3 byte input is rejected');
-
 my $client = Unblock::HTTP::Client->new(protocol => 'h2', transport => $host);
 isa_ok($client->backend, 'Unblock::HTTP2::Client');
 is($client->request(method => 'GET', target => '/'), 'transaction', 'request result passed through');
@@ -71,7 +48,7 @@ for my $case (
     [ { transport => $host, quic => $quic }, qr/both quic and transport/ ],
 ) {
     my ($options, $error) = @$case;
-    my $success = eval { Unblock::HTTP::Server->new(%$options); 1 };
+    my $success = eval { Unblock::HTTP::Client->new(%$options); 1 };
     ok(!$success, 'bad protocol/transport combination rejected');
     like($@, $error, 'specific error');
 }

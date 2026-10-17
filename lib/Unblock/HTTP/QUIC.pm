@@ -3,7 +3,7 @@ package Unblock::HTTP::QUIC;
 use strict;
 use warnings;
 use Carp qw(croak);
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(refaddr blessed);
 
 our $VERSION = '0.01';
 
@@ -19,23 +19,27 @@ sub _new {
     croak 'on_ready must be a coderef'
         if defined($on_ready) && ref($on_ready) ne 'CODE';
 
-    my $http3 = delete $option{http3} || {};
-    croak 'http3 must be a hash reference' unless ref($http3) eq 'HASH';
-    $http3 = { %$http3 };
-
+    my ($server, $http3);
     if ($role eq 'Server') {
-        for my $callback (qw(on_request on_body on_request_end on_error)) {
-            next unless exists $option{$callback};
-            croak "$callback specified twice" if exists $http3->{$callback};
-            $http3->{$callback} = delete $option{$callback};
+        $server = delete $option{server};
+        croak 'server(): server must be a reusable Unblock::HTTP::Server'
+            unless blessed($server) && $server->isa('Unblock::HTTP::Server');
+        croak 'server(): HTTP/3 is disabled on the Server definition'
+            unless $server->supports('h3');
+        for my $reserved (qw(http3 on_request on_body on_request_end on_error)) {
+            croak "server(): configure $reserved on the Server definition"
+                if exists $option{$reserved};
         }
-        croak 'server(): on_request callback is required'
-            unless ref($http3->{on_request}) eq 'CODE';
-    }
-
-    for my $reserved (qw(quic transport protocol alpn)) {
-        croak "http3 option '$reserved' is managed by Unblock::HTTP::QUIC"
-            if exists $http3->{$reserved};
+        $http3 = {};
+    } else {
+        croak 'client(): server is not a client option' if exists $option{server};
+        $http3 = exists($option{http3}) ? delete $option{http3} : {};
+        croak 'http3 must be a hash reference' unless ref($http3) eq 'HASH';
+        $http3 = { %$http3 };
+        for my $reserved (qw(quic transport protocol alpn)) {
+            croak "http3 option '$reserved' is managed by Unblock::HTTP::QUIC"
+                if exists $http3->{$reserved};
+        }
     }
 
     my $alpn = delete $option{alpn};
@@ -52,6 +56,7 @@ sub _new {
         role     => $role,
         driver   => $driver,
         http3    => $http3,
+        server   => $server,
         on_ready => $on_ready,
         sessions => {},
         client_id => undef,
@@ -130,15 +135,22 @@ sub _progress {
             delete $self->{sessions}{$id};
             next;
         }
-        next if $record->{http} || !$quic->ready;
+        next if $record->{http} || $record->{attaching} || !$quic->ready;
+        local $record->{attaching} = 1;
 
-        my $class = 'Unblock::HTTP::' . $self->{role};
-        (my $path = $class) =~ s{::}{/}g;
-        require "$path.pm";
-
-        my $http = $class->new(quic => $quic, %{ $self->{http3} });
+        my $http;
+        if ($self->{role} eq 'Server') {
+            $http = $self->{server}->attach_quic(connection => $quic);
+        } else {
+            require Unblock::HTTP::Client;
+            $http = Unblock::HTTP::Client->new(quic => $quic, %{ $self->{http3} });
+            $http->start;
+        }
+        if ($quic->closed) {
+            delete $self->{sessions}{$id};
+            next;
+        }
         $record->{http} = $http;
-        $http->start;
         $self->{on_ready}->($http, $self) if $self->{on_ready};
     }
     return;
@@ -156,9 +168,10 @@ Unblock::HTTP::QUIC - Manage HTTP/3 connections above Net::QUIC::Driver
 
 This is the small, event-loop-neutral HTTP/3 connection manager. It uses
 Net::QUIC::Driver for packet processing and timer management. The host
-still owns one UDP socket and one replaceable timer. The manager creates
-and starts Unblock::HTTP::Client or Server objects when QUIC is ready,
-and retains each HTTP/3 session until its QUIC connection closes.
+still owns one UDP socket and one replaceable timer. The manager attaches
+ready server connections to one reusable Server definition and starts client
+sessions when QUIC is ready. It retains each HTTP/3 session until its QUIC
+connection closes.
 
 It does not create a UDP socket, negotiate transport addresses, or provide
 a general user agent. It does not run an extra packet pump.
@@ -166,14 +179,20 @@ a general user agent. It does not run an extra packet pump.
 =head1 SERVER
 
     use Unblock::HTTP::QUIC;
+    use Unblock::HTTP::Server;
 
-    my $http = Unblock::HTTP::QUIC->server(
-        certificate_file => $cert,
-        private_key_file => $key,
+    my $server = Unblock::HTTP::Server->new(
+        http3 => {},
         on_request => sub {
             my ($tx, $request) = @_;
             $tx->respond(status => 200, body => "hello\n");
         },
+    );
+
+    my $http = Unblock::HTTP::QUIC->server(
+        certificate_file => $cert,
+        private_key_file => $key,
+        server => $server,
         send => sub { my ($datagram) = @_; ... },
         set_timeout => sub { my ($seconds) = @_; ... },
     );
@@ -208,9 +227,10 @@ or create per-connection HTTP/3 Servers.
 
     $http->start;
 
-C<on_ready> fires once per ready QUIC connection and receives the normal
-unified HTTP Client or Server, not a QUIC Stream. The underlying HTTP/3
-engine and Transaction objects are still accessible through that object.
+C<on_ready> fires once per ready QUIC connection. On a server manager it
+receives the actual HTTP3 Server engine and the manager. On a client manager
+it still receives the existing single-connection unified Client and manager.
+The client API is scheduled for redesign in a later stage.
 
 =head1 METHODS
 
@@ -225,7 +245,7 @@ C<set_timeout>. C<writable> is for recovery after UDP send congestion.
 
 C<session> returns the ready HTTP client on a client manager, or undef
 until its handshake finishes. C<sessions> returns active ready HTTP
-sessions, on either side.
+engines on the server side and unified sessions on the client side.
 
 =head2 driver
 
@@ -234,10 +254,13 @@ Returns the underlying Net::QUIC::Driver for advanced transport control.
 =head1 OPTIONS
 
 Normal Net::QUIC::Driver client or server options are accepted, including
-C<send> and C<set_timeout>. ALPN is fixed to C<h3>. Server callback options
-C<on_request>, C<on_body>, C<on_request_end>, and C<on_error> are forwarded
-to the HTTP/3 Server, not to the QUIC transport. Extra HTTP/3 engine options
-can be passed as a hash reference in C<http3>.
+C<send> and C<set_timeout>. ALPN is fixed to C<h3>. A server manager requires
+C<server =E<gt> $server_definition> with HTTP/3 enabled. Configure HTTP engine
+options and callbacks on that definition; the manager never overrides them.
+A client manager still accepts extra engine options in C<http3>.
+
+This checkpoint retains the scan of all connections after Driver events.
+It does not yet claim constant-cost lifecycle coordination at high concurrency.
 
 =head1 LICENSE
 

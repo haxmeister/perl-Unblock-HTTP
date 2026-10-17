@@ -1,0 +1,286 @@
+UNBLOCK::HTTP - DESIGN HANDOFF FOR IMPLEMENTATION
+Date: 2026-10-17
+Repository: https://github.com/haxmeister/perl-Unblock-HTTP
+Status: Discussion/design completed; implementation NOT yet performed in this conversation.
+
+PURPOSE
+
+Implement the agreed high-level, framework-neutral, callback-first
+Unblock::HTTP API using the existing Unblock::HTTP1, Unblock::HTTP2,
+Unblock::HTTP3, Unblock::WebSocket, and Net::QUIC distributions.
+
+This is Unblock::HTTP, NOT Unblock::Web.
+Unblock::Web is reserved for future complete UserAgents and web servers,
+routing, cookie/redirect policies, middleware, and similar web-application
+facilities. Native QUIC application services remain independent in
+Net::QUIC; HTTP/3 internally uses QUIC.
+
+Work ONLY in perl-Unblock-HTTP unless the maintainer explicitly authorizes
+changes elsewhere. Begin on a NEW FEATURE BRANCH, not main. Review and
+agree to the concrete implementation plan first, then implement and test.
+Do not push, merge, release, or change other repositories without approval.
+
+CURRENT REPOSITORY BASELINE (verified against main during design)
+
+- Unblock::HTTP::Client and ::Server presently represent ONE connection.
+- They select an HTTP1/2/3 backend via Unblock::HTTP::_Session.
+- Existing integration handles attached HTTP1/HTTP2 byte transports.
+- Existing QUIC helper uses Net::QUIC::Driver for UDP and timers.
+- Transactions come directly from underlying engines; avoid wrappers.
+- lib/Unblock/HTTP/Integration.pm documents transport hooks:
+    unblock_send($wire_bytes)
+    unblock_finish()
+    unblock_abort($reason)
+  and input(), input_eof(), transport_error(), resume_output().
+- The existing contract accepts an entire outgoing buffer, reporting
+  congestion via a false return; do NOT replace this with partial writes
+  without benchmarks and careful evaluation.
+- Existing optional Linux::Event adapter and live HTTP1/2/3 tests provide
+  a starting reference, NOT a mandate to use Linux::Event in core.
+- Read the repo's Handoff.md, README, source, tests and engine contracts.
+  Handoff.md describes older, previously planned features; the agreements
+  in THIS handoff supersede conflicting earlier plans (notably pooling).
+
+NONNEGOTIABLE ARCHITECTURAL PRINCIPLES
+
+- Unblock::HTTP exposes unified Client/Server application APIs, independent
+  of the event loop. No second application object or 'app => $app' needed.
+- One reusable Server definition supports many connections, and one Client
+  manages many destinations/connections.
+- Framework integrations may subclass or compose existing framework
+  connection classes. Avoid method injection, collisions, and complicated
+  adapter scaffolding.
+- Support both attaching existing framework-owned transports and optional
+  convenient creation of listeners/connections by framework-specific classes.
+- Framework owns sockets, TLS operation, network buffers, timers and
+  transport backpressure. Protocol engines and Net::QUIC own protocol
+  flow-control rules. Unified layer coordinates readiness, not a second
+  independent network buffering system.
+- Protocol selection / pooling / discovery happen outside the per-byte
+  hot path. Once selected, feed the native engine directly where possible.
+- No mandatory forwarding connection object or gratuitous transaction
+  wrapper. Preserve engine native ABI paths and borrowed buffers.
+- No required XS in Unblock::HTTP. Avoid needless allocations, copies,
+  callbacks, and closure dispatch in hot paths. Benchmark, rather than
+  asserting that zero-copy or a given design must be faster.
+- Performance is the primary optimization criterion after correctness.
+- Callback-first; do not require futures or async/await.
+- Maintain individual engine independence; no duplicate parser/protocol
+  state machine, no compatibility aliases merely to preserve awkward API.
+- No built-in full web framework or full UserAgent functionality.
+
+PROPOSED APPLICATION-FACING SERVER API
+
+    my $server = SomeFramework::Unblock::HTTP::Server->new(
+        http1 => { websocket => 1 },
+        http2 => { websocket => 0 },
+        http3 => { websocket => 1 },
+        on_request   => \&handle_request,
+        on_websocket => \&handle_websocket,
+        on_error     => \&handle_error,
+    );
+
+The namespace for framework-specific convenience classes is illustrative,
+not finalized. Framework-neutral Unblock::HTTP::Server remains central.
+Protocol option conventions: absent => disabled; {} => enabled with
+sensible defaults; hashes can contain protocol-specific tuning. WebSocket
+permission is per HTTP protocol. Disabled protocols must not be advertised
+or accepted. Correct ALPN / extended CONNECT / Alt-Svc decisions belong
+below application code. HTTP/3 uses QUIC whether or not any native QUIC
+application service exists.
+
+The framework-neutral Server constructor stores callbacks and policy, not
+an individual socket. Attach existing connections with proposed interfaces:
+
+    my $engine = $server->attach_stream(
+        transport => $framework_stream,
+        alpn => $negotiated_alpn,
+    );
+
+    my $engine = $server->attach_quic(
+        connection => $ready_h3_quic_connection,
+    );
+
+Methods are PROPOSED, not implemented. Return actual engine if feasible,
+not a forwarding wrapper. Reject protocol mismatch rather than guessing.
+For H1/H2, connection transport passes network data directly to engine.
+For H3, a QUIC connection has the HTTP3 engine; Net::QUIC::Driver handles
+UDP packets and dynamically scheduled timeouts.
+
+SERVER HTTP HANDLING
+
+    sub handle_request {
+        my ($tx) = @_;
+        $tx->respond(status => 200, body => 'Hello');
+    }
+
+Ordinary request body buffered by default (bounded). The optional
+on_headers($tx) fires after headers and BEFORE body-data delivery;
+application may register $tx->on_data(\&receive_chunk) for raw streaming.
+Registration of on_data selects streaming and suppresses full-body
+accumulation for that request. on_request($tx) runs once after request
+body completion for ordinary requests, including streamed requests.
+
+WebSocket initiation is a deliberate exception: the application sees it
+via on_request($tx) once its handshake request is ready, without waiting
+for any WebSocket messages, and decides if/where to accept it:
+
+    if ($tx->is_websocket_request) {
+        return $tx->accept_websocket();
+    }
+
+Successful acceptance results in on_websocket($ws). HTTP/1 switches the
+connection's protocol handling internally; HTTP/2 and HTTP/3 turn ONLY
+the relevant extended CONNECT stream into WebSocket. The framework keeps
+the same transport input path and needs no manual consumer replacement.
+Preserve bytes arriving in the same read as the HTTP/1 upgrade. HTTP1
+WebSocket uses the whole connection; H2/H3 WebSockets leave other streams
+alive. Exact post-handshake callback ordering needs implementation tests.
+
+For streamed responses:
+
+    $tx->respond(status => 200, stream => 1);
+    $tx->write($chunk);
+    $tx->end();
+
+Do not require Uniform::HTTP::Response->new() for normal response sugar.
+Keep low-level Uniform::HTTP types available when useful.
+
+FILE UPLOADS AND FUTURE WEB LAYER
+
+Agreed desired on_file semantics: one callback per fully received and safely
+stored multipart file; on_request after entire multipart request succeeds.
+No partial file callbacks, bounded buffering, and genuinely asynchronous
+file storage if claiming the event loop cannot block on disk I/O.
+HOWEVER, automatic multipart parsing / temporary file storage may belong
+in an optional shared helper or later Unblock::Web, not mandatory
+Unblock::HTTP core. Placement is not finalized. Preserve the intended API
+for the appropriate layer without letting it delay core HTTP integration.
+Raw non-multipart streaming uses on_headers + per-tx on_data.
+
+PROPOSED CLIENT API
+
+    my $client = SomeFramework::Unblock::HTTP::Client->new(
+        http1 => {},
+        http2 => {},
+        http3 => {},
+    );
+
+    $client->request(
+        method => 'GET',
+        url => 'https://example.com/',
+        on_response => \&handle_response,
+        on_error => \&handle_error,
+    );
+
+    $client->connect_websocket(
+        url => 'wss://example.com/chat',
+        on_open => \&opened,
+        on_message => \&message,
+        on_close => \&closed,
+    );
+
+No separate app object; no required UserAgent features; no preconnect()
+in first iteration. Both Client and Server must be designed together.
+The Client owns HTTP-aware protocol selection, connection reuse/pooling,
+HTTP/3 discovery, safe fallback/retry policy and request scheduling.
+Framework adapter provides actual TCP/TLS/UDP establishment and network
+I/O. Prefer reuse of an eligible connection. HTTP1 uses available idle
+connections; HTTP2/H3 use capacity on multiplexed streams. HTTP/1
+upgraded WebSocket has a dedicated connection; H2/H3 WebSocket occupies a
+stream and may share the connection. Pool manager stays OFF hot data path.
+A per-request http_version => '3' is a strict requirement, not preference.
+Discover H3 through valid Alt-Svc and potentially DNS HTTPS records where
+supported; avoid delaying ordinary cold requests. Do not send the same
+request multiple times merely to race transport establishment. Do not
+blindly retry requests that may have been processed, especially POST.
+Cache discovery information in memory initially; defer 0-RTT and optional
+dedicated WebSocket options until justified.
+
+CLIENT RESPONSE CALLBACKS
+
+No on_data: buffer body (within size limit), then call on_response once on
+successful completion. With on_data supplied on request(), automatically
+stream WITHOUT stream_response => 1. In streaming mode on_response fires
+when response headers arrive, on_data($tx, $chunk) fires for body data,
+on_end($tx) fires on body completion, on_error($tx, $error) on failure,
+on_finish($tx) once on terminal outcome. No application polling, loops,
+or HTTP wire framing reconstruction. HTTP1 chunking, H2 DATA framing,
+H3 stream completion remain engine responsibilities.
+
+LIFECYCLE AND BACKPRESSURE
+
+Keep short application names: respond(), write(), end(), send(), close(),
+cancel(), pause(), resume(), on_drain(); do not prefix merely to avoid
+method collisions, since app objects and framework transports are distinct.
+Retain transaction introspection: state(), error(), is_complete(),
+is_cancelled(), is_error(), is_terminal(). on_finish fires once for
+complete/error/cancelled. Intentional cancel is not automatically an error.
+An HTTP status 404 or 500 is NOT a transport error. 'end()' means no more
+body produced; it does not guarantee remote application consumption.
+
+Proposed write()/send() semantics: a successful return means continue;
+false means the supplied data WAS accepted but stop producing until
+on_drain. HOWEVER exact hard buffer limits, oversized writes, partial
+transport writes, error behavior, and ownership must be resolved and
+stress tested BEFORE committing to this contract. Do not allow unlimited
+queueing or duplicate delivery. Incoming pause/resume affects per-stream
+flow control on H2/H3 where feasible, not entire multiplexed connection.
+
+FRAMEWORK ADAPTERS AND BUFFERING
+
+Attached transport and automatic creation are both supported. One
+framework-specific integration should serve BOTH Client and Server.
+HTTP1/H2: incoming bytes, EOF, network error, writable capacity;
+outgoing bytes, read control, close. The existing actual transport methods
+are starting references. H3: use existing Net::QUIC::Driver UDP send,
+receive, timer, writable paths, not a fake TCP stream abstraction.
+Don't require native QUIC application callbacks in HTTP API.
+
+The framework owns socket buffering and writable readiness; protocol
+engines own H2/H3/QUIC flow control and mandatory protocol buffering.
+Transport input can be borrowed during calls; retained input must have
+safe ownership. Output buffers can be copied, retained, or ownership-
+transferred when supported. Compare push vs pull output and direct method
+vs closure/native dispatch empirically. Avoid double-queueing and broad
+per-chunk protocol wrappers. Framework stream identity should stay stable
+through HTTP-to-WebSocket transition. Unblock changes its own handling.
+
+IMPLEMENTATION-LEVEL DECISIONS TO RESOLVE ON FEATURE BRANCH
+
+1. Minimal framework capability / factory API used for Client outgoing
+   TCP/TLS and QUIC connection establishment, plus ALPN metadata and
+   listener convenience. Must support both subclassing and composition.
+2. Exact bounded write/backpressure and buffer ownership contracts,
+   including the current attached transport contract and engine API.
+3. Exact callback sequencing and error/cancel/timeout handling, including
+   websocket handshake, early on_headers, and failed streamed bodies.
+4. Actual H1/H2/H3/WebSocket integration seams and benchmarked route to
+   avoid permanent forwarding overhead or unnecessary protocol wrappers.
+5. Whether optional multipart-file support belongs in an extra helper or
+   future Web, without delaying core protocol/client/server work.
+
+RECOMMENDED WORK ORDER
+
+- New feature branch in perl-Unblock-HTTP (not main). Audit current source,
+  POD, tests, current engine APIs and behavior; identify actual missing
+  primitives. Propose concrete class/interface changes for approval.
+- Implement reusable Server + per-connection attachment first; verify
+  H1/H2/H3 and no protocol upgrade adapter handoff.
+- Implement shared client transport factories and Client pooling/protocol
+  selection, including request and WebSocket client behavior.
+- Complete lifecycle/backpressure/callback semantics; keep engine direct
+  dispatch on the data path.
+- Add realistic live socket tests across HTTP1/H2/H3, TCP TLS ALPN,
+  WebSocket upgrade/extended CONNECT, streaming, cancellation, partial
+  output, QUIC timers, slow receivers and concurrent clients.
+- Benchmark integrated vs direct engines (throughput, latency, CPU,
+  allocations/copies, memory, fairness, and slow receiver behavior).
+- Update README/POD/examples in simple language, separate integration-
+  author documentation from application usage, and audit documentation
+  across Client, Server, and Integration. Do not release until approved.
+
+PRESENT STATE: This is an implementation handoff, NOT a declaration that
+any proposed API or feature has already shipped. Preserve and validate
+the agreements before coding; stop for maintainer decisions only on genuine
+contract tradeoffs, not generic or already-settled architecture.
