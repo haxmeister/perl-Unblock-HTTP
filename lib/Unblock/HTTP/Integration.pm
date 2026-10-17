@@ -145,6 +145,17 @@ origin authority and host. It MUST authenticate the QUIC peer for the
 original HTTPS origin and report C<verified_origin =E<gt> 1> for the
 request to be dispatched. A missing attestation rejects that alternative.
 
+A Client may also receive C<schedule_timer =E<gt> sub { ... }> for
+application requests specifying C<timeout> in seconds. The callback
+receives the delay and an expiry callback, schedules a future framework
+timer and returns a coderef that cancels the timer. No additional socket
+or network buffering layer is required. The timeout covers queueing,
+connection establishment and the active transaction. The connection
+factory may return an optional cancellation coderef that aborts unfinished
+establishment; if a request is cancelled or expires while its factory is
+pending, the pool discards any later readiness callback. The framework
+must clean up late, unused connections rather than feeding them to HTTP.
+
 C<defer> is necessary because the engine may invoke on_finish before its
 own response-retirement bookkeeping has unwound. Deferring new dispatch
 prevents re-entering an HTTP/1 engine from that callback.
