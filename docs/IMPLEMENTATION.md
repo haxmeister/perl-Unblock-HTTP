@@ -2,7 +2,7 @@
 
 Updated: 2026-10-17
 Branch: feature/high-level-client-server
-Status: development checkpoint, not a release candidate.
+Status: Server verified; first shared Client slice in integration CI. Not a release candidate.
 
 ## Implemented
 
@@ -99,11 +99,55 @@ transaction/message identity, frozen message and lifecycle order.
 4. Continue the original design after verifying this ordinary Server milestone.
    No benchmark improvement is claimed.
 
+## Shared Client implementation slice (2026-10-17)
+
+The first Client slice has been committed to the upper feature branch.
+Client is now a reusable policy and per-origin connection pool, not the
+older one-connection forwarding wrapper. Factories are callback-based and
+framework-neutral: connect_stream(origin, alpn_choices, ready),
+connect_quic(origin, ready), and defer(callback). The ready callback returns
+the real HTTP1/2/3 engine. Frameworks retain the engine and socket; the pool
+does not forward input bytes.
+
+request(method => ..., url => ...) returns _ClientOperation immediately,
+including while connecting. operation->transaction is the real engine
+Transaction once dispatched. A strict http_version (1.1/2/3) must match.
+Cold requests prefer existing H2/H1 negotiations, not unvalidated H3
+discovery. HTTP3-only and explicit HTTP3 requests use connect_quic. The
+pool enforces positive limits: pending queue 128, connections/origin 4,
+multiplexed requests/connection 32 by default. Idle H1 is reusable,
+H2/H3 capacity is shared, and incompatible idle engines can be evicted.
+The defer factory prevents reentering H1 from its finish callback.
+
+The engine performs the only buffered reception (default 1 MiB).
+Without on_data, on_response runs after successful completed response;
+with on_data, on_response runs at headers and on_end at body completion.
+on_finish runs after transaction terminal state. A pre-dispatch failure or
+cancellation has no engine tx, so callbacks receive the request operation.
+No automatic retries are attempted. HTTP 404/500 are responses, not errors.
+
+New isolated contract file t/15-client-pool.t covers factories, streaming,
+terminal callbacks, queue cap, multiplexing, H1 deferred reuse, strict
+protocols, and error/cancellation. The previous t/10 selector test now
+tests _Session as a low-level helper. The old QUIC client manager now
+returns the actual HTTP3 Client engine rather than constructing the
+obsolete one-connection unified Client. The live TCP test is converted
+to the new Client factory API.
+
+Validation checkpoint: CI run 39061708958 passed the distribution suite
+(7 files / 245 checks); its live TCP test still used the old Client API.
+The replacement live TCP test exposed an H2 Client constructor rejection of
+the Server-only enable_connect_protocol option, also applicable to the H3
+enable_extended_connect option. Client now removes these before constructing
+H2/H3 engines. Latest feature CI must pass before marking this slice
+verified. No local shell git checkout is possible in this session because
+github.com DNS resolution fails; edits/publication used the GitHub connector.
+
 ## Later design milestones
 
-Client remains the old single-connection interface. The shared Client, transport
-factories, request-operation handle, bounded scheduling, connection pooling,
-validated Alt-Svc cache and retry policy are pending.
+Validated Alt-Svc cache and DNS HTTPS discovery, safe bounded retries,
+request timeout policy, peer-aware multiplexed capacity and pool idle
+cleanup are pending. These will need real multi-request socket tests.
 
 WebSocket enablement is rejected. H2/H3 Extended CONNECT advertising is disabled.
 The raw H1 engine can still issue 101; a complete WebSocket permission gate and
