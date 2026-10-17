@@ -294,6 +294,10 @@ sub _connect {
             if (!$self->_fallback_alternative($pool, $op, $error)) {
                 $self->_fail_pending($pool, $op, $error);
             }
+        } elsif (!$op->is_terminal && !$op->{transaction}) {
+            # Connection establishment is complete. Waiting for peer stream
+            # credit is queued work, not another connection in progress.
+            $op->{state} = 'queued';
         }
         $self->_pump($pool);
         return $engine;
