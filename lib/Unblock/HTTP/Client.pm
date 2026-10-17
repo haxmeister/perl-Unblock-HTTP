@@ -255,7 +255,8 @@ sub _connect {
         $self->_pump($pool);
         return $engine;
     };
-    my @alpn = $version eq 'tcp' ? $self->alpn_protocols : ($version);
+    my @alpn = $version eq 'tcp'
+        ? $self->alpn_protocols : ($version eq 'h3' ? ('h3') : ($version));
     my $ok = eval {
         if ($quic) {
             my $info = $pool->{info};
@@ -286,7 +287,10 @@ sub _connected {
             unless blessed($host) && $host->can('ready') && $host->can('closed')
                 && $host->ready && !$host->closed;
         die "connect_quic: alternative must authenticate the original HTTPS origin\n"
-            if $op->{alt_svc} && !($result->{verified_origin} || 0);
+            if $op->{alt_svc}
+                && !(defined($result->{verified_origin})
+                     && !ref($result->{verified_origin})
+                     && $result->{verified_origin} eq '1');
         %arg = (quic => $host);
     } else {
         $protocol = defined($result->{alpn}) && length($result->{alpn})
@@ -314,7 +318,10 @@ sub _connected {
     push @{ $pool->{connections} }, {
         engine => $engine, host => $host, protocol => $protocol,
         active => 0,
-        verified_origin => $result->{verified_origin} ? 1 : 0,
+        verified_origin =>
+            (defined($result->{verified_origin})
+              && !ref($result->{verified_origin})
+              && $result->{verified_origin} eq '1') ? 1 : 0,
     };
     return $engine;
 }
@@ -532,12 +539,24 @@ wire names h2 and/or http/1.1. Call C<$ready-E<gt>(transport =E<gt> $host,
 alpn =E<gt> $negotiated)> exactly once after connection establishment.
 An empty negotiated ALPN means HTTP/1.1, which must be enabled.
 Transport must provide unblock_send/unblock_finish/unblock_abort.
+For verified HTTPS TLS connections, supply C<verified_origin =E<gt> 1>
+only after the framework has validated the peer certificate and matched
+it to the original request hostname. Without that explicit assurance,
+received Alt-Svc headers are ignored.
 
 C<connect_quic($origin, $ready)> provides a ready, open QUIC connection
 and calls C<$ready-E<gt>(connection =E<gt> $quic)> exactly once. The
 Client starts the H3 engine; the framework handles Net::QUIC::Driver
 UDP and dynamically scheduled timers. Either factory can report
 C<$ready-E<gt>(error =E<gt> $reason)>.
+
+When Alt-Svc has advertised HTTP/3, the C<connect_quic> origin hash
+additionally contains C<alternative_host> and C<alternative_port>. The
+ordinary C<host>, C<port>, C<authority> and request headers still describe
+the ORIGINAL origin. The QUIC factory must authenticate its peer against
+that original origin, not merely the alternative endpoint, and return
+C<verified_origin =E<gt> 1> after that verification. Otherwise the
+alternative is rejected and the unsent request may fall back to TCP.
 
 C<defer($callback)> MUST arrange a later event-loop turn, not call inline.
 This prevents queued requests from reentering an HTTP/1 engine before its
@@ -551,8 +570,11 @@ target. HTTP and HTTPS URLs are accepted; userinfo and fragments are not.
 C<http_version =E<gt> '1.1'>, C<'2'> or C<'3'> is strict and cannot
 silently downgrade. An ordinary cold request prefers TCP/TLS H2/H1
 negotiation; H3 without discovery is only chosen explicitly or when
-it is the sole enabled protocol. Alt-Svc, DNS HTTPS discovery and retries
-are future slices, and no connection-establishment racing occurs.
+it is the sole enabled protocol. Authenticated same-host Alt-Svc h3 records
+can select a later request's QUIC transport. C<clear>, freshness lifetime,
+Age and invalidation after failed connections are honored in a bounded
+in-memory cache. Cross-host alternatives and DNS HTTPS discovery are not
+supported. No connection-establishment racing occurs.
 
 Defaults: max_pending_requests = 128, max_connections_per_origin = 4,
 max_streams_per_connection = 32. Every limit must be positive.
@@ -571,13 +593,17 @@ response body. on_finish runs after terminal state. Engine-issued request
 callbacks receive actual engine Transaction objects. Factory failures and
 pre-dispatch cancellations cannot have a Transaction: on_error/on_finish
 receive the operation handle instead. Cancellation is not an error.
-No automatic retry is performed.
+An unsuccessful alternative connection can fall back to TCP BEFORE the
+request reaches an HTTP engine, including a POST, because no request has
+been transmitted. The Client never automatically replays a dispatched
+transaction, even a GET: transport errors cannot establish whether a peer
+processed it. A strict HTTP version cannot fall back.
 
 =head1 LIMITATIONS
 
-WebSocket upgrades, validated Alt-Svc, retry safety, DNS HTTPS discovery,
-timeouts, pool idle expiry, and optional framework convenience classes are
-not implemented. Frameworks must retain their network transports and use
+WebSocket upgrades, cross-host Alt-Svc, retries after dispatch, DNS HTTPS
+discovery, timeouts, pool idle expiry, and optional framework convenience
+classes are not implemented. Frameworks must retain their network transports and use
 their normal writable readiness/QUIC timer paths. This branch requires the
 coordinated receive/lifecycle engine feature branches, not released engines.
 
