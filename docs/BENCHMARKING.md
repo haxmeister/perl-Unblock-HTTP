@@ -226,6 +226,11 @@ number of on_drain wakeups, in 257 turns with a maximum burst of
 two chunks per turn. Every response's integrity and lifecycle checks
 passed. Native send_buffer_limit was set to 8192 bytes.
 
+A later assertion also checks that one of the small requests
+finishes before the large response completes. CI 39088663590
+passed 552 distribution checks and 369 live checks, including
+this cross-stream progress assertion.
+
 The H3 native send_buffer_limit is not an aggregate Net::QUIC or UDP
 memory limit. This workload does not stop H3 stream receive-credit
 return, nor measure packet/stream outstanding bytes, allocator
