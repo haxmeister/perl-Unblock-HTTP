@@ -56,6 +56,8 @@ jobs:
           prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
           # Exercise more than the original six simultaneous slow producers,
           # with independent Reader credit held for a sustained three seconds.
+          # Diagnostic: isolate per-stream credit with abundant connection credit.
+          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t

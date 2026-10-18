@@ -38,6 +38,12 @@ die "UNBLOCK_H3_CREDIT_STREAMS must be an integer from 6 through 16\n"
 my $hold_seconds = $ENV{UNBLOCK_H3_CREDIT_HOLD_SECONDS} // 0.5;
 die "UNBLOCK_H3_CREDIT_HOLD_SECONDS must be 0.5, 2 or 3\n"
     unless $hold_seconds =~ /\A(?:0\.5|2|3)\z/;
+my $wide_connection_window = $ENV{UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW} // 0;
+die "UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW must be 0 or 1\n"
+    unless $wide_connection_window =~ /\A[01]\z/;
+my $connection_window = $wide_connection_window
+    ? 33554432  # 32 MiB: diagnostic only; stream credit is still 32 KiB.
+    : 32768 * ($streams + 2);
 my $send_limit = 8192;
 my $chunk = '0123456789abcdef' x 256;  # 4 KiB
 my $parts = 256;                       # 1 MiB per slow stream
@@ -279,7 +285,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 stream_window => 32768,
                 # One independent 32 KiB window per Reader plus two windows
                 # of headroom for the fast response and control traffic.
-                connection_window => 32768 * ($streams + 2),
+                connection_window => $connection_window,
             },
             on_ready => sub ($h3, $manager) {
                 $ready++;
@@ -360,6 +366,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                                 . ' blocked_writes=' . join(',', @blocked)
                                 . ' resumed=' . join(',', @resumed)
                                 . ' waiting=' . join(',', @waiting)
+                                . ' connection_window=' . $connection_window
                                 . ' received=' . join(',', @received)
                                 . ' pending=' . join(',', map { $_ ? $_->pending_bytes : -1 } @reader));
                         },
@@ -494,7 +501,7 @@ is($native_accounting_mismatches, 0,
 note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", produced before release=" . join(',', @produced_at_release)
     . ", QUIC peak sampled=$quic_peak, poll turns=$poll_turns"
-    . ", streams=$streams, hold_seconds=$hold_seconds, send_limit=$send_limit, native peak=$native_retained_peak"
+    . ", streams=$streams, hold_seconds=$hold_seconds, connection_window=$connection_window, send_limit=$send_limit, native peak=$native_retained_peak"
     . ", native per-stream peaks=" . join(',', @native_stream_peak)
     . ", producer blocks=" . join(',', @blocked));
 

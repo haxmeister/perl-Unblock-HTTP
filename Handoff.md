@@ -1,3 +1,17 @@
+## Aggregate QUIC receive-credit isolation probe (2026-10-18)
+
+After 12-stream tight-window failure, probe CI 39157553715 recorded
+QUIC transmit buffered bytes=0, native body retained=49591, blocked HTTP3
+IDs 0,4,8,...44, ACK offsets 98261 for Reader0 and 32768 for siblings.
+Producer0 accepted only 25 4-KiB chunks, all others 9. Reader0 received
+98184 bytes and was stalled despite no outstanding QUIC send buffer.
+Configured aggregate client receive window=458752, close to total bytes
+received across all held streams. Connection-level send-credit exhaustion
+is plausible, not yet proven. Next isolate by setting a wide 32-MiB
+connection window while preserving individual 32768-byte Reader credit,
+the 8192 native budget, staged release and all payload/fairness assertions.
+Keep original tight-window 12-stream failure in CI as a separate case;
+do not claim it resolved by allocating more connection credit.
 ## Extended HTTP3 stress exposed a new stall (2026-10-18)
 
 Real UDP/QUIC CI 39157085119 FAILED at the new 12-producer, two-second hold.
