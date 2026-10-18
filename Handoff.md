@@ -963,10 +963,35 @@ large 4 MiB threshold for independent QUIC receive-credit isolation.
 The CI workflow runs BOTH modes and pins the precise HTTP3 source.
 Test commit 5a89a34d685fd7756a8479a4e39d4b303bd786b7;
 workflow source commit 0786d84704c950ded3c307037c95086403bd93a1.
-Engine full matrix run 39098239956 and upper integration
-39098276763 were in progress when documented. Inspect results,
-fix any failures on authorized feature refs and update this file.
-Do not declare tiny-buffer fairness verified without PASS.
+Engine source 96cf41e9378333fb4f7b48d89c8311c1dcf7cee7
+passed full Perl matrix CI 39098239956; engine
+interoperability 39098219785 passed the immediately prior
+same production code. Upper CI 39098276763 first reproduced
+all 1 MiB completions and per-producer drain resumptions with
+send_buffer_limit 8192, but failed ONE test-only expectation
+that all three Readers held initial bytes. slow2 was initially
+empty because of QUIC stream scheduling, not because it received
+any body data without credit. Initial test assertion corrected
+to require a nonzero held aggregate, preserving each Reader's
+window bound, sequential credit isolation, complete digest and
+all producer resume assertions.
+
+VERIFIED: upper test source a545a4ddecef5501e3392dcd3f4f3a4a56223efd,
+CI 39098422769 PASS: 552 distribution checks, 453 live
+TCP/QUIC checks over ten files with 8192 native send_buffer_limit,
+plus a separate 4 MiB multi-reader run with 56 PASS checks.
+Every slow producer completed all 256 accepted chunks once,
+with matching per-producer on_drain/resume counts, and a fast
+stream completed before any slow Reader was released.
+QUIC sampled retained send bytes: 8192 peak at the tight
+budget and 3061953 at the intentionally high threshold.
+These are NOT universal hard memory bounds or speed benchmarks.
+The former deadlock is now resolved for this measured workload.
+
+No H1/H2, Net::QUIC, Uniform, main, version, tag,
+merge or release changes. Remaining: memory and copy
+instrumentation, additional concurrent producers and load,
+direct native vs unified Client controlled benchmarks.
 
 Remaining after CI: per-stream native retained measurement under load,
 large concurrent producers, accounting invariants on reset/discard,
