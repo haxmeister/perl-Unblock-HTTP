@@ -770,6 +770,62 @@ larger stream concurrency, and direct engine vs unified
 Client performance comparison. Do not claim a throughput
 improvement from CI smoke timings.
 
+## Dynamic QUIC producer join/cancel and first direct-H3 benchmark (2026-10-18)
+
+New xt/linux-event-quic-join-cancel.t runs authenticated real
+QUIC/TLS loopback over the existing optional LinuxEvent adapter:
+one 1 MiB streamed response remains unread with a pull Reader,
+another streamed producer is cancelled during that hold, a
+512 KiB streamed response joins afterward, and a small fast
+response completes independently. Repeated cancellation is
+idempotent. The test checks the cancellation terminal outcome
+at both endpoints, discard of the cancelled native retained
+body bytes, complete response lengths/digests, per-stream
+streaming retained bytes reconciling with native connection
+total, accepted-byte write(false)/on_drain wakeups and
+deferred producer write bursts. No transaction wrappers or
+production forwarding layer were introduced.
+
+HTTP3 engine native lifecycle test-only commit
+e6c1cbb0e54b0dbe40ed6d29e5884e50983a3319
+extended t/01-native to cover dynamic join/discard/EOF
+active producer counts, per-stream and total retained-byte
+invariants, and repeated discard. The complete HTTP3 Perl
+matrix CI 39133563818 PASSED. The upper integration workflow
+pins this source; engine production remains unchanged from
+the previously verified fair-share implementation.
+
+Upper CI run 39133882442 PASSED at source
+9a507a5534c138e6eebe5d09ab9e6646c259ddb4:
+552 distribution checks, 11 real TCP/QUIC files / 485
+checks including live join/cancel, plus 64 checks at native
+send_buffer_limit 131072 and 58 at 4194304. All live
+payloads and native accounting reconciled. Benchmark smoke
+passed at this source. Shared native thresholds remain SOFT;
+the tests do not prove an upper bound on RSS or all buffers.
+
+A separate opt-in benchmark bench/h3-client-vs-direct.pl
+compares Unblock::HTTP3::Client directly against the upper
+Unblock::HTTP::Client using the same Net::QUIC::Driver,
+loopback UDP and reusable upper Server. It sends one
+sequential tiny GET at a time, alternates run order and
+excludes handshake with separate warmup. It records
+completed request interval and request() inclusive time,
+but does not measure native copies, allocations, RSS,
+packet loss or multi-stream throughput. Do not promote
+hosted-runner timings to a performance claim.
+
+The first CI benchmark smoke 39134321636 failed only
+because the direct engine on_complete callback supplies
+one Transaction, not a separate Response argument.
+The benchmark callback has been adapted; source commit
+10a6b57109f76ced416aa05b0343ef08615e9cb3,
+CI 39134487091 was pending when documented. Treat this
+benchmark as unverified until that CI passes.
+
+No main/merge/release/tag/version changes; HTTP1/HTTP2,
+Net::QUIC and Uniform::HTTP are unchanged.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
