@@ -173,9 +173,13 @@ connections with active streams or queued requests waiting for peer credit.
 The feature's live integration tests also exercise streamed request and
 response bodies exceeding 1 MiB on H1/H2/H3, with integrity checks and
 controlled accepted-but-blocked output resumption. A preliminary
-direct-engine versus unified-Client loopback benchmark is included at
-`bench/client-vs-direct.pl`; see `docs/BENCHMARKING.md` for its limited
-scope and measured overhead. CI correctness tests do not enforce rates.
+direct-engine versus unified-Client TCP loopback benchmark is included
+at `bench/client-vs-direct.pl`. HTTP/3 additionally has
+`bench/h3-client-vs-direct.pl` for serial requests and
+`bench/h3-workload-profile.pl` for isolated concurrent CPU, latency
+and sampled RSS workloads. Read `docs/BENCHMARKING.md` and
+`docs/PERFORMANCE.md` for how to run them and interpret their
+limitations. CI correctness tests do not enforce throughput rates.
 
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
