@@ -386,9 +386,6 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                     },
                 );
                 $loop->stop if $error;
-                    },
-                );
-                $loop->stop if $error;
             },
             send => sub ($datagram) { $sock->send($datagram->data) },
             set_timeout => sub ($seconds) {
