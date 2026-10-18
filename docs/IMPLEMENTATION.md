@@ -816,12 +816,21 @@ packet loss or multi-stream throughput. Do not promote
 hosted-runner timings to a performance claim.
 
 The first CI benchmark smoke 39134321636 failed only
-because the direct engine on_complete callback supplies
-one Transaction, not a separate Response argument.
-The benchmark callback has been adapted; source commit
-10a6b57109f76ced416aa05b0343ef08615e9cb3,
-CI 39134487091 was pending when documented. Treat this
-benchmark as unverified until that CI passes.
+because direct on_complete supplies the Transaction alone,
+not a separate Response argument. The script was corrected
+at benchmark-only source 10a6b57109f76ced416aa05b0343ef08615e9cb3.
+Coordinated CI 39134487091 PASSED: 552 distribution,
+11 live TCP/QUIC files / 485 checks, plus 64 at the 128 KiB
+native limit and 58 at 4 MiB, and all benchmark smoke commands.
+Its one 30-request H3 warmup-excluded run observed direct 574
+requests/sec and 237.41 us mean request() time, versus unified
+542 requests/sec and 309.59 us mean request() time.
+Unified/direct whole-interval ratio was 1.061 on this shared
+CI host. ONE tiny run is NOT a controlled or stable throughput,
+latency or cost comparison; do not publish a speed regression
+or speedup claim based on these samples. For a useful follow-up,
+repeat alternating rounds and measure RSS/copies, CPU and the
+response/batch shapes users actually need.
 
 No main/merge/release/tag/version changes; HTTP1/HTTP2,
 Net::QUIC and Uniform::HTTP are unchanged.
