@@ -21,9 +21,10 @@ The `h3-workload-profile.pl` arguments are **measured requests,
 warmup requests, rounds, maximum requests in flight, and response-body
 bytes**. The accepted ranges are documented in its usage error.
 
-A trial opens one authenticated HTTP/3 connection over loopback UDP,
-using Net::QUIC::Driver. The same Unblock::HTTP::Server responds to
-both clients. Direct mode uses Unblock::HTTP3::Client. Unified mode uses
+A trial uses two fresh child processes: one running the HTTP/3 server and
+one running the measured client. They communicate over loopback UDP using
+Net::QUIC::Driver. The same Unblock::HTTP::Server definition and response
+body are used for both client modes. Direct mode uses Unblock::HTTP3::Client. Unified mode uses
 the reusable Unblock::HTTP::Client, its URL parsing, pool scheduler,
 and one attached HTTP/3 engine. Neither mode opens extra connections
 to increase throughput. Up to the configured number of GET requests
@@ -31,11 +32,14 @@ can be outstanding at once.
 
 Warmup must finish before the timed phase begins. Runs alternate
 direct-first and unified-first order to reduce ordering bias. **Each
-trial forks a fresh child before constructing any socket, event loop or
-QUIC state**, so the previous trial cannot accumulate native memory
-or retained objects in the next trial. Both modes validate every
-buffered response body and status. A request that does not finish, a
-wrong payload or an unexpected transport error aborts the experiment.
+trial forks a client process, which forks a dedicated server process before
+creating either event loop, socket or QUIC state.** The server announces
+its UDP port through a pipe. After the client validates its last response,
+it signals the server to stop; the server reports its request count and any
+error before the next trial starts. This prevents one trial's native state
+from accumulating in later trials. Both modes validate every buffered
+response body and status. A request that does not finish, a wrong payload,
+or an unexpected transport error aborts the experiment.
 
 ## Reading the numbers
 
@@ -48,20 +52,27 @@ wrong payload or an unexpected transport error aborts the experiment.
   its on_finish callback, including queuing and network scheduling.
   Percentiles are approximate nearest-rank observations, not
   confidence intervals. Tiny samples make p99 almost meaningless.
-- `cpu`: process user plus system CPU seconds for the measured
-  interval. It includes the **server and client together** in that
-  trial, as well as QUIC/TLS and event loop work.
-- `rss_start_kib`, `rss_end_kib`, `rss_sample_peak_kib`:
-  sampled Linux /proc/self/status VmRSS. The script samples at start,
-  every 16 measured completions and at end. This is **not** an
-  allocator high-water mark, nor a reliable bound on transient peaks.
+- `client_cpu`: measured client-process user plus system CPU seconds for the
+  post-warmup interval, including client QUIC/TLS and the client event loop.
+  It excludes server-process CPU, but not work charged to the client process
+  in the operating system's networking stack.
+- `client_rss_start_kib`, `client_rss_end_kib`,
+  `client_rss_sample_peak_kib`: sampled client-process Linux
+  /proc/self/status VmRSS at start, every 16 measured completions and
+  at end. It excludes the separate server process, but shared mappings
+  are counted in each process's RSS and it is **not** an allocator
+  high-water mark or a reliable bound on transient peaks.
 
-Both modes share the same process *within* a trial, so CPU and RSS
-cannot be attributed to the client library in isolation. The numbers
-do not measure allocation counts, Perl object counts, payload copies,
-nghttp3/QUIC per-stream retained-byte surfaces, kernel buffers, packet
-loss, slow readers, streaming response throughput or multi-origin
-pooling. The native retained-byte integration tests cover a distinct
+The client and server have separate process CPU clocks and address spaces.
+Client CPU and RSS exclude the server process; the **client measurement
+still includes the Linux::Event loop, Net::QUIC, TLS, UDP transport and
+protocol engine**, and therefore cannot be attributed solely to the
+unified library. RSS includes shared library mappings and copy-on-write
+pages. End-to-end wall time still depends on the separate server, kernel
+and scheduler. The script does not report server CPU/RSS, allocation counts,
+Perl object counts, payload copies, nghttp3/QUIC per-stream retained-byte
+surfaces, kernel buffers, packet loss, slow readers, streaming response
+throughput or multi-origin pooling. The native retained-byte integration tests cover a distinct
 part of those questions.
 
 ## Comparing results fairly
