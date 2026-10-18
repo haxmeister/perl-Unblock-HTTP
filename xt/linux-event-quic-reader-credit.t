@@ -185,7 +185,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 stream_window => 32768,
                 connection_window => 131072,
             },
-            on_ready => sub ($h3) {
+            on_ready => sub ($h3, $manager) {
                 $ready++;
                 $slow_tx = $h3->request(
                     method => 'GET', scheme => 'https',
