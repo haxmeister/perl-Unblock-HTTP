@@ -913,11 +913,30 @@ Implemented and verified:
   application-driven QUIC receive credit withholding, NOT a
   whole-stack memory bound or published high-level Client pull API.
 
-Remaining: aggregate native buffer and RSS/copy instrumentation;
-multiple independently credit-blocked H3 streams; large-scale load,
-and fair direct H3-vs-unified Client benchmarking. No engine
-or Net::QUIC/Uniform changes, main edits, merges, tags,
-releases or version bumps.
+Further verified independent QUIC transmit-buffer observation:
+- Net::QUIC::Connection has a public send_buffered_bytes() getter,
+  counting Stream bytes retained for outgoing transmission until
+  acknowledged. Unlike H3 Reader pending_bytes, it measures
+  SEND-side QUIC retention. The fixture samples it after producer
+  bursts and datagram processing plus at credit hold release.
+- Upper test-only source bb891776d3aad4de3020c3f7e2f6ee273b11477f
+  CI 39093371363 PASS: 13 distribution files / 552 checks,
+  nine live TCP/QUIC files / 391 checks, benchmark smoke passed.
+  Reader peak sampled 32,739 bytes; QUIC retained send-buffer
+  at release 8,192 bytes and peak sampled 8,192 bytes.
+  Producer only submitted 10/512 chunks during the credit hold,
+  and completed afterward. Blocks=resumptions=257.
+  QUIC and Reader buffers are two separate, sampled surfaces,
+  NOT an aggregate memory measurement. The 8,192-byte value is
+  per this fixture, not a general QUIC upper limit.
+- This uses only public Net::QUIC instrumentation. No edits to
+  Net::QUIC, HTTP3, Uniform or other protocol engines.
+
+Remaining: native nghttp3 retained/provider buffers and process
+RSS/copy instrumentation; several independently credit-blocked
+H3 streams and larger concurrency stress; fair direct-H3 vs
+unified Client benchmarking. No engine or read-only dependency
+changes, main edits, merges, tags, releases or version bumps.
 
 ## Current implementation
 
