@@ -122,10 +122,10 @@ $server = Unblock::HTTP::QUIC->server(
                 $cancel_server_finish++;
                 $error ||= 'server cancel transaction was not cancelled'
                     unless $finished->is_cancelled;
-                $cancel_native_remaining = $server->sessions
-                    ? ($server->sessions)[0]{native}
-                        ->streaming_retained_bytes_for_stream(
-                            $finished->stream_id)
+                my ($session) = $server->sessions;
+                $cancel_native_remaining = $session
+                    ? $session->{native}->streaming_retained_bytes_for_stream(
+                        $finished->stream_id)
                     : undef;
                 $sample->();
                 $maybe_stop->();
