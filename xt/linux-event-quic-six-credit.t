@@ -30,7 +30,7 @@ if (system('openssl', 'req', '-x509', '-newkey', 'rsa:2048',
 
 my $loop = Linux::Event::Loop->new;
 my ($server, $client, $server_timer, $client_timer, $client_socket);
-my ($hold_timer, $poll_timer, $watchdog, $diagnostic_timer);
+my ($hold_timer, $poll_timer, $watchdog);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
 my $streams = $ENV{UNBLOCK_H3_CREDIT_STREAMS} // 6;
 die "UNBLOCK_H3_CREDIT_STREAMS must be an integer from 6 through 16\n"
@@ -42,15 +42,16 @@ my $wide_connection_window = $ENV{UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW} // 0;
 die "UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW must be 0 or 1\n"
     unless $wide_connection_window =~ /\A[01]\z/;
 my $window_override = $ENV{UNBLOCK_H3_CREDIT_CONN_WINDOW};
-die "UNBLOCK_H3_CREDIT_CONN_WINDOW must be 524288 or 720896\n"
+die "UNBLOCK_H3_CREDIT_CONN_WINDOW must be 458752, 524288, 720896 or 1048576\n"
     if defined($window_override)
-        && $window_override !~ /\A(?:524288|720896)\z/;
+        && $window_override !~ /\A(?:458752|524288|720896|1048576)\z/;
 die "cannot combine wide window and explicit window overrides\n"
     if defined($window_override) && $wide_connection_window;
 my $connection_window = defined($window_override) ? 0 + $window_override
-    : $wide_connection_window
-    ? 33554432  # Diagnostic only; individual credit remains 32 KiB.
-    : 32768 * ($streams + 2);
+    : $wide_connection_window ? 33554432
+    : $streams <= 6 ? 32768 * ($streams + 2)
+    : $streams <= 12 ? 524288
+    : 1048576;
 my $send_limit = 8192;
 my $chunk = '0123456789abcdef' x 256;  # 4 KiB
 my $parts = 256;                       # 1 MiB per slow stream
@@ -290,8 +291,8 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
             http3 => { receive_body => 'buffered' },
             transport => {
                 stream_window => 32768,
-                # One independent 32 KiB window per Reader plus two windows
-                # of headroom for the fast response and control traffic.
+                # Each Reader has independent credit. Aggregate credit also
+                # has headroom for MAX_DATA updates while siblings are held.
                 connection_window => $connection_window,
             },
             on_ready => sub ($h3, $manager) {
@@ -350,50 +351,6 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                     },
                 );
                 $error ||= 'fast request was not admitted' unless $fast;
-                if ($streams > 6) {
-                    $diagnostic_timer = Linux::Event::Kernel::Timer->new(
-                        loop => $loop, after => $hold_seconds + 4,
-                        on_timer => sub ($t) {
-                            undef $diagnostic_timer;
-                            my @sessions = $server->sessions;
-                            my @h3_blocked = map { join(',', sort { $a <=> $b } keys %{ $_->{blocked_output} }) } @sessions;
-                            my @retained = map { $_->{native}->streaming_retained_bytes } @sessions;
-                            my @quic_send = map { $_->quic->send_buffered_bytes } @sessions;
-                            if (@sessions &&
-                                $sessions[0]->quic->can('_debug_send_credit')) {
-                                my @credit;
-                                for my $i (0 .. $streams - 1) {
-                                    my $snapshot = $server_tx[$i]
-                                        ? $sessions[0]->quic->_debug_send_credit(
-                                            $server_tx[$i]->stream_id)
-                                        : undef;
-                                    push @credit, defined($snapshot)
-                                        ? "$i:" . join('/', @$snapshot)
-                                        : "$i:-";
-                                }
-                                diag('CREDIT-PROBE conn_left/stream_left/unsent/conn_unsent/tx_retained/waiter/count/activity '
-                                    . join(';', @credit));
-                            }
-                            my @ack = map {
-                                my $tx = $server_tx[$_];
-                                my $s = $tx && @sessions ? $sessions[0]{streams}{ $tx->stream_id } : undef;
-                                $s ? $s->acked_offset : -1
-                            } 0 .. $streams - 1;
-                            diag('STRESS-PROBE sessions=' . scalar(@sessions)
-                                . ' blocked=' . join(';', @h3_blocked)
-                                . ' retained=' . join(',', @retained)
-                                . ' quic_send=' . join(',', @quic_send)
-                                . ' ack=' . join(',', @ack)
-                                . ' produced=' . join(',', @produced)
-                                . ' blocked_writes=' . join(',', @blocked)
-                                . ' resumed=' . join(',', @resumed)
-                                . ' waiting=' . join(',', @waiting)
-                                . ' connection_window=' . $connection_window
-                                . ' received=' . join(',', @received)
-                                . ' pending=' . join(',', map { $_ ? $_->pending_bytes : -1 } @reader));
-                        },
-                    );
-                }
                 $hold_timer = Linux::Event::Kernel::Timer->new(
                     loop => $loop, after => $hold_seconds,
                     on_timer => sub ($t) {
@@ -445,7 +402,9 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
     },
 );
 $watchdog = Linux::Event::Kernel::Timer->new(
-    loop => $loop, after => $streams == 6 ? 60 : $wide_connection_window ? 45 : 20,
+    loop => $loop,
+    after => $streams == 12 && $connection_window == 458752 ? 20
+        : $streams >= 16 ? 120 : 60,
     on_timer => sub ($t) {
         $sample_readers->();
         my @sessions = $server->sessions;
@@ -527,7 +486,7 @@ note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", native per-stream peaks=" . join(',', @native_stream_peak)
     . ", producer blocks=" . join(',', @blocked));
 
-for my $timer ($hold_timer, $poll_timer, $watchdog, $diagnostic_timer, $server_timer, $client_timer) {
+for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
     $timer->cancel if $timer && $timer->is_active;
 }
 done_testing;

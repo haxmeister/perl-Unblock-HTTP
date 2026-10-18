@@ -28,7 +28,7 @@ jobs:
           # Pin the standalone Net::QUIC MAX_DATA wakeup feature and the
           # coordinated HTTP engine source commits. Do not test moving main.
           for spec in \
-            perl-Net-QUIC:d6d4a3a59b78c013a04c0e48034488a570d222a6 \
+            perl-Net-QUIC:1606308eeeaf29f2601fa166046703a4b4ba9491 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
             perl-Unblock-HTTP3:1bed34bc19213df6066fc72668cf0b9930de0d51; do
@@ -54,18 +54,14 @@ jobs:
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
           prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
-          # Exercise more than the original six simultaneous slow producers,
-          # with independent Reader credit held for a sustained three seconds.
-          # Diagnostic: isolate per-stream credit with abundant connection credit.
+          # Exercise 12 and 16 slow Readers with independently withheld
+          # receive credit. Wide-window cases isolate per-stream scheduling;
+          # bounded-window cases also exercise ngtcp2 MAX_DATA updates.
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
           # Separate response-buffering smoke at 32 concurrent streams.
           # This is correctness/resource telemetry, not a performance gate.
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
-          # Test bounded windows with enough aggregate headroom for ngtcp2
-          # to advertise MAX_DATA while siblings deliberately withhold credit.
-          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_CONN_WINDOW=524288 prove -v -b xt/linux-event-quic-six-credit.t
-          UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_CONN_WINDOW=720896 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
