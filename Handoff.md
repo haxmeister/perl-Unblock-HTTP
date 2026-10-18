@@ -1,3 +1,15 @@
+## Prolonged independently held HTTP3 Readers (2026-10-18)
+
+The upper feature real-socket six-credit fixture now supports holds
+UNBLOCK_H3_CREDIT_HOLD_SECONDS=0.5 or integer 2..180, preserving
+the original six-Reader/0.5s default, 8 KiB producer budget,
+32 KiB per-Reader windows, bounded aggregate connection credit and
+all original digests/fairness/accounting/terminal assertions. Large
+hold watchdogs reserve time to finish after release. CI adds a
+12-Reader/10-second hold against released CPAN Net::QUIC 0.05.
+Manual 60-second example and meaning/limitations in docs/PERFORMANCE.md.
+Check CI before claiming the new 10s case passes.
+
 ## Sustained same-connection HTTP3 profiler checkpointing (2026-10-18)
 
 Opt-in sample tracking was added to the upper feature branch's isolated

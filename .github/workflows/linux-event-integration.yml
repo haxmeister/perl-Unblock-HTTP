@@ -67,6 +67,9 @@ jobs:
           UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=256 UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 2048 128 2 16 4096,16384
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
+          # Real-QUIC held-Reader interval extended to 10 seconds, with
+          # the same 12 MiB of producer payloads, window and digest checks.
+          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=10 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=4194304 prove -v -b xt/linux-event-quic-multi-credit.t
       - name: Direct versus shared Client benchmark smoke (not a performance gate)

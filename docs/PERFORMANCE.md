@@ -66,7 +66,7 @@ sequential Reader release, digests, producer fairness, exactly-once completion
 and per-stream retention accounting are unchanged.
 
 The same fixture accepts `UNBLOCK_H3_CREDIT_STREAMS` from 6 through 16 and
-`UNBLOCK_H3_CREDIT_HOLD_SECONDS` of 0.5, 2 or 3. Each Reader has its own
+`UNBLOCK_H3_CREDIT_HOLD_SECONDS` of 0.5 or whole seconds 2..180. Each Reader has its own
 32768-byte receive window. The QUIC connection receive window also needs
 space for blocked sibling streams and timely connection-wide MAX_DATA
 advertisements. The tested bounded defaults are 256 KiB at six, 512 KiB
@@ -79,6 +79,23 @@ UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 \
 UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 \
     prove -v -b xt/linux-event-quic-six-credit.t
 ```
+
+To test a prolonged period of withheld Reader credit on one connection,
+set `UNBLOCK_H3_CREDIT_HOLD_SECONDS=10` (also supports whole seconds from
+2 through 180). This leaves all 12 1 MiB producers attached on the same
+connection while their Readers hold per-stream credit, then resumes them
+in sequence and checks all payload hashes and callbacks:
+
+```sh
+UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=60 \
+    prove -v -b xt/linux-event-quic-six-credit.t
+```
+
+This stresses a sustained **idle/flow-blocked** connection; it is not the
+same as continuous 60-second throughput or 60 seconds of active reads. The
+extended watchdog accounts for the hold plus bounded completion time.
+The CI smoke runs a shorter 10-second held-Reader variant against
+published Net::QUIC 0.05.
 
 The previous diagnostic set a 448 KiB connection window for 12 deliberately
 credit-held Readers. That fixture reliably stalled, despite each Stream

@@ -36,8 +36,10 @@ my $streams = $ENV{UNBLOCK_H3_CREDIT_STREAMS} // 6;
 die "UNBLOCK_H3_CREDIT_STREAMS must be an integer from 6 through 16\n"
     unless $streams =~ /\A(?:[6-9]|1[0-6])\z/;
 my $hold_seconds = $ENV{UNBLOCK_H3_CREDIT_HOLD_SECONDS} // 0.5;
-die "UNBLOCK_H3_CREDIT_HOLD_SECONDS must be 0.5, 2 or 3\n"
-    unless $hold_seconds =~ /\A(?:0\.5|2|3)\z/;
+die "UNBLOCK_H3_CREDIT_HOLD_SECONDS must be 0.5 or an integer 2..180\n"
+    unless $hold_seconds =~ /\A(?:0\.5|[1-9][0-9]*)\z/
+        && ($hold_seconds == 0.5
+            || ($hold_seconds >= 2 && $hold_seconds <= 180));
 my $wide_connection_window = $ENV{UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW} // 0;
 die "UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW must be 0 or 1\n"
     unless $wide_connection_window =~ /\A[01]\z/;
@@ -403,8 +405,11 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
 );
 $watchdog = Linux::Event::Kernel::Timer->new(
     loop => $loop,
-    after => $streams == 12 && $connection_window == 458752 ? 20
-        : $streams >= 16 ? 120 : 60,
+    # Large holds exercise timer churn and prolonged flow-control stalls.
+    # The default six-Reader regression retains its original 60s watchdog.
+    after => $streams == 6 && $hold_seconds == 0.5 ? 60
+        : $streams == 12 && $connection_window == 458752 ? 20
+        : $hold_seconds + ($streams >= 16 ? 120 : 90),
     on_timer => sub ($t) {
         $sample_readers->();
         my @sessions = $server->sessions;
