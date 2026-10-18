@@ -938,6 +938,52 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Concurrent H3 CPU/RSS benchmark validation checkpoint (2026-10-18)
+
+Initial benchmark source cbbca7182f9d6aa2721a01adf84cb765c0ea9098
+and workflow 49f2968e5296d8bfdc7fed1b94cae38a8b041a98
+PASSED upper CI 39136691305: 552 distribution, 485 live
+TCP/QUIC, 64 at 128KiB, 58 at 4MiB, plus new benchmark smoke.
+First two-round measurements with 30 requests / 16KiB / 4
+outstanding, and 12 requests / 256KiB / 2 outstanding
+showed small noisy serial-interval differences. However
+whole-process RSS increased across alternating trials because
+the trial objects lived sequentially in one Perl process.
+Those memory readings were NOT comparable across modes.
+
+The profiler now forks a FRESH CHILD PROCESS per trial, before
+creating any loop, socket or QUIC connection; parent reads a
+small JSON result over a pipe. No worker runs concurrently
+with another trial. Process-wide RSS still includes both
+Client and Server in the same child and is sampled rather than
+a true peak. Isolation patch b63f08650c75c762b01b32ff75466465b5656bd6
+PASSED upper CI 39136915734 with all prior distribution/live
+checks and both isolated workload smoke settings. RSS startup
+values were stable within modes rather than growing per round.
+
+Additional docs in docs/PERFORMANCE.md commit
+9877de612084ab7b84341b8004a084cae08142f8
+explain sampling, fairness and rerun commands.
+Follow-up profiler commit 82e5bf55f88e2e7515cd6b82e42be2b24f83b7a6
+uses high-resolution Linux CLOCK_PROCESS_CPUTIME_ID rather than
+quantized Perl times and a true average of even-round median
+values. Workflow commit cff8be90c8f3b9183557addfea03ff516504ab43
+increases smoke to 100 measured / 20 warmup / 3 alternating
+rounds at 4 in-flight, 16KiB, and 30/10/3 at 2 in-flight,
+256KiB. Coordinated CI 39137178777 IN PROGRESS at this
+checkpoint. Check its conclusion and logs before calling
+the new CPU/median data verified.
+
+Benchmark compares a direct engine request with the full
+URL-parsing pooled API by design, not an equal-cost wrapper.
+Both use same Linux event loop, QUIC, server, payloads and
+buffered receive. It is NOT a client-only CPU profile,
+heap-allocation/copy count, or confidence interval.
+Do not claim an improvement/regression from shared CI
+runner trials alone. No production, HTTP1/HTTP2/HTTP3,
+read-only dependency, main, version, merge, tag or release
+changes in this continuation.
+
 ## Concurrent HTTP3 workload profiling continuation (2026-10-18)
 
 Remote branch check on entry: upper feature 1aa49c88dd1652dc1fdf872f1fe8de0bb2d449c9;
