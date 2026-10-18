@@ -697,10 +697,12 @@ Implemented on upper feature branch:
   exactly one end, callback order, fairness burst and no reads
   during pause. The difference between H2 producer and socket drain
   counts is expected: engine stream flow control can block independently.
-- Follow-up test-only commit 42b1f302 adds a guard against calling
-  end() immediately after a final accepted write that returned false;
-  its source CI is pending at this handoff checkpoint. This adds no
-  API or engine source change.
+- Follow-up test-only commit 42b1f302c2fababfe9b5b2c431329ea8abf45943
+  adds a guard against calling end() immediately after a final
+  accepted write that returned false. Verified CI 39085334724 PASS:
+  13 distribution files / 552 checks and five live files / 203 checks;
+  producer block/resume and measured queue counts unchanged. This adds
+  no API or engine source change.
 
 Still unproven: worst-case memory usage across engine provider queues,
 enforcement when the hard pending-output cap is actually exceeded,
