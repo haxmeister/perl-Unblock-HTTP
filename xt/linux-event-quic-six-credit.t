@@ -352,6 +352,21 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                             my @h3_blocked = map { join(',', sort { $a <=> $b } keys %{ $_->{blocked_output} }) } @sessions;
                             my @retained = map { $_->{native}->streaming_retained_bytes } @sessions;
                             my @quic_send = map { $_->quic->send_buffered_bytes } @sessions;
+                            if (@sessions &&
+                                $sessions[0]->quic->can('_debug_send_credit')) {
+                                my @credit;
+                                for my $i (0 .. $streams - 1) {
+                                    my $snapshot = $server_tx[$i]
+                                        ? $sessions[0]->quic->_debug_send_credit(
+                                            $server_tx[$i]->stream_id)
+                                        : undef;
+                                    push @credit, defined($snapshot)
+                                        ? "$i:" . join('/', @$snapshot)
+                                        : "$i:-";
+                                }
+                                diag('CREDIT-PROBE conn_left/stream_left/unsent/conn_unsent/tx_retained/waiter/count/activity '
+                                    . join(';', @credit));
+                            }
                             my @ack = map {
                                 my $tx = $server_tx[$_];
                                 my $s = $tx && @sessions ? $sessions[0]{streams}{ $tx->stream_id } : undef;
