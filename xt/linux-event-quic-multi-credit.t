@@ -127,7 +127,7 @@ my $server_socket = Linux::Event::IO::Sock::Dgram->new(
 $server = Unblock::HTTP::QUIC->server(
     certificate_file => $cert, private_key_file => $key,
     server => Unblock::HTTP::Server->new(
-        http3 => { send_buffer_limit => 8192 },
+        http3 => { send_buffer_limit => 131072 },
         on_request => sub ($tx, $request) {
             my $target = $request->target;
             $requests++;
@@ -347,7 +347,16 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
 $watchdog = Linux::Event::Kernel::Timer->new(
     loop => $loop, after => 45,
     on_timer => sub ($t) {
-        $error = 'multi-Reader QUIC watchdog expired';
+        $sample_readers->();
+        my @sessions = $server->sessions;
+        my @quic = map { $_->quic->send_buffered_bytes } @sessions;
+        my @native = map { $_->{native}->streaming_retained_bytes } @sessions;
+        $error = 'multi-Reader QUIC watchdog expired'
+            . ' produced=' . join(',', @produced)
+            . ' received=' . join(',', @received)
+            . ' pending=' . join(',', map { $_ ? $_->pending_bytes : -1 } @reader)
+            . ' quic_send=' . join(',', @quic)
+            . ' native_body=' . join(',', @native);
         $loop->stop;
     },
 );
