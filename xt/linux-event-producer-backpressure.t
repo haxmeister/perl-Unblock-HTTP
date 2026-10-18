@@ -143,7 +143,9 @@ for my $protocol ('http/1.1', 'h2') {
             }
         }
         $MAX_SENT_PER_TICK = $written if $written > $MAX_SENT_PER_TICK;
-        if ($SENT_CHUNKS == $chunks) {
+        # The last write() may also return false after accepting bytes.
+        # Defer even the final empty end() until the matching on_drain.
+        if ($SENT_CHUNKS == $chunks && !$WAITING) {
             $PRODUCER_DONE = 1;
             $END_COUNT++;
             $SERVER_TX->end;
