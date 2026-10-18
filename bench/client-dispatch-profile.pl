@@ -134,19 +134,24 @@ my %case = (
         $tx->finish;
     },
 );
+$case{unified_uncached} = $case{unified_mock};
 
 # This comparison includes the fake engine's finish callbacks in both
 # paths. It deliberately excludes network, TLS, QUIC, timers and body IO.
 # It is meant to determine whether request setup/Client dispatch warrants
 # further measurement, not estimate actual end-to-end H3 overhead.
 my %times;
-my @names = qw(direct_mock unified_mock);
+my @names = qw(direct_mock unified_uncached unified_mock);
 print "# ready pooled Client vs direct fake HTTP3 engine; same canonical Uniform type\n";
 print "# zero network/TLS/QUIC work; callback completion included in both cases\n";
 print "# iterations=$iterations rounds=$rounds, alternating order; diagnostic only\n";
+print "# unified_uncached and unified_mock share the SAME Client and engine; four exact-URL cache slots\n";
 for my $round (1 .. $rounds) {
     my @order = $round % 2 ? @names : reverse @names;
     for my $name (@order) {
+        # Internal-only A/B control. Toggle once per measured batch, not
+        # once per request; all other work uses the same warm Client.
+        $client->{url_parse_limit} = $name eq 'unified_uncached' ? 0 : 4;
         my $f = $case{$name};
         my ($prior_finish, $prior_response) = ($finished, $responses);
         $f->() for 1 .. 200;
@@ -157,7 +162,7 @@ for my $round (1 .. $rounds) {
             unless $finished - $prior_finish == $iterations + 200
                 && $responses - $prior_response == $iterations + 200;
         die "unified pool not quiescent\n"
-            if $name eq 'unified_mock'
+            if $name =~ /^unified_/
                 && (keys %{ $client->{active_operations} }
                     || $pool->{connections}[0]{active}
                     || @{ $pool->{pending} }
@@ -189,6 +194,9 @@ die "UNBLOCK_H3_DISPATCH_SPLIT must be 0 or 1\n"
 if ($split) {
     my $original_dispatch = Unblock::HTTP::Client->can('_dispatch');
     my $original_engine_request = Local::H3::Engine->can('request');
+    # Opt-in split analyzes the cached hot path. A cached URL should
+    # make no URI->new calls while the request remains identical.
+    $client->{url_parse_limit} = 4;
     my $original_uri_new = URI->can('new');
     my $original_uniform_new = Uniform::HTTP::Request->can('new');
     my $original_operation_new = Unblock::HTTP::_ClientOperation->can('new');
@@ -251,7 +259,7 @@ if ($split) {
             unless $request_count == $iterations
                 && $dispatch_count == $iterations
                 && $engine_count == $iterations
-                && $uri_count == $iterations
+                && $uri_count == 0
                 && $uniform_count == $iterations
                 && $operation_count == $iterations;
         die "split: request pool was not quiescent\n"

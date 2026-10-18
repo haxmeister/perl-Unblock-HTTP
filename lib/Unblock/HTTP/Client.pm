@@ -73,6 +73,11 @@ sub new {
         pools => {},
         alt_svc => $alt_svc,
         idle_timeout => $idle_timeout,
+        # Small bounded cache of successful exact-URL parses. URI remains
+        # authoritative for misses, including all validation. No large URLs.
+        url_parse_cache => {},
+        url_parse_order => [],
+        url_parse_limit => 4,
     }, $class;
 }
 
@@ -163,23 +168,45 @@ sub request {
     my %field = @args;
     my $url = delete $field{url};
     croak 'request(): url is required' unless defined($url) && !ref($url) && length($url);
-    my $uri = URI->new($url);
-    my $scheme = lc($uri->scheme || '');
-    croak 'request(): URL scheme must be http or https'
-        unless $scheme eq 'http' || $scheme eq 'https';
-    croak 'request(): URL must not contain userinfo or a fragment'
-        if defined($uri->userinfo) || defined($uri->fragment);
-    my $host = $uri->host;
-    croak 'request(): URL must include a host'
-        unless defined($host) && length($host);
-    my $port = $uri->port;
-    croak 'request(): invalid URL port'
-        unless defined($port) && $port =~ /\A[0-9]+\z/
-            && $port > 0 && $port <= 65535;
-    my $authority = $uri->authority;
-    my $target = $uri->path_query;
-    $target = '/' unless defined($target) && length($target);
-    $target = '/' . $target if substr($target, 0, 1) eq '?';
+    my ($scheme, $host, $port, $authority, $target);
+    my $cached = $self->{url_parse_limit}
+        ? $self->{url_parse_cache}{$url} : undef;
+    if ($cached) {
+        ($scheme, $host, $port, $authority, $target) = @$cached;
+    } else {
+        # Keep URI as the canonical parser and reject exactly the same
+        # invalid inputs on a cache miss; only fully validated results
+        # are eligible for reuse.
+        my $uri = URI->new($url);
+        $scheme = lc($uri->scheme || '');
+        croak 'request(): URL scheme must be http or https'
+            unless $scheme eq 'http' || $scheme eq 'https';
+        croak 'request(): URL must not contain userinfo or a fragment'
+            if defined($uri->userinfo) || defined($uri->fragment);
+        $host = $uri->host;
+        croak 'request(): URL must include a host'
+            unless defined($host) && length($host);
+        $port = $uri->port;
+        croak 'request(): invalid URL port'
+            unless defined($port) && $port =~ /\\A[0-9]+\\z/
+                && $port > 0 && $port <= 65535;
+        $authority = $uri->authority;
+        $target = $uri->path_query;
+        $target = '/' unless defined($target) && length($target);
+        $target = '/' . $target if substr($target, 0, 1) eq '?';
+
+        # Four exact URLs, FIFO eviction, only reasonably short strings.
+        # No negative caching, unbounded origin map, or new URI grammar.
+        if ($self->{url_parse_limit} && length($url) <= 2048) {
+            my $cache = $self->{url_parse_cache};
+            my $order = $self->{url_parse_order};
+            if (@$order >= $self->{url_parse_limit}) {
+                delete $cache->{shift @$order};
+            }
+            $cache->{$url} = [$scheme, $host, $port, $authority, $target];
+            push @$order, $url;
+        }
+    }
 
     my $version = delete $field{http_version};
     my $strict_version = defined($version) ? 1 : 0;

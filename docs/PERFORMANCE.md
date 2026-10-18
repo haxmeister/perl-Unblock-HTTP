@@ -97,6 +97,32 @@ from accumulating in later trials. Both modes validate every buffered
 response body and status. A request that does not finish, a wrong payload,
 or an unexpected transport error aborts the experiment.
 
+## Bounded exact-URL parsing reuse (feature-branch experiment)
+
+The upper Client now has a fixed four-entry FIFO of **successful exact
+URL parses**, with a 2048-character per-URL admission limit. Repeated
+identical URLs reuse the URI-derived scheme, host, port, authority
+and target. The canonical URI parser remains the sole authority on
+a miss; bad URLs are never cached. Each new request still validates
+its protocol choice, callbacks, timeout, method and queue capacity,
+and creates a fresh canonical Uniform::HTTP::Request. This bounds
+the cache's retention and avoids retaining Transactions or pools.
+No public configuration option or URL grammar has changed.
+
+The CPU-only `bench/client-dispatch-profile.pl` runs both
+`unified_uncached` and `unified_mock` (cached) on the SAME warm
+Client and fake engine. The private cache-limit switch is only
+for diagnosing the optimization, not a supported API. Both variants
+create the same Uniform request and follow identical completion
+callbacks. The opt-in phase split now measures the cached hot path;
+zero URI constructor calls there are expected.
+
+The real-QUIC profiler alternates two URLs for the 4/16 KiB workload,
+so it gives a workload-specific end-to-end check. Improvement on
+those two URLs does **not** establish an improvement for dynamic
+always-unique URL paths. This remains an experiment pending
+correctness, CI, and paired results; CI performance is not a gate.
+
 ## CPU-only request-dispatch control
 
 `bench/client-dispatch-profile.pl` compares a **ready, reusable**

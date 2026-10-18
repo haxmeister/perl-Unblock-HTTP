@@ -1,3 +1,37 @@
+## Bounded repeated-URL parse cache experiment (2026-10-18)
+
+Recent 16/32-concurrent HTTP3 guarded memory benchmarks (published
+Net::QUIC 0.05 CI 39176739238) PASS. The profiler alternates two exact
+URL strings. Since URI->new plus host/port/authority/target extraction
+is expensive in the synchronous request path, the upper Client
+feature now caches only the LAST FOUR successfully validated exact URL
+strings (FIFO; skip URL strings over 2048 Perl characters). This uses
+the existing URI parser on every miss, does not cache negative results,
+and never caches per-request method, headers, callbacks, timeout or
+protocol policy. This is a targeted candidate: no public API changes,
+no URI semantics replaced, no native/memory copy claims.
+
+Changed upper lib/Unblock/HTTP/Client.pm and added t/15 tests for
+alternating URL cache hits, method independence, exact-string misses,
+eviction after 4, protocol-option rejection even on hit, malformed
+URLs, and oversized URL non-caching. This bounded cache is 4 tuples,
+never grows per completed transaction, and doesn't own pools/engines.
+bench/client-dispatch-profile.pl now measures direct_mock,
+unified_uncached, and unified_mock (cached), using the SAME warm
+Client/engine for both unified cases. The private
+url_parse_limit=0 toggle is BENCHMARK-ONLY, not a supported API.
+Split profiling's URI->new count must be zero on cached hits.
+Compare the within-run uncached/cached results; don't compare
+different GitHub runner times as speedup evidence.
+The real-QUIC sustained 2048-request alternating two-URL workload
+will test end-to-end impact and memory guards in ordinary CI.
+
+If CI fails, identify correctness or provenance and fix/revert
+instead of relaxing tests. The baseline before this change is
+0fa088d55221ceeffb5924a9bd0418c6918678a7.
+No main/merge/release/tag/version bump and NO Net::QUIC/engine changes.
+HTTP3 0.13 remains unreleased.
+
 ## Verified automatic 16/32 concurrent H3 memory guards (2026-10-18)
 
 Primary upper Linux::Event CI 39176739238 PASS using **published**

@@ -379,6 +379,91 @@ is(scalar(@quiet_ready), 1, 'quiet connection remains reusable without scheduled
 $quiet_second->transaction->finish;
 is(scalar(@quiet_defer), 0, 'second quiet completion also avoids redundant defer');
 
+
+# The bounded URL cache is purely an optimization. Both cache hits
+# and misses must retain URI semantics and the real Uniform request.
+my $url_cache = Unblock::HTTP::Client->new(
+    http3 => {},
+    connect_quic => sub {
+        $_[1]->(connection => PoolTest::Quic->new);
+    },
+    defer => sub {},
+    max_connections_per_origin => 1,
+);
+my $new_uri = URI->can('new');
+my $parsed = 0;
+{
+    no warnings 'redefine';
+    local *URI::new = sub { $parsed++; $new_uri->(@_) };
+    my @urls = (
+        'https://URL-cache.test:8443/a?x=1',
+        'https://url-cache.test/b',
+    );
+    for (1 .. 12) {
+        for my $url (@urls) {
+            my $op = $url_cache->request(
+                url => $url, method => 'POST', http_version => '3',
+            );
+            is($op->transaction->request->target,
+                $url eq $urls[0] ? '/a?x=1' : '/b',
+                'cached and uncached URLs preserve normalized target');
+            is($op->transaction->request->method, 'POST',
+                'cached URL never caches request method');
+            $op->transaction->finish;
+        }
+    }
+    is($parsed, 2, 'two alternating exact URLs parsed once each');
+    is(scalar keys %{ $url_cache->{url_parse_cache} }, 2,
+        'cache stores two validated URL records');
+    # A cache hit must still enforce higher-level request validation.
+    ok(!eval {
+        $url_cache->request(url => $urls[0], http_version => '99');
+        1;
+    }, 'cached URL does not skip protocol validation');
+    is($parsed, 2, 'rejected protocol option did not bypass URL cache');
+
+    for my $url (
+        'https://url-cache.test/?q=3',
+        'https://url-cache.test:443/4',
+        'https://url-cache.test/5',
+    ) {
+        my $op = $url_cache->request(url => $url);
+        $op->transaction->finish;
+    }
+    is(scalar keys %{ $url_cache->{url_parse_cache} }, 4,
+        'FIFO cache remains bounded at four validated URLs');
+    is($parsed, 5, 'three additional URL misses use URI');
+    my $evicted = $url_cache->request(url => $urls[0]);
+    $evicted->transaction->finish;
+    is($parsed, 6, 'evicted exact URL uses canonical URI parser again');
+
+    for my $invalid (
+        'https://user:pass@url-cache.test/invalid',
+        'https://url-cache.test/fragment#no',
+        'ftp://url-cache.test/',
+    ) {
+        ok(!eval { $url_cache->request(url => $invalid); 1 },
+            'invalid URL never bypasses URI validation');
+    }
+    is($parsed, 9, 'invalid URLs reach the canonical parser each time');
+    is(scalar keys %{ $url_cache->{url_parse_cache} }, 4,
+        'invalid URLs are not cached');
+    my $huge_url = 'https://url-cache.test/' . ('x' x 2100);
+    for (1 .. 2) {
+        my $huge = $url_cache->request(url => $huge_url);
+        $huge->transaction->finish;
+    }
+    is($parsed, 11, 'oversized URLs are not cached or pinned');
+
+    my $before = $parsed;
+    $url_cache->{url_parse_limit} = 0; # Private diagnostic knob only
+    for (1 .. 2) {
+        my $uncached = $url_cache->request(url => $urls[1]);
+        $uncached->transaction->finish;
+    }
+    is($parsed, $before + 2, 'diagnostic no-cache path preserves URI');
+}
+
 # Observe the scheduler boundary without changing the engine/transport.
 # A ready multiplexed connection may dispatch immediately without a full
 # queue scan, but saturated or idle-managed connections still use _pump.
