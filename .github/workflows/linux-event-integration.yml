@@ -54,6 +54,7 @@ jobs:
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
           prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t
+          UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=4194304 prove -v -b xt/linux-event-quic-multi-credit.t
       - name: Direct versus shared Client benchmark smoke (not a performance gate)
         run: |
