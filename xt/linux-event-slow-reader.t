@@ -122,7 +122,7 @@ for my $protocol ('http/1.1', 'h2') {
             $CLIENT_STREAM = SlowReaderClient->connect(
                 loop => $LOOP, host => '127.0.0.1',
                 port => $listener->port,
-                socket_options => { receive_buffer => 16384 },
+                receive_buffer => 16384,
             );
             $CLIENT_STREAM->{http_ready} = $ready;
         },
