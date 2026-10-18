@@ -188,6 +188,29 @@ forced that limit to reject an oversized write and does NOT establish
 the boundary's rejection or partial-write semantics. Do not assert
 a total bounded-buffer guarantee based on these numbers.
 
+## Three-client slow-consumer isolation (2026-10-17)
+
+xt/linux-event-pool-fairness.t exercises three separate H1 and H2
+pooled TCP connections on one local origin. Two receiving sockets
+are paused for 800 ms; the third request completes a 2 MiB streamed
+response before those readers resume. Each server producer uses
+4 KiB writes, at most four per deferred turn, and stops until native
+on_drain after congestion. The response digests, bytes and terminal
+callbacks are verified independently. The server sockets use a
+512 KiB pending-output limit; all sampled queue values remained
+well below it.
+
+CI 39087771958 PASS: 552 distribution checks and 289 live checks,
+including this three-client fixture. Measured maximum sampled TCP
+queue: 32,832 bytes for H1 and 32,821 for H2. Both engines made
+progress for the fast client despite the two paused readers.
+
+These are functional isolation observations, not statistical
+throughput/fairness or aggregate memory bounds. This fixture does
+not cover H3 stream multiplexing, cross-origin competition,
+thousands of sockets, Linux scheduler variance, or absolute
+engine-buffer high water under sustained peer flow-control loss.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
