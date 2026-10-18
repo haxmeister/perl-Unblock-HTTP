@@ -848,6 +848,41 @@ slice. Main, tags, releases and version numbers remain untouched.
 No main/merge/release/tag/version changes. Record exact source
 commits, tests, and limits here after CI.
 
+## H3 receive-credit and Reader observation continuation (2026-10-17)
+
+Verified starting refs: upper d3436fec36e279e8533f305235f68091df413c03;
+H1 bb8349efdc5cf55d7730b40d55eff665cc3a245c;
+H2 51fb1ad9ef97ff7a4451b10d14a505df4d55fae4;
+H3 b093bcf8c05bacaa8e674896cb342c797d7ef138.
+All main baselines still untouched. Latest upper CI 39088852131 PASS
+(552 distribution tests / 369 live tests). Approved four upper docs and
+H3 Handoff.md, Body::Reader, Transaction and Connection inspected.
+
+We must distinguish *read-side* credit from the earlier native H3
+send_buffer_limit. The advanced H3 pull Reader does not credit
+outstanding body bytes until next_chunk() is called; callback on_data
+automatically credits after return. Net::QUIC client transport accepts
+small stream_window and connection_window settings without modifying
+the library. Upper Client deliberately owns receive_body and defaults
+buffered/no on_data, so an advanced pull-mode stress fixture should
+use the existing low-level H3 Client over the upper QUIC helper,
+paired with a reusable upper Server. No production API change needed.
+
+Test plan: live authenticated QUIC/TLS, one 2 MiB H3 streamed
+server response and one small peer response on the same connection;
+client low-level request(receive_body => 'stream') obtains Reader
+without on_data. Hold Reader consumption for 0.5s with a configured
+small QUIC stream receive window and sample pending_bytes while
+holding credit; assert no early consumption, stream isn't terminal,
+small response succeeds, and producer stops advancing well before
+all 2 MiB are written. After hold timer release, consume queued
+Reader chunks in bounded deferred bursts and verify exact body
+digest, terminal callbacks and producer resumed/finish behavior.
+This exposes Reader-held body bytes only; it is NOT total native
+nghttp3 or Net::QUIC memory usage. Run coordinated upper CI; any
+failing receive-credit invariant requires inspection before changing
+H3 engine code. Net::QUIC/Uniform stay read-only.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
