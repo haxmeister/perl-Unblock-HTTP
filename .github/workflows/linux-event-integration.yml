@@ -28,7 +28,7 @@ jobs:
           # Pin the coordinated receive/lifecycle engine commits. Publish these
           # feature commits before this upper branch; never silently test main.
           for spec in \
-            perl-Net-QUIC:be0ceecbaa88a6d8100459642a018b8eefba8e56 \
+            perl-Net-QUIC:da9ed57aa46d7bc508afae6601c402fe592b5264 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
             perl-Unblock-HTTP3:9d329e2adb64e0a71d58ee549f947b8972190d18; do
