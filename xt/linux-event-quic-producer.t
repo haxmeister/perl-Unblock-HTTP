@@ -290,7 +290,7 @@ is($ready, 1, 'one ready client');
 is($requests, $total, 'HTTP/3 server receives all concurrent requests');
 is($completed, $total, 'HTTP/3 client completes all concurrent requests');
 ok($short_before_large > 0,
-    'H3 small response finishes while large producer is still active');
+    'H3 a small response finishes before large streamed response completes');
 for my $index (1 .. $total) {
     my $target = '/job' . $index;
     if ($target eq $large_target) {
