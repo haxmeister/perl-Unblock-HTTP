@@ -65,6 +65,10 @@ jobs:
           # Sustained same-connection buffered H3 requests. Optional client
           # RSS/PSS/private checkpoints; no performance threshold asserted.
           UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=256 UNBLOCK_H3_PROFILE_REGISTRY=1 UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 2048 128 2 16 4096,16384
+          # Repeat the same sustained real-QUIC memory/registry probe at
+          # the maximum supported 32 in-flight requests. 32 x 16 KiB
+          # fits under the default 1 MiB receive window. Diagnostics only.
+          UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=256 UNBLOCK_H3_PROFILE_REGISTRY=1 UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 2048 128 2 32 4096,16384
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
           # Real-QUIC held-Reader interval extended to 10 seconds, with

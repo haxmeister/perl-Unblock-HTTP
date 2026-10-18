@@ -1,3 +1,26 @@
+## Sustained callback memory verification at 32 H3 concurrent requests (2026-10-18)
+
+The original memory regression was fixed and measured at 16
+simultaneous requests; the real QUIC profiler already supports 32
+but previous 32-concurrent CI usage only sent 64 measured requests.
+This feature CI change adds the same long (128 warmup + 2048
+measured, two rounds) real QUIC direct versus unified memory/registry
+test at 32 outstanding requests, 4/16 KiB alternating buffered
+responses, checkpoints every 256 completions, pinned to published
+Net::QUIC 0.05, with body/status/callback validation and 180s
+watchdog. The per-connection aggregate receive window remains
+1 MiB, larger than the 32*16KiB in-flight buffered wave; this is
+NOT the 12/16-stream withheld-Reader starvation test (preserved).
+
+Purpose: confirm the fix bounds Transaction count,
+ready_transactions length, RSS/PSS/private memory, and callback
+lifetimes at the configured max_streams_per_connection=32, rather
+than assuming the 16-stream measurements generalize. No native
+copy counters added; this CI job is NOT a performance gate.
+As of this change the 32 sustained profile results are pending.
+Feature main, Net::QUIC released 0.05, sibling engines, versions
+and releases remain untouched.
+
 ## Completed handle must not own the origin pool (2026-10-18)
 
 Following the passing unified HTTP3 memory and constructor-path work,

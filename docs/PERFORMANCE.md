@@ -37,6 +37,16 @@ per-connection multiplexing limit. At 32 x 16 KiB, one full in-flight wave
 fits below the default 1 MiB connection receive window. This is NOT a
 connection-credit starvation regression or a throughput guarantee.
 
+The primary published Net::QUIC 0.05 integration CI now exercises **both**
+16 and 32 concurrent requests, each with 128 warmup plus 2,048 measured
+requests, two isolated rounds, alternating 4/16 KiB complete responses,
+and per-256-completion memory and engine-registry checkpoints. This
+compares bounded-retention behavior when the pool doubles its active
+stream capacity, with no additional native copy/alloc counters. The
+32-concurrency scenario is a resource and correctness stress, not a
+repeatable throughput claim. Check its run status and checkpoint values
+before calling it validated.
+
 A trial uses two fresh child processes: one running the HTTP/3 server and
 one running the measured client. They communicate over loopback UDP using
 Net::QUIC::Driver. The same Unblock::HTTP::Server definition and response
