@@ -123,7 +123,9 @@ sub run_one ($mode) {
                 method => 'GET', scheme => 'https',
                 authority => 'localhost', target => '/ping',
                 receive_body => 'buffered',
-                on_complete => $on_response,
+                on_complete => sub ($tx) {
+                    $on_response->($tx, $tx->response);
+                },
                 on_error => $on_error,
                 on_finish => $on_finish,
             );
