@@ -53,7 +53,7 @@ jobs:
           make test
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
-          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t
       - name: Direct versus shared Client benchmark smoke (not a performance gate)
         run: |
           perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 1000 100 3
