@@ -177,3 +177,65 @@ for my $name (@names) {
 }
 printf "# unified/direct mock ratio %.3f (not network overhead)\n",
     $median{unified_mock} / $median{direct_mock};
+
+# Optional phase split. This wrapper deliberately samples two clocks
+# per boundary per request, and therefore PERTURBS the benchmark.
+# Do not compare these instrumented totals to the uninstrumented
+# per-request figures above or interpret them as exact production costs.
+my $split = $ENV{UNBLOCK_H3_DISPATCH_SPLIT} // '0';
+die "UNBLOCK_H3_DISPATCH_SPLIT must be 0 or 1\n"
+    unless $split =~ /\A[01]\z/;
+if ($split) {
+    my $original_dispatch = Unblock::HTTP::Client->can('_dispatch');
+    my $original_engine_request = Local::H3::Engine->can('request');
+    for my $round (1 .. $rounds) {
+        my ($request_time, $dispatch_time, $engine_time) = (0, 0, 0);
+        my ($request_count, $dispatch_count, $engine_count) = (0, 0, 0);
+        {
+            no warnings 'redefine';
+            local *Unblock::HTTP::Client::_dispatch = sub {
+                my $start = time();
+                my $out = $original_dispatch->(@_);
+                $dispatch_time += time() - $start;
+                $dispatch_count++;
+                return $out;
+            };
+            local *Local::H3::Engine::request = sub {
+                my $start = time();
+                my $out = $original_engine_request->(@_);
+                $engine_time += time() - $start;
+                $engine_count++;
+                return $out;
+            };
+            for (1 .. $iterations) {
+                my $start = time();
+                my $op = $client->request(
+                    method => 'GET', url => $url, http_version => '3',
+                    on_response => $on_response, on_finish => $on_finish,
+                );
+                $request_time += time() - $start;
+                $request_count++;
+                my $tx = $op->transaction
+                    or die "split: operation did not dispatch";
+                $tx->finish;
+            }
+        }
+        die "split: unexpected request, dispatch or fake engine count\n"
+            unless $request_count == $iterations
+                && $dispatch_count == $iterations
+                && $engine_count == $iterations;
+        die "split: request pool was not quiescent\n"
+            if keys(%{ $client->{active_operations} })
+                || $pool->{connections}[0]{active}
+                || $client->pending_count || @deferred;
+        printf "# split round=%d request_us=%.3f outside_dispatch_us=%.3f"
+            . " dispatch_us=%.3f outside_engine_us=%.3f"
+            . " fake_engine_us=%.3f (CLOCK-INSTRUMENTED)\n",
+            $round,
+            1_000_000 * $request_time / $iterations,
+            1_000_000 * ($request_time - $dispatch_time) / $iterations,
+            1_000_000 * $dispatch_time / $iterations,
+            1_000_000 * ($dispatch_time - $engine_time) / $iterations,
+            1_000_000 * $engine_time / $iterations;
+    }
+}
