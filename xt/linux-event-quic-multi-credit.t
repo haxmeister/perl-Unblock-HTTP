@@ -13,11 +13,10 @@ use Linux::Event::Loop;
 use Unblock::HTTP::QUIC;
 use Unblock::HTTP::Server;
 
-# Three independently blocked H3 response Readers share ONE QUIC connection.
-# The 4 MiB native send-body threshold exceeds three 1 MiB responses, so
-# global producer buffering cannot mask the per-stream QUIC receive-credit
-# behavior tested here. A separate single-Reader test exercises on_drain and
-# bounded producer backpressure. This is not a memory-bound proof.
+# Three H3 streamed responses share ONE QUIC connection. The default
+# deliberately tests 8192 bytes of aggregate native producer pressure.
+# A 4 MiB mode isolates receive-credit handling with no producer pressure.
+# Neither soft threshold is a hard bound on a complete accepted write.
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
 my $key = "$dir/key.pem";
@@ -33,6 +32,7 @@ my ($server, $client, $server_timer, $client_timer, $client_socket);
 my ($hold_timer, $poll_timer, $watchdog);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
 my $streams = 3;
+my $send_limit = $ENV{UNBLOCK_H3_MULTI_SEND_LIMIT} // 8192;
 my $chunk = '0123456789abcdef' x 256;  # 4 KiB
 my $parts = 256;                       # 1 MiB per slow stream
 my $length = length($chunk) * $parts;
@@ -129,7 +129,7 @@ my $server_socket = Linux::Event::IO::Sock::Dgram->new(
 $server = Unblock::HTTP::QUIC->server(
     certificate_file => $cert, private_key_file => $key,
     server => Unblock::HTTP::Server->new(
-        http3 => { send_buffer_limit => 4194304 },
+        http3 => { send_buffer_limit => $send_limit },
         on_request => sub ($tx, $request) {
             my $target = $request->target;
             $requests++;
@@ -376,6 +376,10 @@ for my $i (0 .. $streams - 1) {
         "slow$i hold fits advertised individual stream window");
     ok($produced_at_release[$i] > 0,
         "slow$i producer began before receive credit was released");
+    if ($send_limit < $length * $streams) {
+        cmp_ok($produced_at_release[$i], '<', $parts,
+            "slow$i producer is held below completion by shared native budget");
+    }
     cmp_ok($max_pending[$i], '<=', 32768,
         "slow$i sampled Reader queue is within stream window");
     is($finished[$i], 1, "slow$i finished exactly once");
@@ -385,6 +389,12 @@ for my $i (0 .. $streams - 1) {
     ok($received_chunks[$i] > 1, "slow$i was incrementally consumed");
     is($produced[$i], $parts, "slow$i producer accepted every chunk");
     is($ends[$i], 1, "slow$i producer ended only once");
+    if ($send_limit < $length * $streams) {
+        ok($blocked[$i] > 0 && $resumed[$i] > 0,
+            "slow$i producer really blocked and later resumed");
+        is($blocked[$i], $resumed[$i],
+            "slow$i received one resumption for each blocked write");
+    }
     is($blocked[$i], $resumed[$i],
         "slow$i resume count matches accepted-but-blocked writes");
     cmp_ok($max_burst[$i], '<=', 4,
@@ -404,7 +414,7 @@ ok($quic_samples > 0, 'public QUIC retained-send counter sampled');
 note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", produced before release=" . join(',', @produced_at_release)
     . ", QUIC peak sampled=$quic_peak, poll turns=$poll_turns"
-    . ", producer blocks=" . join(',', @blocked));
+    . ", send_limit=$send_limit, producer blocks=" . join(',', @blocked));
 
 for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
     $timer->cancel if $timer && $timer->is_active;
