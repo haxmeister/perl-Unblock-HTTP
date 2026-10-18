@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test::More;
 use Digest::SHA qw(sha256_hex);
+use Scalar::Util qw(refaddr);
 use File::Temp qw(tempdir);
 
 use Linux::Event::IO::Sock::Dgram;
@@ -100,7 +101,7 @@ $server = Unblock::HTTP::QUIC->server(
                     on_drain => sub ($live_tx) {
                         $on_drains++;
                         $error ||= 'H3 producer transaction changed'
-                            unless $live_tx == $server_tx;
+                            unless refaddr($live_tx) == refaddr($server_tx);
                         if ($producer_waiting) {
                             $producer_waiting = 0;
                             $resumed++;
