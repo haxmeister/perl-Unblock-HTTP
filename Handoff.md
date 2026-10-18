@@ -653,6 +653,30 @@ Remaining: actual sustained producer on_drain flow control, a hard
 pending-output cap and measured queue high water, more concurrent
 slow readers including HTTP/3, and per-component Client profiling.
 
+## Sustained bounded streaming producer continuation (2026-10-17)
+
+Starting checked upper ref 67e830016d857e2f5d2314599750b60e4ab1968a;
+CI 39084123595 PASS. Engine branches and all four main refs unchanged.
+Read the four upper design documents, H1/H2 engine handoffs,
+Transaction streaming contracts, and LinuxEvent 0.117 ByteStream
+pending_bytes/high-/low-watermark/max_pending_bytes implementations.
+
+Next test: a genuinely paused real LinuxEvent TCP client, streaming
+producer using the native server Transaction respond(stream_body=>1,
+on_drain=>...) + write/end in bounded chunks. Stop immediately when
+write() returns false and resume only on on_drain, without duplicating
+already accepted chunks. Test H1 and H2, exact body SHA-256 and lifecycle,
+producer pause and restart, fairness via bounded per-defer burst, and
+measure transport->pending_bytes peak directly with a configured
+max_pending_bytes hard cap. Keep test bounded and deterministic with
+real LinuxEvent 0.117; do not assert engine-internal queue limits based
+on transport pending bytes. No stream implementation/API changes
+unless new failures expose a verified defect.
+
+All source/test edits remain upper feature-only. No main changes,
+releases, merges, tags or version bumps. CI validation and outcome to
+be recorded here after the source checkpoint.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
