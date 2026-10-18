@@ -1,3 +1,54 @@
+## QUIC MAX_DATA: corrected bounded Reader credit and full CI PASS (2026-10-18)
+
+This supersedes the historical handoff hypothesis that the 12-producer
+HTTP3 stress failure requires another Net::QUIC release before HTTP3 0.13.
+The standalone Net::QUIC MAX_DATA-wakeup regression did expose a real,
+independent generic transport notification omission, but that was NOT
+the cause of the upper 12-Reader aggregate-window deadlock.
+
+Root cause, proven by the temporary native send-credit diagnostic:
+with twelve deliberately held 32768-byte Readers and QUIC connection_window
+458752, the server had connection MAX_DATA remaining zero, 12 registered
+capacity waiters, active Stream0 credit about 26092, no unsent or retained
+QUIC send bytes, and the client consumed only 98184 bytes of Stream0.
+ngtcp2 coalesces MAX_DATA advertisements until enough connection receive
+credit has been reclaimed; with eleven siblings held and this aggregate
+window, Stream0 could not acquire sufficient additional credit to trigger
+an update. This is a receive-budget configuration problem. Never fix it
+by sending unsolicited ACK wakeups or by silently overgranting credit.
+
+Upper REAL CI using RELEASED CPAN Net::QUIC 0.05:
+workflow 39161358835 at code head fccde28c8cc330d29101c386408525d8d00d6616
+PASS all steps: distribution tests, 13 Linux::Event real TCP/QUIC tests,
+the original six-producer 1 MiB regression at 256 KiB connection window,
+12 independently held 1 MiB producers at 512 KiB (2s hold), 16 at
+1 MiB (3s hold), additional 12/16 32-MiB isolation runs,
+128-KiB/4-MiB native-budget variants and direct/unified benchmark smokes.
+All original SHA-256, fairness, per-stream Reader isolation, native
+retained accounting and once-only terminal assertions were retained.
+
+The parallel feature-pinned integration workflow 39161358785 also PASS
+with Net::QUIC clean feature commit
+1606308eeeaf29f2601fa166046703a4b4ba9491. This extra workflow remains
+distinct from the CPAN-baseline integration workflow and is not required for
+the HTTP3 0.13 dependency. Net::QUIC feature branch standalone 15/15
+Linux 5.20-5.44, macOS and Windows CI 39161007332 PASS. Temporary private
+_debug_send_credit XSUB has been REMOVED and is not in that clean commit.
+
+The extended fixture keeps six-producer original behavior unchanged;
+for streams 7-12 it uses 512 KiB connection receive credit, for 13-16
+1 MiB, and for six it retains 256 KiB. The original 448-KiB 12-Reader
+stress configuration remains available as an explicit diagnostic override,
+but its deliberate flow-control deadlock is not a valid release gate.
+See docs/PERFORMANCE.md for precise reproduction and limits.
+
+Do NOT merge, tag, release or modify main. HTTP1/HTTP2/HTTP3 production
+code, released Net::QUIC 0.05, Uniform::HTTP and all main refs remain
+unchanged in this scope. HTTP3 0.13 can use the published 0.05 prerequisite.
+Performance work still open: controlled allocation/copy measurements,
+repeatable high-concurrency throughput/latency and long-duration soak runs.
+Documentation-only commits after fccde28 do not change verified code.
+
 ## Verified 16-producer isolation and 32-inflight HTTP3 profiler (2026-10-18)
 
 Latest upper source before this handoff-only commit:
