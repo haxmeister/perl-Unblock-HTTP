@@ -76,6 +76,7 @@ $emit = sub {
 };
 my ($incoming_bytes, $incoming_chunks, $outgoing_bytes, $outgoing_chunks) = (0, 0, 0, 0);
 my ($incoming_digest, $outgoing_digest) = (Digest::SHA->new(256), Digest::SHA->new(256));
+my $short_before_large = 0;
 my (%header_request, %header_tx, %received_body, %response_body,
     %server_events, %client_events, %completed_index);
 
@@ -229,6 +230,9 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 on_finish => sub ($tx) {
                     $error ||= "HTTP/3 $target did not complete"
                         unless $tx->is_complete;
+                    $short_before_large++
+                        if $target ne $large_target
+                            && !$completed_index{$large_target};
                     $completed_index{$target}++;
                     $completed++;
                     push @{ $client_events{$target} }, 'finish';
@@ -285,6 +289,8 @@ is($error, undef, 'no QUIC or HTTP/3 error');
 is($ready, 1, 'one ready client');
 is($requests, $total, 'HTTP/3 server receives all concurrent requests');
 is($completed, $total, 'HTTP/3 client completes all concurrent requests');
+ok($short_before_large > 0,
+    'H3 small response finishes while large producer is still active');
 for my $index (1 .. $total) {
     my $target = '/job' . $index;
     if ($target eq $large_target) {
