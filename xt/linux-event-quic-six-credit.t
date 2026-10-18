@@ -388,6 +388,7 @@ $probe_timer = Linux::Event::Kernel::Timer->new(
             my $native = $http->{native};
             my @held;
             my @acks;
+            my @flow_credit;
             for my $i (0 .. $streams - 1) {
                 my $tx = $server_tx[$i];
                 push @held, $tx
@@ -395,10 +396,16 @@ $probe_timer = Linux::Event::Kernel::Timer->new(
                     : 'NA';
                 my $quic_stream = $tx ? $http->{streams}{$tx->stream_id} : undef;
                 push @acks, $quic_stream ? $quic_stream->acked_offset : 'NA';
+                my $credit = $tx && $http->quic->can('_debug_send_credit')
+                    ? $http->quic->_debug_send_credit($tx->stream_id)
+                    : undef;
+                push @flow_credit, $credit ? join(':', @$credit) : 'NA';
             }
             push @state, "native=" . $native->streaming_retained_bytes
                 . " per_stream=" . join(',', @held)
                 . " acked=" . join(',', @acks)
+                . " flow_credit(conn:stream:stream_pending:conn_pending:retained)="
+                . join(',', @flow_credit)
                 . " native_active=" . $native->active_streaming_body_count
                 . " blocked_output="
                 . join(',', sort { $a <=> $b } keys %{ $http->{blocked_output} })
