@@ -214,7 +214,19 @@ $server->start;
 # receive credit merely because the first Reader is now being consumed.
 $poll = sub {
     my $i = $release_stage;
-    return if $i < 0 || $i >= $streams || $error || !$reader[$i];
+    return if $i < 0 || $i >= $streams || $error;
+    # Tight producer backpressure can delay the late stream's response
+    # HEADERS too. Do not require its Reader before earlier streams drain.
+    if (!$reader[$i]) {
+        $poll_timer = Linux::Event::Kernel::Timer->new(
+            loop => $loop, after => 0.005,
+            on_timer => sub ($t) {
+                undef $poll_timer;
+                $poll->();
+            },
+        );
+        return;
+    }
     $poll_turns++;
     my $burst = 0;
     while ($burst < 8) {
@@ -361,8 +373,10 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                                     $pending_at_release[$i] = $reader[$i]
                                         ? $reader[$i]->pending_bytes : 0;
                                     $produced_at_release[$i] = $produced[$i];
-                                    $error ||= "Reader slow$i missing after join"
-                                        unless $reader[$i];
+                                    $error ||= "existing slow$i Reader missing after join"
+                                        if $i < 2 && !$reader[$i];
+                                    $error ||= "new slow$i producer not started"
+                                        unless $server_tx[$i] && $client_tx[$i];
                                     $error ||= "slow$i finished before Reader release"
                                         if $finished[$i];
                                     $error ||= "slow$i not genuinely blocked"
