@@ -1,3 +1,40 @@
+## Verified 16-producer isolation and 32-inflight HTTP3 profiler (2026-10-18)
+
+Latest upper source before this handoff-only commit:
+7054b96f7207ab8f3f0b6a064c740c2765dd7f23.
+Full integration run 39158428479 is deliberately RED because the retained
+12-producer tight-connection-window regression remains reproducibly stalled.
+Do NOT call this overall integration passing or remove that fixture.
+
+All of the following checks inside that run DID PASS:
+- Original six-producer real UDP/QUIC 1 MiB regression.
+- 12 simultaneous producers, 1 MiB each, 2s hold, 32 MiB connection
+  receive window, 32 KiB independent stream windows, 8192-byte native
+  advisory producer budget, SHA-256, complete fairness/retention assertions.
+- 16 simultaneous producers, 1 MiB each, 3s hold, same receive/producer
+  conditions with 32 MiB aggregate window; all payloads/terminal events pass.
+- Isolated 32-inflight direct-vs-unified buffered response profiler smoke:
+  64 requests, 16 warmup, two alternating rounds, 16 KiB response. Both
+  modes completed, verified every body, reached 32 in-flight. Descriptive
+  hosted CI median unified/direct wall ratio 1.052. DO NOT treat this
+  two-round, short-workload ratio as a statistically established overhead.
+  Client PSS/private/RSS are sampled only, not malloc or payload copy counts.
+
+The tight 12-producer 458752-byte aggregate receive window still STALLS
+after slow0 has received 98184 bytes, while its 11 siblings hold 32739
+each. QUIC TX retention is 0; all 12 H3 writers are blocked and roughly
+49.6 KiB of native streaming body remains retained. Widening only the
+connection credit to 33554432 eliminates the stall. This supports an
+unresolved standalone QUIC MAX_DATA / connection send-credit wakeup issue.
+A generic possible fix would notify only actual Net::QUIC send-capacity
+waiters when connection-level credit expands, through existing activity
+API, without an HTTP-specific callback, poll loop or broadcast. This
+hypothesis needs a standalone Net::QUIC regression before implementation.
+
+Net::QUIC 0.05 is RELEASED and READ-ONLY: separate maintainer authorization
+is required before any Net::QUIC code edit. HTTP3 0.13 and unified must
+NOT merge or release while the tight-window stress defect is unresolved.
+Current H1/H2 and all main branches are unchanged.
 ## 32-inflight direct vs unified HTTP3 profiler smoke (2026-10-18)
 
 The existing isolated client/server `bench/h3-workload-profile.pl` accepts
