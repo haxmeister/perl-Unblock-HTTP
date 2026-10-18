@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 use File::Temp qw(tempdir);
+use File::Spec;
 use JSON::PP ();
 use POSIX qw(_exit);
 use Linux::Event::IO::Sock::Dgram;
@@ -39,6 +40,10 @@ my @sizes = split /,/, $body_bytes;
 die "specify at most eight response sizes, each no larger than 1048576\n"
     if @sizes > 8 || grep { $_ > 1048576 } @sizes;
 my @bodies = map { 'B' x $_ } @sizes;
+my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
+my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
+die "UNBLOCK_H3_HEAP_DIR must be an existing writable directory\n"
+    if defined($heap_dir) && (!-d $heap_dir || !-w $heap_dir);
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
 my $key = "$dir/key.pem";
@@ -60,6 +65,26 @@ sub sampled_rss_kib {
     return undef;
 }
 
+# /proc/self/smaps_rollup is Linux-specific and sampled only at phase
+# boundaries. Neither PSS nor private memory measures SV allocation rate.
+sub sampled_smaps_kib {
+    open my $fh, '<', '/proc/self/smaps_rollup' or return {};
+    my %values;
+    while (my $line = <$fh>) {
+        if ($line =~ /\A(Pss|Private_Clean|Private_Dirty):\s+(\d+)\s+kB/) {
+            $values{$1} = 0 + $2;
+        }
+    }
+    close $fh;
+    return {
+        pss => $values{Pss},
+        private => defined($values{Private_Clean})
+            && defined($values{Private_Dirty})
+            ? $values{Private_Clean} + $values{Private_Dirty}
+            : undef,
+    };
+}
+
 sub percentile {
     my ($sorted, $p) = @_;
     return 0 unless @$sorted;
@@ -76,7 +101,7 @@ sub median {
         : ($ordered[$mid - 1] + $ordered[$mid]) / 2;
 }
 
-sub run_client_trial ($mode, $server_port) {
+sub run_client_trial ($mode, $server_port, $round) {
     my $loop = Linux::Event::Loop->new;
     my ($driver, $client_socket, $client_timer, $quic, $direct, $unified,
         $factory_ready);
@@ -86,8 +111,23 @@ sub run_client_trial ($mode, $server_port) {
     my ($elapsed, $cpu_seconds, $call_seconds, $call_count)
         = (undef, undef, 0, 0);
     my ($start, $cpu_start, $rss_start, $rss_peak, $rss_end);
+    my ($memory_start, $memory_end);
+    my ($wire_sent_bytes, $wire_recv_bytes, $wire_sent_packets,
+        $wire_recv_packets) = (0, 0, 0, 0);
+    my %heap_files;
     my @latency;
     my ($pump, $schedule, $check_ready, $sample_rss);
+
+    my $snapshot_heap = sub {
+        my ($when) = @_;
+        return unless defined $heap_dir;
+        require Devel::MAT::Dumper;  # Opt-in only; never a runtime dependency.
+        my $path = File::Spec->catfile(
+            $heap_dir, "h3-$mode-round$round-client-$when-$$.pmat",
+        );
+        Devel::MAT::Dumper::dump($path);
+        $heap_files{$when} = $path;
+    };
 
     $sample_rss = sub {
         my $rss = sampled_rss_kib();
@@ -141,9 +181,11 @@ sub run_client_trial ($mode, $server_port) {
                         $phase = 'measure';
                         $phase_target = $samples;
                         ($sent, $finished, $max_inflight) = (0, 0, 0);
+                        $snapshot_heap->('before');
                         $cpu_start = clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
                         $start = time();
                         $rss_start = sampled_rss_kib();
+                        $memory_start = sampled_smaps_kib();
                         $rss_peak = $rss_start;
                         $schedule->();
                     } else {
@@ -152,6 +194,8 @@ sub run_client_trial ($mode, $server_port) {
                             - $cpu_start;
                         $rss_end = sampled_rss_kib();
                         $sample_rss->();
+                        $memory_end = sampled_smaps_kib();
+                        $snapshot_heap->('after');
                         $phase = 'finished';
                         $loop->stop;
                     }
@@ -241,7 +285,15 @@ sub run_client_trial ($mode, $server_port) {
                 local => $socket->local->sockaddr,
                 peer => $socket->peer->sockaddr,
                 alpn => 'h3', server_name => 'localhost', ca_file => $cert,
-                send => sub ($packet) { $socket->send($packet->data) },
+                send => sub ($packet) {
+                    if ($profile_wire && $phase eq 'measure') {
+                        my $bytes = $packet->data;
+                        $wire_sent_bytes += length($bytes);
+                        $wire_sent_packets++;
+                        return $socket->send($bytes);
+                    }
+                    return $socket->send($packet->data);
+                },
                 set_timeout => sub ($seconds) {
                     $client_timer->cancel if $client_timer && $client_timer->is_active;
                     undef $client_timer;
@@ -263,6 +315,10 @@ sub run_client_trial ($mode, $server_port) {
         },
         on_datagram => sub ($socket, $bytes, $peer) {
             if ($driver) {
+                if ($profile_wire && $phase eq 'measure') {
+                    $wire_recv_bytes += length($bytes);
+                    $wire_recv_packets++;
+                }
                 $driver->receive(
                     $bytes, $socket->local->sockaddr, $peer->sockaddr);
                 $check_ready->();
@@ -309,6 +365,15 @@ sub run_client_trial ($mode, $server_port) {
         rss_start => $rss_start,
         rss_end => $rss_end,
         rss_peak => $rss_peak,
+        pss_start => $memory_start->{pss},
+        pss_end => $memory_end->{pss},
+        private_start => $memory_start->{private},
+        private_end => $memory_end->{private},
+        wire_sent_bytes => $wire_sent_bytes,
+        wire_recv_bytes => $wire_recv_bytes,
+        wire_sent_packets => $wire_sent_packets,
+        wire_recv_packets => $wire_recv_packets,
+        heap_files => \%heap_files,
         inflight_peak => $max_inflight,
     };
 }
@@ -428,7 +493,7 @@ sub run_server ($ready_fh, $done_fh) {
 
 # The trial process is the client process. The coordinator forks a fresh trial
 # process, which forks the server BEFORE either side creates sockets or loops.
-sub run_trial ($mode) {
+sub run_trial ($mode, $round) {
     pipe(my $port_read, my $port_write) or die "port pipe: $!";
     pipe(my $stop_read, my $stop_write) or die "control pipe: $!";
     pipe(my $report_read, my $report_write) or die "server report pipe: $!";
@@ -460,7 +525,7 @@ sub run_trial ($mode) {
             unless defined $port && $port =~ /\A[1-9][0-9]*\n\z/
                 && $port <= 65535;
         close $port_read;
-        $result = run_client_trial($mode, 0 + $port);
+        $result = run_client_trial($mode, 0 + $port, $round);
         1;
     } or $client_error = "$@";
 
@@ -496,7 +561,7 @@ sub run_trial ($mode) {
 # Fork BEFORE creating any event loop, socket or QUIC connection for the
 # trial. Each trial child also forks its dedicated server. This resets
 # client resources and keeps server CPU/RSS out of the client's measurements.
-sub run_isolated_trial ($mode) {
+sub run_isolated_trial ($mode, $round) {
     pipe(my $from_child, my $to_parent) or die "pipe: $!";
     my $pid = fork();
     die "fork: $!" unless defined $pid;
@@ -504,7 +569,7 @@ sub run_isolated_trial ($mode) {
     if ($pid == 0) {
         close $from_child;
         my ($result, $error);
-        eval { $result = run_trial($mode); 1 } or $error = "$@";
+        eval { $result = run_trial($mode, $round); 1 } or $error = "$@";
         my $json = JSON::PP->new->encode(
             $error ? { error => $error } : { result => $result }
         );
@@ -540,20 +605,41 @@ print "# CPU uses client-only process CPU clock (user+system); RSS is sampled cl
 print "# Every trial uses fresh client and server processes; samples exclude the server process.\n";
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
 print "# Host CI timing is not a stable performance claim. Copy and allocation counts unavailable.\n";
+print "# Client PSS/private memory is sampled at phase boundaries; neither is allocation count.\n";
+print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
+    if defined $heap_dir;
 my %times;
 for my $round (1 .. $rounds) {
     for my $mode ($round % 2 ? ('direct', 'unified') : ('unified', 'direct')) {
-        my $v = run_isolated_trial($mode);
+        my $v = run_isolated_trial($mode, $round);
         push @{ $times{$mode} }, $v->{elapsed};
         printf "%-7s round=%d req/s=%.1f wall=%.4fs client_cpu=%.4fs"
             . " request_us=%.2f p50_us=%.1f p95_us=%.1f p99_us=%.1f"
-            . " inflight_peak=%d client_rss_start_kib=%s client_rss_end_kib=%s client_rss_sample_peak_kib=%s\n",
+            . " inflight_peak=%d client_rss_start_kib=%s client_rss_end_kib=%s client_rss_sample_peak_kib=%s"
+            . " client_pss_start_kib=%s client_pss_end_kib=%s"
+            . " client_private_start_kib=%s client_private_end_kib=%s\n",
             $mode, $round, $samples / $v->{elapsed}, $v->{elapsed}, $v->{cpu},
             $v->{call_us}, $v->{p50}, $v->{p95}, $v->{p99},
             $v->{inflight_peak},
             (defined $v->{rss_start} ? $v->{rss_start} : 'NA'),
             (defined $v->{rss_end} ? $v->{rss_end} : 'NA'),
-            (defined $v->{rss_peak} ? $v->{rss_peak} : 'NA');
+            (defined $v->{rss_peak} ? $v->{rss_peak} : 'NA'),
+            (defined $v->{pss_start} ? $v->{pss_start} : 'NA'),
+            (defined $v->{pss_end} ? $v->{pss_end} : 'NA'),
+            (defined $v->{private_start} ? $v->{private_start} : 'NA'),
+            (defined $v->{private_end} ? $v->{private_end} : 'NA');
+        if ($profile_wire) {
+            printf "# %s round=%d client UDP sent=%d bytes/%d datagrams"
+                . " recv=%d bytes/%d datagrams (not copy counts)\n",
+                $mode, $round,
+                $v->{wire_sent_bytes}, $v->{wire_sent_packets},
+                $v->{wire_recv_bytes}, $v->{wire_recv_packets};
+        }
+        if (defined $heap_dir) {
+            printf "# %s round=%d client heap before=%s after=%s\n",
+                $mode, $round, $v->{heap_files}{before},
+                $v->{heap_files}{after};
+        }
     }
 }
 my %median;
