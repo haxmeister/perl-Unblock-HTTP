@@ -14,8 +14,10 @@ use Unblock::HTTP::QUIC;
 use Unblock::HTTP::Server;
 
 # Three independently blocked H3 response Readers share ONE QUIC connection.
-# Withholding a pull Reader's next_chunk() withholds receive-stream credit;
-# this does not create an application pause API for the upper Client.
+# The 4 MiB native send-body threshold exceeds three 1 MiB responses, so
+# global producer buffering cannot mask the per-stream QUIC receive-credit
+# behavior tested here. A separate single-Reader test exercises on_drain and
+# bounded producer backpressure. This is not a memory-bound proof.
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
 my $key = "$dir/key.pem";
@@ -127,7 +129,7 @@ my $server_socket = Linux::Event::IO::Sock::Dgram->new(
 $server = Unblock::HTTP::QUIC->server(
     certificate_file => $cert, private_key_file => $key,
     server => Unblock::HTTP::Server->new(
-        http3 => { send_buffer_limit => 131072 },
+        http3 => { send_buffer_limit => 4194304 },
         on_request => sub ($tx, $request) {
             my $target = $request->target;
             $requests++;
@@ -306,8 +308,6 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                                 unless $reader[$i];
                             $error ||= "slow$i completed with credit held"
                                 if $finished[$i];
-                            $error ||= "slow$i fully produced before credit returned"
-                                if $produced[$i] == $parts;
                         }
                         $advance->() unless $error;
                         $loop->stop if $error;
@@ -374,8 +374,8 @@ for my $i (0 .. $streams - 1) {
     ok($pending_at_release[$i] > 0, "slow$i retained uncredited bytes");
     cmp_ok($pending_at_release[$i], '<=', 32768,
         "slow$i hold fits advertised individual stream window");
-    cmp_ok($produced_at_release[$i], '<', $parts,
-        "slow$i producer stalled with its credit held");
+    ok($produced_at_release[$i] > 0,
+        "slow$i producer began before receive credit was released");
     cmp_ok($max_pending[$i], '<=', 32768,
         "slow$i sampled Reader queue is within stream window");
     is($finished[$i], 1, "slow$i finished exactly once");
@@ -385,8 +385,6 @@ for my $i (0 .. $streams - 1) {
     ok($received_chunks[$i] > 1, "slow$i was incrementally consumed");
     is($produced[$i], $parts, "slow$i producer accepted every chunk");
     is($ends[$i], 1, "slow$i producer ended only once");
-    ok($blocked[$i] > 0 && $resumed[$i] > 0,
-        "slow$i producer blocked and resumed");
     is($blocked[$i], $resumed[$i],
         "slow$i resume count matches accepted-but-blocked writes");
     cmp_ok($max_burst[$i], '<=', 4,
