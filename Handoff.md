@@ -19,6 +19,49 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Six-producer HTTP3 starvation fixed: clean verified checkpoint (2026-10-18)
+
+The six-producer real-socket regression is now FIXED and CI-VERIFIED.
+Net::QUIC, kept independent of Unblock::HTTP and event loops, supports
+optional Stream->send_some(..., limit_to_credit => 1) for bounded QUIC
+flow-credit admission without changing default send_some semantics.
+The decisive generic transport fix wakes only short-acceptance capacity
+waiters via existing Stream activity when sibling ACKs free shared TX
+buffer space. Initial H3 ACK broadcast experiment remains reverted.
+No new HTTP3-specific scheduling loop or release-facing API change.
+
+Hard evidence: six 1 MiB streaming responses plus a fast response sharing
+one authenticated QUIC socket, 8192-byte send budget, six held 32768-byte
+pull Readers released sequentially, then full digests, per-stream and
+aggregate native byte accounting, exactly-once completion and write/drain
+fairness. Verified upper feature CI 39147266161: 13 distribution files /
+552 checks, 13 live real-socket TCP/QUIC files / 686 checks including six
+producers, plus 64 and 58 additional QUIC budget checks and benchmark
+smoke configurations: ALL PASS. Each of six streamed bodies produced all
+256 accepted chunks. Cleaned source after removing temporary QUIC private
+credit probes and fixture timers PASSED again in upper CI 39147574565
+with the same stages and assertions.
+
+Net::QUIC feature/fair-stream-send-capacity cleaned source commit
+4d3a45aa2d3efb27523c6733c71d31cf527130a8 passed 15/15 Linux
+Perl 5.20-5.44 and macOS/Windows CI 39147484627. H3 feature source
+9d329e2adb64e0a71d58ee549f947b8972190d18 opts into the new
+transport send mode only in its output bridge; H3 feature test matrix
+39147558339 passed with NetQUIC's clean pin. Upper workflow now pins
+NetQUIC 4d3a45.. and H3 9d329e.. . The six-stream fixture was retained,
+not skipped or weakened; assertion wording updated for 7 total requests
+in feature commit f31afc37191d133a75cc87d4f1bb885661edf065.
+
+No main in any repo, merge, release, version bump or tag. Handoff.md
+preserves the exact investigation history and CI run IDs. Net::QUIC is
+viable as a standalone generic QUIC library. A release will require a
+separately approved coordinated dependency version update: the released
+NetQUIC 0.04 lacks this opt-in option, so do not ship H3 with an
+unadjusted released NetQUIC prerequisite. Remaining priorities: longer
+sustained slow-reader and larger concurrency repeatability, direct vs
+unified allocation/copy measurements, and approved WebSocket upper
+composition milestones. Hosted-runner timing is descriptive only.
+
 ## Coordinated standalone QUIC send-capacity wake feature (2026-10-18)
 
 User authorized changes to Net::QUIC with the strict independent-library
