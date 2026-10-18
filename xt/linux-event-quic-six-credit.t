@@ -29,7 +29,7 @@ if (system('openssl', 'req', '-x509', '-newkey', 'rsa:2048',
 
 my $loop = Linux::Event::Loop->new;
 my ($server, $client, $server_timer, $client_timer, $client_socket);
-my ($hold_timer, $poll_timer, $watchdog);
+my ($hold_timer, $poll_timer, $probe_timer, $watchdog);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
 my $streams = 6;
 my $send_limit = 8192;
@@ -380,6 +380,39 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
         $loop->stop;
     },
 );
+$probe_timer = Linux::Event::Kernel::Timer->new(
+    loop => $loop, after => 8,
+    on_timer => sub ($t) {
+        my @state;
+        for my $http ($server->sessions) {
+            my $native = $http->{native};
+            my @held;
+            my @acks;
+            for my $i (0 .. $streams - 1) {
+                my $tx = $server_tx[$i];
+                push @held, $tx
+                    ? $native->streaming_retained_bytes_for_stream($tx->stream_id)
+                    : 'NA';
+                my $quic_stream = $tx ? $http->{streams}{$tx->stream_id} : undef;
+                push @acks, $quic_stream ? $quic_stream->acked_offset : 'NA';
+            }
+            push @state, "native=" . $native->streaming_retained_bytes
+                . " per_stream=" . join(',', @held)
+                . " acked=" . join(',', @acks)
+                . " native_active=" . $native->active_streaming_body_count
+                . " blocked_output="
+                . join(',', sort { $a <=> $b } keys %{ $http->{blocked_output} })
+                . " quic_send=" . $http->quic->send_buffered_bytes;
+        }
+        note("SIX-CONTEST probe stage=$release_stage"
+            . " produced=" . join(',', @produced)
+            . " blocked=" . join(',', @blocked)
+            . " resumed=" . join(',', @resumed)
+            . " received=" . join(',', @received)
+            . " pending=" . join(',', map { $_ ? $_->pending_bytes : -1 } @reader)
+            . " " . join(' ; ', @state));
+    },
+);
 $watchdog = Linux::Event::Kernel::Timer->new(
     loop => $loop, after => 60,
     on_timer => sub ($t) {
@@ -463,7 +496,7 @@ note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", native per-stream peaks=" . join(',', @native_stream_peak)
     . ", producer blocks=" . join(',', @blocked));
 
-for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
+for my $timer ($hold_timer, $poll_timer, $probe_timer, $watchdog, $server_timer, $client_timer) {
     $timer->cancel if $timer && $timer->is_active;
 }
 done_testing;
