@@ -1,3 +1,33 @@
+## Instrumented split of ready Client dispatch (2026-10-18)
+
+First completed CPU-only diagnostic (optional Net::QUIC feature workflow
+39173943480 PASS, bench/client-dispatch-profile.pl 3000 x 3):
+direct minimal fake H3 engine median 9.432 us/cycle, real unified
+Client + same fake H3 engine median 31.267 us/cycle. Real URI-only
+median 7.388 us and real Uniform::HTTP::Request-only 7.813 us in
+adjacent benchmark, combined URI+Uniform 15.447 us. A mock 3.315x
+ratio is NOT real QUIC HTTP3 overhead; it deliberately removes
+TLS/UDP/QUIC and body processing and direct case skips URI/pool
+policy work. It does show setup/scheduling in the real unified
+Client is worth breaking down. The published Net::QUIC 0.05
+primary CI 39173943511 was running when this experiment began.
+
+This commit opts the primary workflow into an additional
+UNBLOCK_H3_DISPATCH_SPLIT=1 phase timer for the already-added
+CPU-only mock engine benchmark. It intercepts _dispatch and the
+fake engine request in a strictly isolated benchmark script
+to obtain request(), dispatch(), fake engine request(), and
+subtraction residuals. Instrumentation overhead is explicit,
+values approximate, and no production method or network/ABI
+is changed. See docs/PERFORMANCE.md. Check both workflows'
+CI outcomes and report split times. Only after repeatable
+measurement consider narrowing unnecessary HTTP3-only
+callback/Alt-Svc overhead; do not sacrifice generic URLs,
+operation lifecycle, or H1/H2 semantics.
+
+No merges, tags, release, version bump, main changes or
+modifications to Net::QUIC/HTTP1/HTTP2/HTTP3.
+
 ## CPU-only request/dispatch profiling experiment (2026-10-18)
 
 Resumed after successful bounded-memory fix and three-round

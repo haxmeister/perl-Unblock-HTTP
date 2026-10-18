@@ -71,7 +71,23 @@ Net::QUIC, response buffering or body copies take place.
 
 ```sh
 perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 20000 7
+UNBLOCK_H3_DISPATCH_SPLIT=1 \
+  perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 20000 7
 ```
+
+With `UNBLOCK_H3_DISPATCH_SPLIT=1`, a separate follow-up
+run intercepts the **real** unified `_dispatch` method and
+the fake H3 engine `request` method to report inclusive
+`request_us`, `outside_dispatch_us`, `dispatch_us`,
+`outside_engine_us`, and `fake_engine_us`.
+The phase timers wrap every request, and so change its measured CPU
+cost. These phase totals are diagnostic and MUST NOT be directly
+compared with the uninstrumented medians as if they were the same
+measurement. They include clock and wrapper overhead; the phase
+subtractions are approximate. In particular, `outside_dispatch`
+includes URI parsing, Uniform construction, operation creation,
+origin lookup, and the time spent outside the fast dispatch call.
+It is not a direct count of object allocations.
 
 This separates application request/dispatch overhead from real QUIC
 transport costs. It is **not** a fair end-to-end direct-vs-unified HTTP3
