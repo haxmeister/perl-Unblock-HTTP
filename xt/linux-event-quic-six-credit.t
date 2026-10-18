@@ -343,7 +343,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                         on_timer => sub ($t) {
                             undef $diagnostic_timer;
                             my @sessions = $server->sessions;
-                            my @blocked = map { join(',', sort { $a <=> $b } keys %{ $_->{blocked_output} }) } @sessions;
+                            my @h3_blocked = map { join(',', sort { $a <=> $b } keys %{ $_->{blocked_output} }) } @sessions;
                             my @retained = map { $_->{native}->streaming_retained_bytes } @sessions;
                             my @quic_send = map { $_->quic->send_buffered_bytes } @sessions;
                             my @ack = map {
@@ -352,7 +352,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                                 $s ? $s->acked_offset : -1
                             } 0 .. $streams - 1;
                             diag('STRESS-PROBE sessions=' . scalar(@sessions)
-                                . ' blocked=' . join(';', @blocked)
+                                . ' blocked=' . join(';', @h3_blocked)
                                 . ' retained=' . join(',', @retained)
                                 . ' quic_send=' . join(',', @quic_send)
                                 . ' ack=' . join(',', @ack)
