@@ -601,12 +601,25 @@ point, and peak sampled Reader pending remained 32,739 bytes,
 below the configured 32KiB stream receive window. This confirms
 a real receive-credit stall rather than delayed callbacks alone.
 
-These are only H3 Reader-owned queued body bytes and observed
-application/producer behavior. The native nghttp3 retained
-send buffer, QUIC queued/unacknowledged packets, retransmissions,
-kernel datagrams, allocator overhead and RSS remain unmeasured.
-Do not infer a whole-process memory high-water guarantee.
-No engine or QUIC dependency source changes were needed.
+The follow-up fixture also samples the public
+Net::QUIC::Connection->send_buffered_bytes() method on the
+SERVER's QUIC connection, separately from the CLIENT Reader's
+pending_bytes(). This counts QUIC Stream data retained
+for transmission, including unacknowledged Stream data.
+CI 39093371363 PASS on source bb891776d3aad4de3020c3f7e2f6ee273b11477f:
+552 distribution checks and nine live files / 391 checks.
+The Reader peak sampled queued body was 32,739 bytes.
+The QUIC retained-send peak and hold-release sample were
+both 8,192 bytes. Only 10/512 producer chunks had been
+issued during the credit hold. The full body later completed.
+
+These are two independent snapshots from opposite sides of the
+connection: incoming decoded Reader-owned body and outgoing QUIC
+send retention. Do NOT sum these as total HTTP3/QUIC memory.
+Native nghttp3 retained/provider buffers, QUIC packet
+metadata/retransmission allocations, kernel queues and RSS are
+not accounted for by these counters. No engine or QUIC
+dependency source changes were needed.
 
 ## Later design milestones
 
