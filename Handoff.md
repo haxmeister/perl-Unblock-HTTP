@@ -795,6 +795,32 @@ Next concurrent fairness checkpoint:
 No changes to any main branch, no engine or QUIC/Uniform sources by
 default, no release, tags, merge, or version bumps.
 
+## H3 streamed response producer and QUIC flow-control continuation (2026-10-17)
+
+Starting ref a5c5dd1b7caffe8f08e4c992167151623eb73c8a.
+Upper latest CI 39087979104 PASS with 552 distribution / 289
+live checks. All four main branches are unchanged. H1/H2/H3 engine
+feature heads checked; Net::QUIC and Uniform::HTTP remain read-only.
+Read the approved four upper docs and H3 feature Handoff.md,
+Transaction.pm, Body::Stream.pm, Connection.pm before editing.
+
+Plan: expand existing real QUIC/TLS and mixed H3 transaction coverage
+with one 2 MiB cooperative streamed response producer on the real
+HTTP3 Transaction, bounded 4 KiB chunks (max four per deferred turn)
+and native on_drain callback. Force H3 internal retained-buffer pressure
+with a small send_buffer_limit; track write(false), resumption,
+byte-exact streamed receive SHA256, and final end() deferral after
+a blocked final write. Send seven ordinary buffered requests on the
+same Net::QUIC connection to exercise stream isolation. Retain the
+established UDP driver/timer framework boundary and direct engines.
+Do not claim QUIC socket high-water or actual paused H3 receive credit
+from this test. If H3 engine backpressure notifications stall or fail,
+confirm in CI and add narrowly scoped H3 engine regressions rather
+than inventing a new framework abstraction.
+
+No main/merge/release/tag/version changes. Record exact source
+commits, tests, and limits here after CI.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
