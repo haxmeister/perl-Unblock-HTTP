@@ -61,7 +61,17 @@ the sustained 16- and 32-concurrent profiles. This opt-in diagnostic
 requires registry checkpoints, and checks each 256-completion sample:
 `ready_transactions <= concurrency+64`, live engine Transactions
 `<= concurrency+1`, and no more than 8 MiB of private-memory growth
-since measurement began. The last is intentionally a generous
+since measurement began.
+
+The assertions have now passed in primary published-Net::QUIC-0.05
+CI [39176739238](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39176739238)
+for both the 16- and 32-inflight sustained runs. At 32 inflight,
+the guarded run reported unified private memory (KiB)
+7,924 -> 7,968 and 7,860 -> 7,972 across its two rounds,
+with just two weak notification queue slots left at each
+final completion checkpoint. Direct private memory was
+6,788 -> 6,940 and 6,756 -> 6,808 KiB. These remain
+small versus the earlier roughly 80+ MiB runaway retention. The last is intentionally a generous
 regression guard for the original approximately 80+ MiB growth;
 it is not a CI throughput performance gate or a universal memory
 bound for arbitrary request/response sizes. RSS/PSS/private

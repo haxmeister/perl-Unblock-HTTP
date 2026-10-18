@@ -1,3 +1,39 @@
+## Verified automatic 16/32 concurrent H3 memory guards (2026-10-18)
+
+Primary upper Linux::Event CI 39176739238 PASS using **published**
+Net::QUIC 0.05 and feature H3 engine. Distinct optional QUIC-feature
+diagnostic workflow 39176739215 also PASS. All upper distribution,
+live TCP/QUIC, Reader/producer/flow control and ordinary benchmark
+smokes remained green.
+
+The new opt-in UNBLOCK_H3_PROFILE_ASSERT_BOUNDED=1 guard ran for
+BOTH 2048-measured, 128-warmup, two-round direct/unified 16-concurrent
+and 32-concurrent, alternating 4096/16384-byte buffer workloads.
+Both guard invocations completed without error. At each 256-completion
+checkpoint, ready_tx stayed <= concurrency+64, live engine tx <=
+concurrency+1, and private memory grew <= 8192 KiB from start of
+measured phase, with exact status/body/callback validation preserved.
+This catches the earlier callback notification / completed-Transaction
+retention pattern while leaving intentionally strong pull-only queues
+alone. It is a workload-specific resource REGRESSION GATE, NOT a
+throughput/latency benchmark or a byte-copy counter.
+
+Primary guarded 32-concurrency results: unified private KiB R1
+7924->7968, R2 7860->7972; direct R1 6788->6940, R2
+6756->6808. Final ready_tx=2 and engine tx=1 (terminal callback)
+for both unified rounds. RSS/PSS also stayed bounded. The
+ungarded 32-run 39176260513 had unified private memory R1
+7744->7900, R2 7844->7860, ready_tx throughout 2..13.
+Do not compare throughput across CI runners as stable speedup.
+
+Minimal weak origin ownership change upper 945734c was independently
+verified by primary CI 39175957247. Current upper feature source
+d5e3026 adds stronger regression coverage, not new public APIs.
+No main, merges, tags, releases, version bumps, Net::QUIC changes,
+or HTTP1/2/3 engine edits. HTTP3 0.13 stays unreleased. Future
+performance work should use a controlled repeatable dedicated host;
+no native allocation/copy rates established.
+
 ## Automatic HTTP3 bounded-memory regression guard (2026-10-18)
 
 Sustained 32-inflight real-QUIC test in primary published Net::QUIC
