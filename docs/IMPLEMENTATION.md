@@ -835,6 +835,59 @@ response/batch shapes users actually need.
 No main/merge/release/tag/version changes; HTTP1/HTTP2,
 Net::QUIC and Uniform::HTTP are unchanged.
 
+## Concurrent direct-H3 versus unified profiling (2026-10-18)
+
+The new opt-in bench/h3-workload-profile.pl extends the earlier serial
+bench/h3-client-vs-direct.pl. It runs a bounded number of outstanding
+buffered GET requests over a single authenticated H3 connection, against
+the same loopback Unblock::HTTP Server and Net::QUIC driver in each mode.
+Response bodies, concurrency (1..16), measured/warmup requests and
+alternating rounds are configurable. Warmup finishes before measurement.
+The client path either calls Unblock::HTTP3::Client directly or the
+pooled Unblock::HTTP::Client API with URL parsing.
+
+It validates every response and reports measured-request wall time,
+throughput, mean synchronous request() cost, p50/p95/p99
+application-submission-to-on_finish latency, process CPU time and
+sampled Linux VmRSS. These are NOT isolated client CPU, allocation or
+copy counts, RSS high-water marks, slow-receiver performance, packet-loss
+tests or a reliable speedup claim on a shared CI runner.
+
+Initial benchmark source cbbca7182f9d6aa2721a01adf84cb765c0ea9098
+and workflow 49f2968e5296d8bfdc7fed1b94cae38a8b041a98
+PASSED upper CI 39136691305 with all existing 552 distribution,
+485 real TCP/QUIC, extra 64/58 H3 checks. The first runner samples
+were short and showed process RSS monotonically increasing across
+trials because trial objects shared a Perl process; these raw RSS
+numbers are NOT comparable between modes.
+
+The profiler now forks an independent child per trial, before creating
+event loops, sockets or native QUIC state. The parent collects a
+tiny JSON result. The isolated source
+b63f08650c75c762b01b32ff75466465b5656bd6
+PASSED upper CI 39136915734, including the legacy suites and both
+workload smoke settings, and reset RSS starting points across trials.
+Memory still represents combined client+server process RSS sampled
+every sixteen completions, not the client library alone.
+
+High-resolution process CPU using CLOCK_PROCESS_CPUTIME_ID and proper
+even-round median logic were added at
+82e5bf55f88e2e7515cd6b82e42be2b24f83b7a6.
+The expanded workflow at cff8be90c8f3b9183557addfea03ff516504ab43
+runs 100 measured/20 warmup requests, concurrency 4, 16KiB body,
+3 alternating rounds; plus 30/10 requests, concurrency 2, 256KiB
+body, 3 rounds. CI 39137178777 was pending at this checkpoint.
+Do not treat these changes as verified until that run passes.
+Usage and interpretation instructions are in docs/PERFORMANCE.md.
+
+Remaining: CPU/allocation/copy and RSS instrumentation with
+separate client and server processes, stable throughput/latency
+repeats on an idle pinned host, larger stream concurrency, and
+benchmark payload/control comparability before asserting a
+quantitative regression or improvement. Engine sources, Net::QUIC,
+Uniform, all main refs, versions, merges, releases and tags
+remain unchanged in this continuation.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
