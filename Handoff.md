@@ -1,3 +1,29 @@
+## Retention correction under full real-QUIC integration (2026-10-18)
+
+The isolated 2048-request profiler confirmed ready_transactions grew by
+exactly 2176 entries (128 warmup plus 2048 measured) in both direct and
+unified callback mode, while live stream/transaction registries stayed
+bounded around the 16-inflight limit. PSS/private growth was substantial
+and approximately linear. This is a duplicate, strongly retained pull
+notification queue, not the active-stream map.
+
+Unblock::HTTP3 feature 91aaced500e6aaf2eba9818ad192398c9cf62f15
+now weakly queues callback-owned transactions (including server callbacks),
+preserves strongly queued pull-only transactions and prunes expired slots.
+t/27 provides isolated weak/strong queue lifetime checks; t/04 checks the
+real callback-delivered client notification and mixed server callback/pull
+identity. The standalone H3 pre-test-source CI at c484625b succeeded
+all four Linux Perl jobs and interoperability. Updated H3 final test
+run and the UPPER full real-QUIC integration still need verification.
+
+The upper two separate integration workflows now pin that H3 feature.
+The primary workflow continues using published CPAN Net::QUIC 0.05;
+the independent QUIC-feature diagnostic workflow uses the clean generic
+MAX_DATA change. Both rerun 2048 callback-mode requests with opt-in
+checkpoint and registry counters. Compare private/PSS trend and ready_tx
+counts to baseline CI 39164948301 before claiming retention fixed.
+Do NOT merge, bump, tag or release yet.
+
 ## Prolonged independently held HTTP3 Readers (2026-10-18)
 
 The upper feature real-socket six-credit fixture now supports holds
