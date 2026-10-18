@@ -44,16 +44,38 @@ The workload and bounded concurrency have not changed.
 
 Published code commit 4f5217f07a6c5416d6df639fa4ffa7b2f590bb1f and
 performance documentation commit 61b8988eb17068ea129721e1807c5aa3cf4e27a6.
-CI validation is pending; do not call this milestone verified until the
-feature branch workflow completes (distribution, live TCP/QUIC and two H3
-workload benchmark smoke configurations). A local shell lacks the required
-Linux::Event/QUIC dependency stack and GitHub DNS, so CI is authoritative.
-Do not interpret hosted-runner timing as a performance improvement.
+VERIFIED: run 39139264984 at handoff checkpoint 4c270b571c0b511c050f2f5b3211ea2339315479
+passed 13 distribution files / 552 checks, 11 live files / 485 checks,
+64 more at 128 KiB, 58 more at 4 MiB and the direct/unified benchmark
+smoke configurations. The 16 KiB / 4 inflight and 256 KiB / 2 inflight
+samples report client_cpu and client_rss fields separately. These are
+hosted-runner observational samples, not evidence of a library-level
+speedup, regression or hard memory limit.
 
-NEXT: review new CI outcome and fix any benchmark smoke regression; then
-add a real late producer join *without* cancelling an existing H3 producer
-on a small native send budget. Retain the original stream and tx identities,
-digests, fair producer wakeups and retained-byte invariants.
+A second late-join regression is now VERIFIED: new
+xt/linux-event-quic-join-no-cancel.t begins two 1 MiB streaming H3
+responses and a fast response on one authenticated connection. Under an
+8192-byte native advisory send threshold, both initial producers must be
+blocked before the third streamed request joins; neither is cancelled.
+A tight send budget can delay the newcomer's response HEADERS, so the test
+waits for its pull Reader rather than assuming immediate header arrival.
+The fixture checks original client/server tx identity, three unfinished
+native producers, end-to-end SHA-256 payload integrity, one-time terminal
+callbacks, fair write(false)/on_drain/resume, bounded four-write bursts,
+independent Reader credit and per-stream/aggregate native retained counters.
+Initial fixture CI 39139536201 failed only the invalid immediate-third-Reader
+assumption; it was corrected without weakening the blocked-producer requirement.
+Final test commit 7932e6fcb4cef96927a2358bc928706bb995d468,
+workflow commit 74d7b0d53be3151a74883306107c9bb566c5a0fb,
+run 39139788344 PASSED: 13 dist files/552 checks, 12 live files/553
+checks, plus 64 and 58 checks in additional native buffer-budget modes.
+All profiler smoke tests passed. Observed native retained body peak 13618
+at the 8192 advisory threshold; this is not an aggregate memory bound.
+
+NEXT: extend measured performance workloads to larger H3 concurrency and
+mixed response sizes while maintaining identical direct/unified fixtures.
+Then investigate copy/allocation measurement options and sustained slow
+readers; no speculative hot-path optimization from CI timings.
 
 ## Client milestone continuation (2026-10-17)
 
