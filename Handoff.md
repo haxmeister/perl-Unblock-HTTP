@@ -938,6 +938,50 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Live H3 native per-stream retention reconciliation (2026-10-17)
+
+Starting upper feature source a545a4ddecef5501e3392dcd3f4f3a4a56223efd,
+with verified CI 39098422769. Engine HTTP3 tested source
+96cf41e9378333fb4f7b48d89c8311c1dcf7cee7 remains pinned;
+H1/H2 and all four main refs untouched. H3 full engine matrix and
+interop previously passed. Only upper tests/CI/docs changed here.
+
+The existing xt/linux-event-quic-multi-credit.t now samples the
+internal H3 _Native streaming_retained_bytes_for_stream for each
+of three live streamed server responses, reconciles their sum
+against native connection streaming_retained_bytes, and records
+the peaks. This is only native retained producer body bytes;
+QUIC send retention and Reader receive pending remain distinct.
+It does NOT claim aggregate RSS or kernel queue bounds.
+
+Upper CI adds a third run with send_buffer_limit 131072 between
+the original tight 8192 and isolation 4194304. Verified source
+556d296392745b7ab16a31b7b213bcf62638aa6b,
+LinuxEvent integration run 39098755460 PASSED:
+552 distribution checks; 10 TCP/QUIC files / 455 checks at 8192;
+an additional 64 checks at 131072; 58 checks at 4194304;
+benchmark smoke checks passed, timing not a performance claim.
+No per-stream accounting mismatches.
+
+Observed native retained body peak (NOT a hard cap):
+- limit=8192: 13618; per-stream observed peaks 5391,5397,9493;
+  QUIC sampled send-retained peak 8192.
+- limit=131072: 173406; per-stream peaks 47774,69551,133856;
+  QUIC sampled send-retained peak 131072.
+- limit=4194304: 3047511; per-stream peaks 1015837 each;
+  QUIC sampled send-retained peak 3061953.
+Per-stream PEAK values are observed at different times and MUST
+NOT be summed as a simultaneous total. These values support the
+documented accepted-whole-write soft budget (overshoot), NOT
+a memory bound across QUIC, TLS, nghttp3 metadata, kernel or RSS.
+
+Remaining: controlled throughput and latency baseline; peak RSS,
+copy count and overhead measurements; fairness as streams join,
+cancel or exit mid-write; large concurrency, overflow and body
+discard accounting. Changes confined to authorized feature
+branches. No main, merge, release, tag, version, read-only
+dependency modification.
+
 ## Bounded shared HTTP3 producer fairness continuation (2026-10-17)
 
 Starting source heads were upper b86aa43ea0b97a21faa1ac2f7d1866c3e1272992;
