@@ -197,6 +197,48 @@ instrumented engine/allocator build or an allocation profiler with a
 known scope and control workload would be required. Preserve the
 production engine paths while gathering this evidence.
 
+## Same-connection sustained profile and memory checkpoints
+
+For a longer test of **one authenticated QUIC connection per client trial**,
+the profiler accepts up to 20,000 measured requests. Warmup is excluded,
+and each trial process (and its separate server process) stays alive for the
+whole measured interval. A trial is fresh between direct and unified modes,
+so inter-trial memory growth is **not** a valid leak indicator. Choose
+in-flight concurrency and body sizes so the peer's connection receive
+window retains sufficient aggregate headroom.
+
+To sample memory at deterministic completed-request intervals, opt into
+`UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY` (0 by default; 64..4096 when enabled).
+`UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS` adjusts the independent client and
+server watchdogs (60 by default; up to 3600 for a long-running trial):
+
+```sh
+UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=256 \
+UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=600 \
+    perl -Iblib/lib -Iblib/arch \
+    bench/h3-workload-profile.pl 10000 256 5 16 4096,16384
+```
+
+Each `# checkpoint` record contains the client-process completed-request
+count, seconds elapsed in the timed phase, interval throughput, number of
+in-flight requests at the sampling instant and resident/PSS/private KiB.
+Values come from the same child process and QUIC connection across the
+measured requests. With the option disabled, there is no added smaps
+sampling in the completion callback. Checkpoints **perturb throughput**;
+run a separate uninstrumented trial for meaningful relative speed.
+Compare repeated checkpoints with the same concurrency and workload,
+not absolute RSS values between fresh forked processes. An upward memory
+trend does not prove a leak, and flat resident memory does not establish
+an absence of temporary Perl or native allocations.
+
+This test continuously exercises buffering and multiplexing. It does not
+hold arbitrary response Readers for minutes; that is a separate,
+application-specific slow-consumer scenario. Native payload copy counts
+remain unknown without source-level instrumentation at the exact copy
+boundaries. UDP send/receive counts and retained-heap snapshots are not
+substitutes for those counters. CI runs a shorter 2048-request, two-round
+instrumented smoke, not the 10,000-request manual example.
+
 ## Comparing results fairly
 
 Use a quiet, otherwise idle machine, a fixed Perl/XS/QUIC stack and

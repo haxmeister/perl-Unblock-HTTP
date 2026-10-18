@@ -42,6 +42,15 @@ die "specify at most eight response sizes, each no larger than 1048576\n"
 my @bodies = map { 'B' x $_ } @sizes;
 my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
+my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
+die "UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY must be 0 or an integer 64..4096\n"
+    unless $checkpoint_every =~ /\A(?:0|[1-9][0-9]*)\z/
+        && ($checkpoint_every == 0
+            || ($checkpoint_every >= 64 && $checkpoint_every <= 4096));
+my $watchdog_seconds = $ENV{UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS} // 60;
+die "UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS must be 60..3600\n"
+    unless $watchdog_seconds =~ /\A[1-9][0-9]*\z/
+        && $watchdog_seconds >= 60 && $watchdog_seconds <= 3600;
 die "UNBLOCK_H3_HEAP_DIR must be an existing writable directory\n"
     if defined($heap_dir) && (!-d $heap_dir || !-w $heap_dir);
 my $dir = tempdir(CLEANUP => 1);
@@ -116,6 +125,7 @@ sub run_client_trial ($mode, $server_port, $round) {
         $wire_recv_packets) = (0, 0, 0, 0);
     my %heap_files;
     my @latency;
+    my @checkpoints;
     my ($pump, $schedule, $check_ready, $sample_rss);
 
     my $snapshot_heap = sub {
@@ -175,6 +185,22 @@ sub run_client_trial ($mode, $server_port, $round) {
                 if ($measured) {
                     push @latency, 1_000_000 * (time() - $issued_at);
                     $sample_rss->() if $finished % 16 == 0;
+                    if ($checkpoint_every
+                        && $finished % $checkpoint_every == 0) {
+                        # Samples are after validation, at deterministic
+                        # completion counts and while the connection stays up.
+                        # smaps scanning changes timing; never mix results
+                        # with uninstrumented throughput comparisons.
+                        my $rollup = sampled_smaps_kib();
+                        push @checkpoints, {
+                            completed => $finished,
+                            elapsed => time() - $start,
+                            inflight => $inflight,
+                            rss => sampled_rss_kib(),
+                            pss => $rollup->{pss},
+                            private => $rollup->{private},
+                        };
+                    }
                 }
                 if ($finished == $phase_target && !$inflight) {
                     if ($phase eq 'warmup') {
@@ -335,7 +361,7 @@ sub run_client_trial ($mode, $server_port, $round) {
         },
     );
     my $watchdog = Linux::Event::Kernel::Timer->new(
-        loop => $loop, after => 60,
+        loop => $loop, after => $watchdog_seconds,
         on_timer => sub ($timer) {
             $error = "$mode watchdog: phase=$phase completed=$finished/$phase_target"
                 . " sent=$sent inflight=$inflight";
@@ -376,6 +402,7 @@ sub run_client_trial ($mode, $server_port, $round) {
         wire_sent_packets => $wire_sent_packets,
         wire_recv_packets => $wire_recv_packets,
         heap_files => \%heap_files,
+        checkpoints => \@checkpoints,
         inflight_peak => $max_inflight,
     };
 }
@@ -476,7 +503,7 @@ sub run_server ($ready_fh, $done_fh) {
     close $ready_fh or die "close port handshake: $!";
 
     my $watchdog = Linux::Event::Kernel::Timer->new(
-        loop => $loop, after => 60,
+        loop => $loop, after => $watchdog_seconds,
         on_timer => sub ($timer) {
             $error = "server watchdog: handled=$responses/"
                 . ($warmup + $samples);
@@ -608,6 +635,10 @@ print "# Every trial uses fresh client and server processes; samples exclude the
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
 print "# Host CI timing is not a stable performance claim. Copy and allocation counts unavailable.\n";
 print "# Client PSS/private memory is sampled at phase boundaries; neither is allocation count.\n";
+print "# Memory checkpoints at every $checkpoint_every completions; timing is instrumented.\n"
+    if $checkpoint_every;
+print "# Timeout watchdog=$watchdog_seconds seconds per trial.\n"
+    if $watchdog_seconds != 60;
 print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
     if defined $heap_dir;
 my %times;
@@ -630,6 +661,24 @@ for my $round (1 .. $rounds) {
             (defined $v->{pss_end} ? $v->{pss_end} : 'NA'),
             (defined $v->{private_start} ? $v->{private_start} : 'NA'),
             (defined $v->{private_end} ? $v->{private_end} : 'NA');
+        if ($checkpoint_every) {
+            my ($last_count, $last_time) = (0, 0);
+            for my $sample (@{ $v->{checkpoints} }) {
+                my $span = $sample->{elapsed} - $last_time;
+                my $rate = $span > 0
+                    ? ($sample->{completed} - $last_count) / $span : 0;
+                printf "# checkpoint mode=%s round=%d completed=%d"
+                    . " elapsed_s=%.3f interval_req_s=%.1f"
+                    . " inflight=%d rss_kib=%s pss_kib=%s private_kib=%s\n",
+                    $mode, $round, $sample->{completed}, $sample->{elapsed},
+                    $rate, $sample->{inflight},
+                    (defined($sample->{rss}) ? $sample->{rss} : 'NA'),
+                    (defined($sample->{pss}) ? $sample->{pss} : 'NA'),
+                    (defined($sample->{private}) ? $sample->{private} : 'NA');
+                ($last_count, $last_time) =
+                    ($sample->{completed}, $sample->{elapsed});
+            }
+        }
         if ($profile_wire) {
             printf "# %s round=%d client UDP sent=%d bytes/%d datagrams"
                 . " recv=%d bytes/%d datagrams (not copy counts)\n",

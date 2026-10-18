@@ -1,3 +1,25 @@
+## Sustained same-connection HTTP3 profiler checkpointing (2026-10-18)
+
+Opt-in sample tracking was added to the upper feature branch's isolated
+direct-vs-unified HTTP3 workload profiler, with no production HTTP3,
+Net::QUIC or native ABI edits. UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=N
+(64..4096, 0 disabled) samples per-trial client VmRSS/PSS/private at
+deterministic completed-request counts, plus elapsed, interval throughput
+and in-flight requests. UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=60..3600
+permits longer manually run trials; both client and server are protected.
+Runs use the same authenticated connection across each trial's measured
+requests and preserve strict response-body/status/callback checks.
+Each mode/round still uses fresh isolated client/server processes.
+Sampling is intrusive and not a stable throughput comparison, memory
+deltas do not count Perl/native allocations, and wire-byte counts do not
+count payload copies. Do not infer a leak from one RSS progression.
+
+The released-CPAN Net::QUIC 0.05 integration workflow now includes a
+2048-request / 128-warmup / 2-round / 16-inflight / mixed 4K-16K body
+smoke with checkpoint interval 256 and watchdog 180s. Verify new CI;
+longer manual example is in docs/PERFORMANCE.md. No merges, releases,
+or changes to main; generic Net::QUIC feature remains separate.
+
 ## QUIC MAX_DATA: corrected bounded Reader credit and full CI PASS (2026-10-18)
 
 This supersedes the historical handoff hypothesis that the 12-producer
