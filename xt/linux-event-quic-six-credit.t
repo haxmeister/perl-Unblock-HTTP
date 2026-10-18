@@ -41,8 +41,15 @@ die "UNBLOCK_H3_CREDIT_HOLD_SECONDS must be 0.5, 2 or 3\n"
 my $wide_connection_window = $ENV{UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW} // 0;
 die "UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW must be 0 or 1\n"
     unless $wide_connection_window =~ /\A[01]\z/;
-my $connection_window = $wide_connection_window
-    ? 33554432  # 32 MiB: diagnostic only; stream credit is still 32 KiB.
+my $window_override = $ENV{UNBLOCK_H3_CREDIT_CONN_WINDOW};
+die "UNBLOCK_H3_CREDIT_CONN_WINDOW must be 524288 or 720896\n"
+    if defined($window_override)
+        && $window_override !~ /\A(?:524288|720896)\z/;
+die "cannot combine wide window and explicit window overrides\n"
+    if defined($window_override) && $wide_connection_window;
+my $connection_window = defined($window_override) ? 0 + $window_override
+    : $wide_connection_window
+    ? 33554432  # Diagnostic only; individual credit remains 32 KiB.
     : 32768 * ($streams + 2);
 my $send_limit = 8192;
 my $chunk = '0123456789abcdef' x 256;  # 4 KiB

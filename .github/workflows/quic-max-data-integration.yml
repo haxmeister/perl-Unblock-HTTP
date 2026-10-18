@@ -62,6 +62,10 @@ jobs:
           # Separate response-buffering smoke at 32 concurrent streams.
           # This is correctness/resource telemetry, not a performance gate.
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
+          # Test bounded windows with enough aggregate headroom for ngtcp2
+          # to advertise MAX_DATA while siblings deliberately withhold credit.
+          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_CONN_WINDOW=524288 prove -v -b xt/linux-event-quic-six-credit.t
+          UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_CONN_WINDOW=720896 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
