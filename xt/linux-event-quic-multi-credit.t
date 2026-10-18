@@ -46,6 +46,9 @@ my (@pending_at_release, @produced_at_release);
 my (@finished_at_stage, @received_at_stage);
 my $poll_turns = 0;
 my ($quic_peak, $quic_samples) = (0, 0);
+my ($native_samples, $native_accounting_mismatches, $native_retained_peak)
+    = (0, 0, 0);
+my @native_stream_peak = (0) x $streams;
 my ($schedule, $emit, $poll, $advance);
 
 for my $i (0 .. $streams - 1) {
@@ -71,6 +74,27 @@ my $sample_quic = sub {
         my $bytes = $session->quic->send_buffered_bytes;
         $quic_samples++;
         $quic_peak = $bytes if $bytes > $quic_peak;
+    }
+    # Test-only native observation: reconcile the complete per-stream
+    # provider body storage with its connection-wide retained counter.
+    # These do not include QUIC, TLS, kernel, or allocator memory.
+    for my $http ($server->sessions) {
+        my $native = $http->{native};
+        my $connection_bytes = $native->streaming_retained_bytes;
+        $native_samples++;
+        $native_retained_peak = $connection_bytes
+            if $connection_bytes > $native_retained_peak;
+        my $sum = 0;
+        for my $i (0 .. $streams - 1) {
+            next unless $server_tx[$i];
+            my $bytes = $native->streaming_retained_bytes_for_stream(
+                $server_tx[$i]->stream_id
+            );
+            $sum += $bytes;
+            $native_stream_peak[$i] = $bytes
+                if $bytes > $native_stream_peak[$i];
+        }
+        $native_accounting_mismatches++ if $sum != $connection_bytes;
     }
 };
 my $sample_readers = sub {
@@ -417,10 +441,15 @@ for my $stage (1 .. $streams - 1) {
 }
 ok($poll_turns > 1, 'Reader polling is scheduled across event-loop turns');
 ok($quic_samples > 0, 'public QUIC retained-send counter sampled');
+ok($native_samples > 0, 'native HTTP3 per-stream provider counters sampled');
+is($native_accounting_mismatches, 0,
+    'native per-stream streaming retention sums to connection total');
 note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", produced before release=" . join(',', @produced_at_release)
     . ", QUIC peak sampled=$quic_peak, poll turns=$poll_turns"
-    . ", send_limit=$send_limit, producer blocks=" . join(',', @blocked));
+    . ", send_limit=$send_limit, native peak=$native_retained_peak"
+    . ", native per-stream peaks=" . join(',', @native_stream_peak)
+    . ", producer blocks=" . join(',', @blocked));
 
 for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
     $timer->cancel if $timer && $timer->is_active;
