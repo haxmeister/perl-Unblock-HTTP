@@ -423,7 +423,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
     },
 );
 $watchdog = Linux::Event::Kernel::Timer->new(
-    loop => $loop, after => $streams == 6 ? 60 : 20,
+    loop => $loop, after => $streams == 6 ? 60 : $wide_connection_window ? 45 : 20,
     on_timer => sub ($t) {
         $sample_readers->();
         my @sessions = $server->sessions;

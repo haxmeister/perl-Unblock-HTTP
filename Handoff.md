@@ -1,3 +1,26 @@
+## Confirmed connection-window-sensitive HTTP3 starvation (2026-10-18)
+
+The 12-producer experiment now distinguishes two cases with every Reader
+stream_window=32768 and HTTP3 native send_buffer_limit=8192 unchanged.
+Run 39157872356: 12 producers held for 2s PASS when only QUIC
+connection_window is increased to 33554432 (32 MiB); all 12 finish with
+SHA-256 integrity and producer/Reader fairness checks intact. With the
+original connection_window=458752, the same run FAILED at 20s:
+slow0 received exactly 98184 bytes, siblings each held 32739, QUIC TX
+buffered bytes were 0 and all 12 H3 writers were blocked. This is a
+connection-wide receive-credit/wakeup problem rather than a QUIC TX buffer
+capacity issue. Keep the tight 12-stream failing case; do not weaken it.
+
+Net::QUIC Stream->consume returns both stream and connection RX credit,
+but on_stream_activity currently advertises stream-level send-credit and
+ACK/capacity events. A peer MAX_DATA expansion with no per-stream activity
+may leave HTTP3 output blocked; this is a hypothesis to validate at the
+standalone QUIC layer before a transport fix. Net::QUIC is RELEASED and
+READ-ONLY; no changes without explicit separate maintainer authorization.
+Next CI adds 16 streams with a wide connection window to isolate HTTP3
+per-stream scheduling at higher concurrency before the still-failing tight
+aggregate-credit case. Do not merge/publish HTTP3 or unified with known
+stress failure. No main branches modified.
 ## Aggregate QUIC receive-credit isolation probe (2026-10-18)
 
 After 12-stream tight-window failure, probe CI 39157553715 recorded

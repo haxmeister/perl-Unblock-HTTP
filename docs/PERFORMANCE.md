@@ -73,6 +73,14 @@ UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 \\
     prove -v -b xt/linux-event-quic-six-credit.t
 ```
 
+The stress fixture also accepts `UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1`,
+which sets connection receive credit to 32 MiB without changing any
+individual Reader receive window, producer budget, assertion, or payload.
+This is a diagnostic to distinguish connection-wide MAX_DATA wakeups from
+ordinary per-stream receive flow control. The original bounded aggregate
+window stays the default; the 12-stream tight-window case currently fails
+and must not be skipped to claim a passing stress suite.
+
 These are deterministic concurrency/forward-progress regressions, not
 throughput benchmarks, lifetime memory caps, copy counts or long-duration
 soak tests. Hosted CI can validate the constraints without supplying
