@@ -768,9 +768,24 @@ Next concurrent fairness checkpoint:
   distinct pooled H1 or H2 connections. Two LinuxEvent clients pause
   socket reads for 0.8s while one fast client continues. Each native
   server Transaction writes no more than four 4KiB chunks per deferred
-  event-loop turn and obeys on_drain. Assert fast completion before
-  slow readers resume, SHA-256/callback order and socket queue cap.
-  CI for this new test is running; do not mark it verified yet.
+  event-loop turn and obeys on_drain. It checks that fast completion
+  precedes slow receiver releases, all response digests/lengths and
+  callback orders match, and every sampled socket queue stays below
+  the configured 512KiB limit.
+- CI 39087771958 PASS on upper source 99d19a5cd77b37ab57768af61955ddd4807cab5e:
+  13 distribution files / 552 checks; seven live H1/H2/H3 files /
+  289 checks. This includes normal stream tests, H3 multiplexed
+  responses, H1/H2 accepted backpressure, fatal output limit, and
+  three-client fairness. H1 and H2 each had three separate pooled
+  sockets, both slow readers eventually resumed, and the fast
+  transaction completed first.
+  Observed max socket pending: H1 32832 bytes, H2 32821 bytes.
+  Two native producer on_drain callbacks and two socket on_drain
+  callbacks occurred per protocol. Benchmark smoke passed but its
+  timing is not used as a performance claim.
+- All fairness edits are upper feature tests and workflow only, no
+  production Client/Server changes. Later documentation-only commits
+  do not require a dependency source pin update.
 - Still outstanding: forcing LinuxEvent hard cap with oversized
   writes inside a streamed response producer rather than buffered
   response; measuring engine-internal provider queues and total
