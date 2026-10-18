@@ -60,3 +60,4 @@ jobs:
         run: |
           perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 1000 100 3
           perl -Iblib/lib -Iblib/arch bench/request-setup.pl 3000 3
+          perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
