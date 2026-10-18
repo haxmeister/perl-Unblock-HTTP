@@ -18,6 +18,8 @@ use Unblock::HTTP3::Client;
 # Opt-in workload profiler. Not a CI performance gate.
 # Same HTTP3 Server, Net::QUIC::Driver, TLS, payload, and UDP loopback
 # on both paths. One connection per trial; concurrency is strictly bounded.
+# Comma-separated response sizes cycle through the same request paths in each
+# mode, without introducing a second response accumulator.
 # Each trial forks fresh, separate server/client processes before initializing
 # their event loops or QUIC. Client CPU is process user+system; client VmRSS
 # is sampled, not an allocator high-water mark.
@@ -27,14 +29,16 @@ $warmup      //= 24;
 $rounds      //= 3;
 $concurrency //= 4;
 $body_bytes  //= 16384;
-die "usage: perl bench/h3-workload-profile.pl [samples] [warmup] [rounds] [inflight] [response_bytes]\n"
+die "usage: perl bench/h3-workload-profile.pl [samples] [warmup] [rounds] [inflight] [response_bytes_or_comma_sizes]\n"
     unless $samples =~ /\A[1-9][0-9]*\z/ && $samples <= 20000
         && $warmup =~ /\A[1-9][0-9]*\z/ && $warmup <= 2000
         && $rounds =~ /\A[1-9][0-9]*\z/ && $rounds <= 15
         && $concurrency =~ /\A[1-9][0-9]*\z/ && $concurrency <= 16
-        && $body_bytes =~ /\A[1-9][0-9]*\z/ && $body_bytes <= 1048576;
-
-my $body = 'B' x $body_bytes;
+        && $body_bytes =~ /\A[1-9][0-9]*(?:,[1-9][0-9]*)*\z/;
+my @sizes = split /,/, $body_bytes;
+die "specify at most eight response sizes, each no larger than 1048576\n"
+    if @sizes > 8 || grep { $_ > 1048576 } @sizes;
+my @bodies = map { 'B' x $_ } @sizes;
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
 my $key = "$dir/key.pem";
@@ -106,11 +110,14 @@ sub run_client_trial ($mode, $server_port) {
             $inflight++;
             $max_inflight = $inflight if $inflight > $max_inflight;
             my $issued_at = time();
+            my $body_index = ($sent - 1) % @sizes;
+            my $expected_body = $bodies[$body_index];
+            my $target = @sizes == 1 ? '/profile' : "/profile/$body_index";
             my $measured = $phase eq 'measure' ? 1 : 0;
             my $saw_response = 0;
             my $on_response = sub ($tx, $response) {
                 if (!$response || $response->status != 200
-                    || $response->body ne $body) {
+                    || $response->body ne $expected_body) {
                     $error = "$mode response body/status mismatch";
                     $loop->stop;
                     return;
@@ -161,7 +168,7 @@ sub run_client_trial ($mode, $server_port) {
             if ($mode eq 'direct') {
                 $request = $direct->request(
                     method => 'GET', scheme => 'https',
-                    authority => 'localhost', target => '/profile',
+                    authority => 'localhost', target => $target,
                     receive_body => 'buffered',
                     on_complete => sub ($tx) {
                         $on_response->($tx, $tx->response);
@@ -171,7 +178,7 @@ sub run_client_trial ($mode, $server_port) {
                 );
             } else {
                 $request = $unified->request(
-                    method => 'GET', url => 'https://localhost/profile',
+                    method => 'GET', url => "https://localhost$target",
                     http_version => '3',
                     on_response => $on_response,
                     on_error => $on_error,
@@ -357,8 +364,20 @@ sub run_server ($ready_fh, $done_fh) {
         server => Unblock::HTTP::Server->new(
             http3 => {},
             on_request => sub ($tx, $request) {
+                my $target = $request->target;
+                my $body_index;
+                if (@sizes == 1 && $target eq '/profile') {
+                    $body_index = 0;
+                } elsif (@sizes > 1
+                    && $target =~ m{\A/profile/([0-9]+)\z} && $1 < @sizes) {
+                    $body_index = $1;
+                } else {
+                    $error = "unexpected benchmark target $target";
+                    $loop->stop;
+                    return;
+                }
                 $responses++;
-                $tx->respond(status => 200, body => $body);
+                $tx->respond(status => 200, body => $bodies[$body_index]);
                 $check_done->() if $responses == $warmup + $samples;
             },
             on_error => sub ($tx, $e) {
@@ -516,6 +535,7 @@ sub run_isolated_trial ($mode) {
 print "# HTTP3 loopback: direct engine vs pooled unified Client.\n";
 print "# same QUIC Driver, server, body and concurrency; TLS handshake excluded.\n";
 print "# requested samples=$samples warmup=$warmup rounds=$rounds inflight=$concurrency response_bytes=$body_bytes\n";
+print "# sizes cycle deterministically by request index in both modes.\n" if @sizes > 1;
 print "# CPU uses client-only process CPU clock (user+system); RSS is sampled client VmRSS.\n";
 print "# Every trial uses fresh client and server processes; samples exclude the server process.\n";
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
