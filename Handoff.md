@@ -938,6 +938,39 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Multiple simultaneous H3 receive-credit holds (2026-10-17)
+
+Starting upper ref 56aa303dc959fe1130708304b7313efcf0ba3670;
+engine feature heads: H1 bb8349ef, H2 51fb1ad9, H3 b093bcf8.
+All main refs checked unchanged against saved baselines. Local git
+checkout/fetch unavailable (DNS); GitHub connector publishes explicit
+feature-branch changes. The preceding credit experiment passed upper CI
+39093371363 (552 distribution / 391 live checks).
+
+Next stress slice is test-only. New xt/linux-event-quic-multi-credit.t
+uses one real authenticated QUIC connection, three independent 1 MiB
+native H3 streamed responses with pull Body::Reader and a fourth small
+response. Each slow Reader advertises a 32 KiB stream receive window;
+QUIC connection_window is 256 KiB. Withhold all Reader consumption for
+0.5 seconds. Assert the fast stream completes, each slow producer stalls
+before 256 chunks, and each Reader pending byte count is within its
+advertised stream window. Then release exactly one Reader at a time and
+assert the other Readers remain unfinished with no credited chunks.
+Verify each final digest, length, once-only terminal notification,
+accepted-byte writes, on_drain resumption, and bounded producer bursts.
+These are sampled specific buffer surfaces, not aggregate process
+memory or evidence of zero-copy.
+
+Feature-only test commit 9ce6c64db67a99cf1d4e2aace9d8bb3c04366c06;
+workflow addition d7e75d91b4ac7e458472da2b1d3feb7e8e9a7dd6.
+CI run 39095627619 was started. Its result must be inspected before
+this slice can be considered verified. No production engine, Net::QUIC,
+Uniform::HTTP, main, version, merge or release edits.
+
+Remaining after this verification: native nghttp3/provider retention,
+total process RSS and copy instrumentation, broad multi-origin/QUIC load
+and direct H3 versus unified Client benchmark comparison.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
