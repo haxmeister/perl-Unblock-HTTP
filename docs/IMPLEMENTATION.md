@@ -594,9 +594,12 @@ callback arity fix: 552 distribution checks and nine live files
 / 387 checks. The Reader held 32,739 bytes at release and its
 peak sampled pending_bytes was 32,739 bytes. The producer had
 257 backpressure signals, 257 resumptions, and the polling
-consumer used 667 scheduled turns. A subsequent test change
-adds explicit sampled window and mid-hold producer-stall
-assertions and must pass its own coordinated CI.
+consumer used 667 scheduled turns. Strengthened CI 39093070343 PASS with 552 distribution and
+389 live checks. It additionally proves the producer had
+submitted only 10 of 512 full 4KiB chunks at the credit-release
+point, and peak sampled Reader pending remained 32,739 bytes,
+below the configured 32KiB stream receive window. This confirms
+a real receive-credit stall rather than delayed callbacks alone.
 
 These are only H3 Reader-owned queued body bytes and observed
 application/producer behavior. The native nghttp3 retained
