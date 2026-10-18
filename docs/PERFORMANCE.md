@@ -15,11 +15,20 @@ perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 1000 100 7
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 1 2
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 4 16384
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 200 40 7 4 262144
+perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 12 16384
+perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 8 4096,262144
 ```
 
 The `h3-workload-profile.pl` arguments are **measured requests,
 warmup requests, rounds, maximum requests in flight, and response-body
-bytes**. The accepted ranges are documented in its usage error.
+bytes**. The fifth argument also accepts up to eight comma-separated byte
+sizes (for example `4096,262144`, each at most 1 MiB). Each size is
+selected by the request's index in the current warmup or measured phase,
+and encoded in its URL path so out-of-order multiplexed completion cannot
+change the expected body. Both modes use the same deterministic request
+sequence, server, payload contents and bounded concurrency. A single size
+retains the original `/profile` path for backwards comparison.
+The accepted ranges are documented in the script's usage and validation.
 
 A trial uses two fresh child processes: one running the HTTP/3 server and
 one running the measured client. They communicate over loopback UDP using
