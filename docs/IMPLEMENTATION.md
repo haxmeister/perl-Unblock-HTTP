@@ -507,11 +507,24 @@ The upper integration workflow pins this source; CI 39087487036
 PASS with 13 distribution files / 552 checks and six live
 TCP/QUIC files / 226 checks.
 
-A follow-up xt/linux-event-pool-fairness.t now exercises two
-simultaneously paused slow readers plus one fast connection, using
-per-tick bounded streamed producers and native on_drain. Its
-separate CI run must pass before this additional fairness milestone
-is considered verified.
+New xt/linux-event-pool-fairness.t exercises two simultaneously
+paused slow readers plus one fast connection on the same shared
+origin, with three framework-owned TCP sockets. Every H1/H2 producer
+uses native Transaction->respond(stream_body => 1, on_drain => ...)
+and limits itself to four 4KiB chunks per deferred loop turn.
+Each response is 2 MiB. CI 39087771958 PASS on upper test source
+99d19a5cd77b37ab57768af61955ddd4807cab5e:
+13 distribution files / 552 checks and seven live TCP/QUIC files /
+289 checks. The fast response finished while both other clients were
+still paused for 0.8s. All six per-protocol slow/fast response copies
+have correct SHA-256 digests, callback order and once-only completion.
+Peak sampled socket queue per protocol was 32,832 B for H1 and
+32,821 B for H2, below the configured 512 KiB cap.
+
+This is bounded concurrent scheduling fairness for three sockets on
+one localhost endpoint, NOT a measured fairness guarantee under
+hundreds of clients or across H3 streams/origins. The engine/provider
+and kernel pending bytes still require separate monitoring.
 
 ## Later design milestones
 
