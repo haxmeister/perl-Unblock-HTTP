@@ -268,13 +268,26 @@ the configured 32KiB stream window. This is direct
 receive-credit stalling evidence, but still not total
 process memory instrumentation.
 
-Body::Reader->pending_bytes is the Reader's queued decoded body
-bytes ONLY. It does NOT count all retained H3 native data, QUIC
-retransmission/stream/packet buffers, network socket memory or
-Perl object allocator overhead. An actual end-to-end bounded
-memory measurement must combine native engine statistics,
-QUIC buffer accounting and process high-water metrics under
-a steady slow receiver, not extrapolate these Reader values.
+An additional live observation samples the public
+Net::QUIC::Connection->send_buffered_bytes() on the server.
+That is outgoing Stream data retained for transmission,
+including bytes awaiting acknowledgement. CI 39093371363
+PASS (552 distribution and 391 live checks) measured
+8,192 bytes at the 500 ms credit-hold release, and 8,192
+bytes as the maximum sampled QUIC send-buffer count.
+The client-side Reader still held 32,739 incoming bytes.
+The producer had submitted only 10/512 chunks at release.
+
+These counters are distinct and cannot simply be added as
+total process memory: they cover the Reader's decoded
+queued incoming bytes and QUIC's retained outgoing Stream
+data, but not nghttp3's native send/provider retention,
+QUIC packet metadata and retransmission allocations,
+kernel networking buffers, or Perl allocator overhead.
+An end-to-end bounded memory measurement needs those
+additional counters and process high-water metrics under
+controlled traffic; this fixture establishes neither a
+general QUIC send-buffer cap nor a process RSS bound.
 No rate or throughput claim is made from this correctness fixture.
 
 ## Next benchmarks to implement
