@@ -433,6 +433,43 @@ different hard-limit option. Further work should measure real output
 queue sizes and exercise producer resume callbacks under sustained
 slow peers, including HTTP/3. No engine or core API change was needed.
 
+## Live cooperative producer backpressure with sampled hard-capped socket queue (2026-10-17)
+
+xt/linux-event-producer-backpressure.t exercises native H1 and H2
+server Transaction->respond(stream_body => 1, on_drain => ...),
+write(8KiB) and end(). The LinuxEvent receiving socket pauses reads
+for 400 milliseconds, while a producer sends 8 MiB of response data,
+never more than eight chunks in an event-loop turn. A write returning
+false is *accepted* but pauses subsequent production. The application
+resumes from on_drain without resending those accepted bytes, and
+defers end() when the final write returned false.
+
+The actual LinuxEvent server socket is configured with high and low
+watermarks (32KiB / 8KiB), a max_pending_bytes limit of 512KiB,
+and SO_SNDBUF 32KiB. The fixture samples the official pending_bytes
+accessor following writes and drain notifications, and verifies
+that the observed socket queue remains within the configured limit.
+The sampling does NOT count native HTTP2 provider buffers, kernel
+SO_SNDBUF content, or all allocations; it also does not force the
+hard limit to reject a write. Consequently this is not yet a proof
+of bounded worst-case total memory or oversized-write behavior.
+
+CI 39085138364 PASS at a0fd7adb52d6126d44e73800dde7de4f4ca268e2:
+13 distribution files / 552 checks and five TCP/QUIC live files /
+203 checks. The test verifies producer pause, resumptions, exactly
+one end, digest and byte equality, client/server completion, callback
+order, and per-turn emission budget. On that CI runner, H1 had
+51 backpressure events / 51 producer resumptions, peak sampled TCP
+pending queue 32,856 bytes; H2 had 95/95 with peak 32,821 bytes.
+H2 had 64 transport drain callbacks because H2 flow control can
+block and resume the stream independently of the TCP queue.
+
+The change is exclusively in upper feature tests and CI; production
+Client, Server and H1/H2/H3 engine source is unchanged. Follow-up
+testing should cover hard-cap rejection, partial transport writes,
+multiple slow peers with fairness, total engine memory high-water,
+and H3 stream producer backpressure. See docs/BENCHMARKING.md.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
