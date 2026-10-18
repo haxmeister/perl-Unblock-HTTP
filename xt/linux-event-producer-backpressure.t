@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test::More;
 use Digest::SHA qw(sha256_hex);
+use Scalar::Util qw(refaddr);
 
 use Linux::Event::Loop;
 use Linux::Event::Kernel::Timer;
@@ -114,7 +115,7 @@ for my $protocol ('http/1.1', 'h2') {
      $CLIENT_HEADERS, $SCHEDULED, $WAITING, $PRODUCER_DONE) =
        (Linux::Event::Loop->new, $protocol, undef, undef,
         undef, undef, undef,
-        (0) x 20);
+        (0) x 21);
     $DIGEST = Digest::SHA->new(256);
     @CLIENT_EVENTS = ();
 
@@ -164,7 +165,8 @@ for my $protocol ('http/1.1', 'h2') {
                 on_drain => sub ($active_tx) {
                     $DRAIN_CALLBACKS++;
                     $ERROR ||= 'unexpected transaction in drain callback'
-                        if $active_tx != $SERVER_TX;
+                        if !defined($active_tx)
+                            || refaddr($active_tx) != refaddr($SERVER_TX);
                     if ($WAITING) {
                         $WAITING = 0;
                         $PRODUCER_RESUMES++;
