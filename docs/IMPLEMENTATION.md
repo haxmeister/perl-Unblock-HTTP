@@ -565,6 +565,46 @@ an individual H3 stream and therefore is not equivalent to the
 H1/H2 socket-pause fixtures. Additional instrumented memory and
 QUIC receive-flow-control testing remains outstanding.
 
+## HTTP/3 pull Reader credit held across a live QUIC/TLS connection (2026-10-17)
+
+The live xt/linux-event-quic-reader-credit.t fixture tests actual
+receive-credit withholding. It pairs the reusable upper Server
+with the existing low-level HTTP3 Client on a shared authenticated
+QUIC connection. The client explicitly selects receive_body =>
+'stream' on one request and uses Body::Reader->next_chunk() in
+pull mode, WITHOUT a response on_data callback. The upper
+high-level Client intentionally manages receive_body and defaults
+to buffering when no on_data is supplied; this fixture does not
+silently change that application-facing contract.
+
+The Net::QUIC client advertises stream_window=32768 and
+connection_window=131072. A 2 MiB streaming Server response
+emits 4 KiB chunks, with cooperative native write(false) and
+on_drain. The Reader is not consumed for 0.5 seconds. It retains
+incoming body bytes without returning the corresponding QUIC
+credit, the large response stays nonterminal, and a second short
+H3 response on the same QUIC connection completes. After the
+hold, a timer-driven consumer pulls up to eight Reader chunks
+per turn, returning credit as each chunk is consumed. It checks
+that the producer resumes, completes exactly once, and delivers
+the exact full body with SHA-256 integrity.
+
+CI 39092855745 PASS after a fixture-only QUIC helper on_ready
+callback arity fix: 552 distribution checks and nine live files
+/ 387 checks. The Reader held 32,739 bytes at release and its
+peak sampled pending_bytes was 32,739 bytes. The producer had
+257 backpressure signals, 257 resumptions, and the polling
+consumer used 667 scheduled turns. A subsequent test change
+adds explicit sampled window and mid-hold producer-stall
+assertions and must pass its own coordinated CI.
+
+These are only H3 Reader-owned queued body bytes and observed
+application/producer behavior. The native nghttp3 retained
+send buffer, QUIC queued/unacknowledged packets, retransmissions,
+kernel datagrams, allocator overhead and RSS remain unmeasured.
+Do not infer a whole-process memory high-water guarantee.
+No engine or QUIC dependency source changes were needed.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
