@@ -730,15 +730,52 @@ upper optional LinuxEvent adapter's unblock_send() checks is_closed,
 dies after a synchronous fatal write and the native engine must
 abort rather than invoke on_drain or replay rejected bytes.
 
-New milestone: add an isolated real TCP hard-limit-exceed test using
-the upper Server and actual H1/H2 native engines. Exercise a bounded
-oversized response with a paused client and a tiny socket hard cap.
-Verify structured output_limit, no completed/successful HTTP
-transaction, exactly-once terminal error, no producer on_drain replay.
-If platform variation prevents a deterministic H2 transport overflow,
-report it distinctly rather than pretend the H2 stream flow-control
-limit was reached. CI-verify and update handoff. Then consider
-several simultaneously slow clients with a fairness test.
+Completed hard-limit and cross-engine correction:
+- New xt/linux-event-hard-output-limit.t uses a 2 MiB buffered server
+  response, a paused client read side, and LinuxEvent max_pending_bytes
+  4096 to deterministically force fatal output_limit in both H1 and H2.
+  Both close host, report structured type/limit/pending and never
+  deliver a completed response or invoke on_drain for rejected bytes.
+- Initial upper CI 39086673892 exposed a real H1 defect: H1 Server
+  marked on_finish(complete) before any pipelined buffered response
+  bytes were accepted by the attached host. H2 correctly marked error.
+- H1 feature Server now retains complete HTTP/1 pipeline coalescing
+  while deferring terminal callbacks for attached Transactions until
+  the entire buffered batch is accepted by unblock_send(). A fatal
+  thrown rejection marks pending transactions error, exactly once.
+  False returned by a still-alive host remains complete-byte acceptance.
+  Manual mode, graceful host close, native borrowed input, pipeline
+  serialization and switch semantics retain their prior behavior.
+- Initial H1 naive gate broke t/50 pipelined output coalescing and
+  graceful close. Replaced it; did not weaken existing tests.
+  New H1 t/53-attached-output-completion.t covers rejection, accepted
+  congestion, pipelining and unchanged manual output. H1 source at
+  783e2a951dafac2756ba2c3cf34ea35fc043de6f;
+  CI matrix 39087355734 PASS on Linux 5.16/latest, macOS/latest and
+  Windows 5.40: 37 files / 324 tests on Linux latest.
+  H1 framework examples CI 39087355806 PASS.
+- Upper workflow pin updated to verified H1 feature source SHA above.
+  Unified CI 39087487036 PASS at upper commit
+  b9a5a2d2a36aee14bde75be439ee3097d1bf6786:
+  13 distribution files / 552 checks and six live TCP/QUIC files /
+  226 checks, including H1/H2 actual fatal output_limit regressions.
+  Existing direct-vs-unified and setup benchmark smoke passed.
+- No source edits to HTTP2/HTTP3/Net::QUIC/Uniform; no main edits,
+  merges, tags, releases or version bumps.
+
+Next concurrent fairness checkpoint:
+- New xt/linux-event-pool-fairness.t streams 2 MiB on each of three
+  distinct pooled H1 or H2 connections. Two LinuxEvent clients pause
+  socket reads for 0.8s while one fast client continues. Each native
+  server Transaction writes no more than four 4KiB chunks per deferred
+  event-loop turn and obeys on_drain. Assert fast completion before
+  slow readers resume, SHA-256/callback order and socket queue cap.
+  CI for this new test is running; do not mark it verified yet.
+- Still outstanding: forcing LinuxEvent hard cap with oversized
+  writes inside a streamed response producer rather than buffered
+  response; measuring engine-internal provider queues and total
+  allocations; H3 response producer backpressure and fair multiplexing.
+
 
 No changes to any main branch, no engine or QUIC/Uniform sources by
 default, no release, tags, merge, or version bumps.
