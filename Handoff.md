@@ -1,3 +1,44 @@
+## Published-Net::QUIC 0.05 request constructor breakdown complete (2026-10-18)
+
+Feature code 36a013195e633d33ef8b59e8379f7c48753a3685 PASSED
+complete upper primary real-QUIC integration GitHub Actions
+39174909939 against **published CPAN Net::QUIC 0.05**; optional
+Net::QUIC feature integration 39174909923 PASS. Both run unchanged
+live TCP/QUIC stress, lifetime tests and published-dependency profiler.
+Upper source 34a3070f H3-only Alt-Svc callback cleanup also PASS
+primary full suite 39174722982 and QUIC-feature diagnostic 39174722889.
+
+The benchmark-only `UNBLOCK_H3_DISPATCH_SPLIT=1` phase now intercepts
+URI->new, Uniform::HTTP::Request->new and _ClientOperation->new on
+the real upper Client with a fake no-network HTTP3 engine. Primary
+CI 39174909939 reported in us/request over 3000 x 3 rounds:
+- request() 74.392 / 74.790 / 74.245
+- URI constructor 10.151 / 10.109 / 9.990
+- Uniform request constructor 21.453 / 21.600 / 21.418
+- operation constructor 2.217 / 2.246 / 2.200
+- other outside _dispatch (residual) 30.511 / 30.631 / 30.485
+- _dispatch (including fake request) 10.059 / 10.204 / 10.153
+- mock engine request 2.010 / 2.015 / 1.991.
+
+These INSTRUMENTED timings are not equivalent to the same benchmark's
+unmodified loop totals (direct_mock median 16.583us,
+unified_mock median 82.278us on that runner), nor to the real
+QUIC 2048-request baseline. Constructor timings are inclusive
+and probe calls introduce measurement overhead. This identifies
+URI + Uniform construction as sizable, with nontrivial remaining
+validation/pool/callback work; no single high-ROI fast-path rewrite
+is yet established. Do NOT weaken URI validation, drop Uniform
+canonical types, or add a new abstraction on the strength of
+hosted CI numbers. Follow-up: repeat on a quiet controlled machine,
+isolate realistic application request patterns and consider a
+narrow change only if a stable end-to-end benefit is demonstrated.
+
+All existing bounds on completed HTTP3 Transaction retention hold;
+no native payload copy/alloc counts have been measured.
+Main refs, HTTP1/HTTP2/HTTP3 engine, Net::QUIC 0.05, versions,
+tags and releases remain untouched. HTTP3 0.13 is unreleased.
+No release audit requested or begun.
+
 ## Request-path constructor cost instrumentation (2026-10-18)
 
 CPU-only mock H3 diagnostic at upper 92d9c1e CI 39173943511 PASS

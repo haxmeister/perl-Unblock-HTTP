@@ -89,6 +89,34 @@ cost. These phase totals are diagnostic and MUST NOT be directly
 compared with the uninstrumented medians as if they were the same
 measurement.
 
+The full constructor-level diagnostic passed on published Net::QUIC
+0.05 CI [39174909939](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39174909939).
+All three rounds measured the same 3000 mocked requests/callbacks.
+The reported averages in microseconds/request were:
+
+| Measured call/boundary | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Instrumented unified request() | 74.392 | 74.790 | 74.245 |
+| URI->new | 10.151 | 10.109 | 9.990 |
+| Uniform::HTTP::Request->new | 21.453 | 21.600 | 21.418 |
+| _ClientOperation->new | 2.217 | 2.246 | 2.200 |
+| Outside dispatch residual | 30.511 | 30.631 | 30.485 |
+| _dispatch (including fake request) | 10.059 | 10.204 | 10.153 |
+| Fake engine request | 2.010 | 2.015 | 1.991 |
+
+These boundaries show no single justified replacement for canonical URL
+and Uniform construction, and the residual includes miscellaneous
+validation, callback extraction, origin-key/pool operations and
+timing overhead. Constructor timing and enclosing request timing
+**overlap**; do not sum each line, assume exact cost attribution, or
+infer network/QUIC speedup from this mock.
+The complete upper published-0.05 workflow and the separate optional
+transport-feature workflow
+[39174909923](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39174909923)
+were successful.
+
+
+
 The pre-constructor-split primary published-Net::QUIC-0.05 integration
 workflow [39174402639](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39174402639)
 PASS reported three separate CLOCK-INSTRUMENTED rounds:
