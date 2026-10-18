@@ -182,11 +182,13 @@ sub run_client_trial ($mode, $server_port, $round) {
                         $phase_target = $samples;
                         ($sent, $finished, $max_inflight) = (0, 0, 0);
                         $snapshot_heap->('before');
-                        $cpu_start = clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
-                        $start = time();
+                        # Sampling must finish BEFORE starting the timed
+                        # measured phase. Reading smaps can be expensive.
                         $rss_start = sampled_rss_kib();
                         $memory_start = sampled_smaps_kib();
                         $rss_peak = $rss_start;
+                        $cpu_start = clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
+                        $start = time();
                         $schedule->();
                     } else {
                         $elapsed = time() - $start;
