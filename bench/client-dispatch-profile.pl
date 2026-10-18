@@ -284,3 +284,59 @@ if ($split) {
                     / $iterations;
     }
 }
+
+# Also measure the miss path with sixteen prebuilt, distinct URLs. This
+# defeats the four-entry FIFO deliberately; results expose any overhead
+# when a caller does not reuse URL strings. No network work happens.
+my $miss_ab = $ENV{UNBLOCK_H3_DISPATCH_MISS_AB} // '0';
+die "UNBLOCK_H3_DISPATCH_MISS_AB must be 0 or 1\n"
+    unless $miss_ab =~ /\A[01]\z/;
+if ($miss_ab) {
+    my @distinct_urls = map { "https://localhost/unique/$_" } 0 .. 15;
+    $client->{url_parse_cache} = {};
+    $client->{url_parse_order} = [];
+    my %times;
+    for my $round (1 .. $rounds) {
+        my @order = $round % 2
+            ? qw(uncached_misses cached_misses)
+            : qw(cached_misses uncached_misses);
+        for my $name (@order) {
+            $client->{url_parse_limit} =
+                $name eq 'uncached_misses' ? 0 : 4;
+            my $initial_finish = $finished;
+            my $initial_response = $responses;
+            my $cursor = 0;
+            my $start = time();
+            for (1 .. $iterations) {
+                my $url = $distinct_urls[$cursor++ % @distinct_urls];
+                my $op = $client->request(
+                    method => 'GET', url => $url, http_version => '3',
+                    on_response => $on_response, on_finish => $on_finish,
+                );
+                my $tx = $op->transaction
+                    or die "miss A/B: operation did not dispatch";
+                $tx->finish;
+            }
+            my $elapsed = time() - $start;
+            die "miss A/B: callback count mismatch"
+                unless $finished - $initial_finish == $iterations
+                    && $responses - $initial_response == $iterations;
+            die "miss A/B: pool not quiescent"
+                if keys(%{ $client->{active_operations} })
+                    || $pool->{connections}[0]{active}
+                    || $client->pending_count || @deferred;
+            push @{ $times{$name} }, $elapsed;
+            printf "%-16s round=%d %.3f us/request (16 alternating URLs)\n",
+                $name, $round, 1_000_000 * $elapsed / $iterations;
+        }
+    }
+    my %median;
+    for my $name (qw(uncached_misses cached_misses)) {
+        my @ordered = sort { $a <=> $b } @{ $times{$name} };
+        $median{$name} = $ordered[int(@ordered / 2)];
+        printf "# %-16s median %.3f us/request\n",
+            $name, 1_000_000 * $median{$name} / $iterations;
+    }
+    printf "# cached/uncached 16-URL miss-path wall ratio %.3f (diagnostic)\n",
+        $median{cached_misses} / $median{uncached_misses};
+}

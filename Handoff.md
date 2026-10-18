@@ -1,3 +1,23 @@
+## URL cache miss-path A/B control (2026-10-18)
+
+To avoid only measuring the ideal repeated-two-URL pattern,
+bench/client-dispatch-profile.pl gained opt-in
+UNBLOCK_H3_DISPATCH_MISS_AB=1. It creates 16 URL strings before the
+timer, then compares cached/uncached request+callback cycles on
+the same already-warm Client and engine while rotating across the
+16 paths. Four-entry FIFO cannot hold all 16, so the cached run
+still uses the canonical URI parser on every request. This
+diagnoses possible cache-miss overhead (extra hash/queue work).
+The test asserts response and finish counts, no leaked active
+operations or pending requests; it does not claim native copies.
+Primary integration CI enables it alongside the existing
+constructor phase profile and the real-QUIC three-mode A/B.
+
+Do not retain the cache on the strength of the repeated-URL mock
+alone. Await the real-QUIC A/B and miss-path measurements, then
+keep or revert the production optimization based on paired evidence
+and correctness. No main/merge/release/version changes.
+
 ## Paired real-QUIC URL cache A/B profile (2026-10-18)
 
 Upper URL cache feature first commit 199e3b3b804f0acfdacd41d63cd4b444ccce2cdf

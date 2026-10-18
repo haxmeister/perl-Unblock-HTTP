@@ -139,6 +139,15 @@ time and an uncached/cached ratio. No CI timing threshold is imposed.
 The `UNBLOCK_H3_PROFILE_CACHE_AB` mode is diagnostic, not a public API;
 uncached experiments do not alter the normal application behavior.
 
+For the opposite workload, set
+`UNBLOCK_H3_DISPATCH_MISS_AB=1` with the CPU-only
+`bench/client-dispatch-profile.pl`. It runs an A/B using 16
+preconstructed URL strings on the same Client, exceeding the cache's
+four slots so each request misses. This measures cache-miss overhead
+without mixing in URL-string construction or fake network work. A
+meaningful slowdown there would be a reason to reconsider keeping
+the parse cache; it is not an end-to-end HTTP3 latency measurement.
+
 ## CPU-only request-dispatch control
 
 `bench/client-dispatch-profile.pl` compares a **ready, reusable**
