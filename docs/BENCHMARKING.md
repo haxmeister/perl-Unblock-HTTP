@@ -129,6 +129,29 @@ Run:
     perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 5000 500 5
     perl -Iblib/lib -Iblib/arch bench/request-setup.pl 20000 5
 
+## Slow-reader correctness evidence (2026-10-17)
+
+The upper branch's xt/linux-event-slow-reader.t is a correctness
+fixture, not a throughput benchmark. The actual LinuxEvent client
+socket pauses reading for 120 milliseconds, then resumes. Its server
+sends a reproducible six-MiB response through the unchanged H1/H2
+engines using a 16 KiB high / 4 KiB low output-watermark configuration.
+The test verifies per-byte SHA-256 integrity and response lifecycle
+after read resumption. CI 39083903027 passed 552 distribution tests
+and 168 live TCP/QUIC tests including this fixture.
+
+On that CI runner H1 reported one real false result from the transport
+write method and one later on_drain callback. H2 reported none:
+connection and stream credit can limit H2 send output upstream of
+the TCP transport. A successful slow-receiver transfer without a
+transport-level false return is not evidence of no flow control.
+
+The LinuxEvent high_watermark is advisory, not a hard cap on bytes.
+LinuxEvent also has max_pending_bytes, but the upper layer does not
+manage that queue or expose a pending-byte high-water measurement.
+We have not established a bounded worst-case memory commitment,
+per-chunk copy counts, or actual sustained receiver-rate throughput.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
