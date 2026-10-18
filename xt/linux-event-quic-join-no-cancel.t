@@ -293,15 +293,15 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                                     if $poll_timer && $poll_timer->is_active;
                                 undef $poll_timer;
                                 $advance->();
-                            };
-                $issue_slow->(0);
-                $issue_slow->(1);
+                            }
                             $loop->stop if $completed == $streams + 1 || $error;
                         },
                     );
                     $error ||= "slow$i request was not admitted"
                         unless $client_tx[$i];
-                }
+                };
+                $issue_slow->(0);
+                $issue_slow->(1);
                 my $fast = $h3->request(
                     method => 'GET', scheme => 'https',
                     authority => 'localhost', target => '/fast',
