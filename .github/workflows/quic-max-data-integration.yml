@@ -31,7 +31,7 @@ jobs:
             perl-Net-QUIC:1606308eeeaf29f2601fa166046703a4b4ba9491 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
-            perl-Unblock-HTTP3:91aaced500e6aaf2eba9818ad192398c9cf62f15; do
+            perl-Unblock-HTTP3:3f194ec51b19de73a986612763954c4184cb21d6; do
             project=${spec%%:*}
             revision=${spec#*:}
             source_dir="/tmp/unblock-sources/$project"

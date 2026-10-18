@@ -1,3 +1,46 @@
+## Unified completed-operation ownership and H3 weak-queue compaction (2026-10-18)
+
+The suspected unified Client lifecycle cycle was independently reproduced
+by new t/22-client-operation-lifetime.t in test-only upper commit
+d7b5d1fc5beee1ca96539e892732f9579b3edcd1, with 9 / 43 new
+assertions failing across mocked HTTP1/2/3. The corrected upper Client
+commit 9f47d2b4ea8370f5c215261cbe9474bebaae2801 uses a Client-owned
+strong active_operations registry; H3/H2/H1 Transaction callbacks capture
+weak references back to operation/client/pool/connection. Terminal on_finish
+removes ownership after user callbacks, preserving real transaction()
+identity for caller-retained operations and exactly-once completion.
+H3 stream-credit refusals and engine exceptions clear the active slot.
+No body hot-path wrapper, engine ABI, or Net::QUIC change.
+
+The upper PRIMARY published Net::QUIC 0.05 run 39171144266 PASS
+(distribution tests, all real socket and Reader stress including 10s hold,
+2048-request direct/unified profiler, benchmark smokes). Upper separate
+unreleased QUIC feature diagnostic 39171144260 PASS. The 2048 workload
+(128 warmup, 16 in flight, 4096/16384-byte response alternation, 2
+isolated rounds) shows unified private memory 7332->7520 KiB in round 1
+and 7420->7524 KiB in round 2; direct 6444->6476 and 6276->6368 KiB.
+This resolves the previously observed ~95 MiB unified retained footprint;
+RSS and PSS also remain near-flat. CI timings are descriptive only.
+
+The same profiler exposed residual ready_transactions array LENGTH 2176
+for unified mode, even with bounded memory: weak entries expired behind
+an old still-live weak head, preventing head-only pruning. HTTP3 feature
+3f194ec51b19de73a986612763954c4184cb21d6 adds a periodic 64-callback
+insertion expired-slot compaction for both transaction and informational
+queues, and t/27 tests a live old weak head + 512 expired weak entries
++ a strong pull-only entry, validating FIFO and bounded weak tail.
+The upper CI workflow feature pins NOW point to that HTTP3 commit. The
+HTTP3 standalone four-Perl matrix 39171819978 and interop 39171819937
+have been triggered and must be checked. Run the new upper full workflow
+against CPAN Net::QUIC 0.05 and VERIFY ready_tx stays bounded at every
+256-completion checkpoint, as well as memory, private/PSS/RSS, tx count,
+and 2048 completion integrity in both direct/unified rounds.
+
+No main changes, merge, tag, release, version bump, branch deletion, or
+Net::QUIC / HTTP1 / HTTP2 source modification. HTTP3 0.13 remains an
+unreleased candidate. Measure workload trends before claiming compaction
+fully verified; still no allocation/copy rate measurement.
+
 ## Retention correction under full real-QUIC integration (2026-10-18)
 
 The isolated 2048-request profiler confirmed ready_transactions grew by
