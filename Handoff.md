@@ -673,9 +673,43 @@ real LinuxEvent 0.117; do not assert engine-internal queue limits based
 on transport pending bytes. No stream implementation/API changes
 unless new failures expose a verified defect.
 
-All source/test edits remain upper feature-only. No main changes,
-releases, merges, tags or version bumps. CI validation and outcome to
-be recorded here after the source checkpoint.
+Implemented on upper feature branch:
+- New xt/linux-event-producer-backpressure.t: live H1 and H2 TCP socket
+  with 0.4 seconds of paused receiver reads, 8 MiB streamed response,
+  8 KiB producer writes and a maximum 8-chunk burst per event-loop turn.
+  Producer stops immediately when native tx->write() returns false
+  (bytes accepted), and resumes only from on_drain; no replay of written
+  bytes. After final blocked chunk, end() waits for the next drain.
+- Server LinuxEvent stream sets high_watermark 32768,
+  low_watermark 8192, max_pending_bytes 524288 and SO_SNDBUF 32768.
+  pending_bytes is sampled from the framework after send and drain,
+  recording the maximum sampled TCP queue. This does NOT include
+  HTTP2 internal provider/flow-control bytes or kernel socket buffers,
+  and the test does not attempt to force the hard cap to reject output.
+- CI 39085138364 PASS on production-unchanged source/test commit
+  a0fd7adb52d6126d44e73800dde7de4f4ca268e2:
+  13 distribution files / 552 checks and five live files / 203 checks.
+  The full direct-vs-unified and setup benchmark smoke also passed.
+  Measured on that CI host: H1 51 blocked writes, 51 producer resumes,
+  51 transport drains, peak sampled pending 32856 bytes; H2 95 blocked
+  writes, 95 producer resumes, 64 transport drains, peak sampled pending
+  32821 bytes. Both preserve full SHA256, once-only transaction finish,
+  exactly one end, callback order, fairness burst and no reads
+  during pause. The difference between H2 producer and socket drain
+  counts is expected: engine stream flow control can block independently.
+- Follow-up test-only commit 42b1f302 adds a guard against calling
+  end() immediately after a final accepted write that returned false;
+  its source CI is pending at this handoff checkpoint. This adds no
+  API or engine source change.
+
+Still unproven: worst-case memory usage across engine provider queues,
+enforcement when the hard pending-output cap is actually exceeded,
+partial/oversized transport write handling, sustained multi-client
+slow-consumer fairness and H3 producer backpressure. Do not claim the
+socket high watermark itself is a hard upper bound.
+
+No H1/H2/H3, Net::QUIC, Uniform::HTTP or main source changes; no
+merges, tags, releases or version bumps.
 
 ## Current implementation
 
