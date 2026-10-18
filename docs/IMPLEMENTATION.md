@@ -621,6 +621,57 @@ metadata/retransmission allocations, kernel queues and RSS are
 not accounted for by these counters. No engine or QUIC
 dependency source changes were needed.
 
+## Multiple H3 receive-credit holds and aggregate send fairness (2026-10-17)
+
+xt/linux-event-quic-multi-credit.t opens one real TLS/QUIC socket
+with three 1 MiB H3 streamed responses, each using a pull-mode
+Body::Reader and 32768-byte individual QUIC receive window. A fourth
+fast H3 response finishes while all three Readers hold credit.
+The test then drains Readers strictly one at a time, asserting that
+unreleased responses remain incomplete and receive no credited body.
+All payload digests, lifecycle events and producer chunk counts match.
+
+The first fixture used a connection-wide 8192-byte H3 native
+send_buffer_limit. It deadlocked when three producers filled the
+shared retained-body budget while their Readers withheld credit
+(upper CI 39095627619). Adding the nghttp3 partial-write
+block_stream/unblock_stream handshake to the HTTP3 FEATURE engine
+was correct output-scheduling work but did not resolve this distinct
+aggregate producer-fairness problem (upper CI 39096018997).
+Increasing the global threshold to 131072 also failed in
+39096310032: Reader0 consumed 90112 bytes, then stalled behind
+other producers' retained native body bytes. Per-stream fair
+producer scheduling with a bounded aggregate budget is still TODO.
+
+The isolated receive-credit regression uses a 4 MiB H3
+send_buffer_limit, exceeding the three 1 MiB response bodies.
+It deliberately does NOT test producer write(false) or on_drain:
+the existing xt/linux-event-quic-reader-credit.t does those
+things with a true 8192-byte native threshold and one withheld
+Reader. The new multi-reader test instead establishes stream
+isolation and QUIC receive-credit behavior without confusing
+them with the unresolved shared producer budget.
+
+Source/test commit ceeca6638e6faf6f2561089fcaaf3d5ad0c626d7,
+upper LinuxEvent CI 39096607845 PASS: 552 distribution tests
+and ten real TCP/QUIC test files / 446 live checks. Benchmark
+smoke passed but supplied no reliable speed claim.
+Each uncredited Reader had 32739 queued bytes at release
+(under 32768), and QUIC's sampled send-buffer retention
+peaked at 3061953 bytes with the deliberately high threshold.
+These measurements do not bound total process memory.
+
+HTTP3 fix source 14eaaf2f94173650b830799a2f43fca0c77ab0a1
+passed native test matrix 39095993708 and interop 39095993713;
+upper CI pins that source. Only upper and HTTP3 authorized
+feature branches changed. HTTP1/HTTP2, Net::QUIC, Uniform,
+main, versions, tags, merges and releases remain untouched.
+
+NEXT: native nghttp3 per-stream retained-buffer observability,
+a bounded fair aggregate producer budget with regression at
+8192/131072, process RSS/copy measurement, and larger-scale
+direct-H3 vs unified stress benchmarking.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
