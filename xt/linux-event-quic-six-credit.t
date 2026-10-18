@@ -13,9 +13,10 @@ use Linux::Event::Loop;
 use Unblock::HTTP::QUIC;
 use Unblock::HTTP::Server;
 
-# Six H3 1 MiB producers and an independent fast stream share one QUIC
-# connection with 8192 bytes of advisory native producer send budget.
-# Each of six pull Readers owns its receive credit; release sequentially.
+# Default: six 1 MiB producers and an independent fast stream share one
+# QUIC connection with 8192 bytes of advisory native producer send budget.
+# A bounded opt-in stress mode uses more independently held pull Readers and
+# a longer hold. Keep the default six-producer regression unchanged.
 # This is a real-socket load and fairness regression, not a memory cap.
 my $dir = tempdir(CLEANUP => 1);
 my $cert = "$dir/cert.pem";
@@ -31,7 +32,12 @@ my $loop = Linux::Event::Loop->new;
 my ($server, $client, $server_timer, $client_timer, $client_socket);
 my ($hold_timer, $poll_timer, $watchdog);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
-my $streams = 6;
+my $streams = $ENV{UNBLOCK_H3_CREDIT_STREAMS} // 6;
+die "UNBLOCK_H3_CREDIT_STREAMS must be an integer from 6 through 16\n"
+    unless $streams =~ /\A(?:[6-9]|1[0-6])\z/;
+my $hold_seconds = $ENV{UNBLOCK_H3_CREDIT_HOLD_SECONDS} // 0.5;
+die "UNBLOCK_H3_CREDIT_HOLD_SECONDS must be 0.5, 2 or 3\n"
+    unless $hold_seconds =~ /\A(?:0\.5|2|3)\z/;
 my $send_limit = 8192;
 my $chunk = '0123456789abcdef' x 256;  # 4 KiB
 my $parts = 256;                       # 1 MiB per slow stream
@@ -157,7 +163,7 @@ $server = Unblock::HTTP::QUIC->server(
         on_request => sub ($tx, $request) {
             my $target = $request->target;
             $requests++;
-            if ($target =~ m{\A/slow([0-5])\z}) {
+            if ($target =~ m{\A/slow([0-9]+)\z} && $1 < $streams) {
                 my $i = $1;
                 $server_tx[$i] = $tx;
                 $tx->respond(status => 200, stream_body => 1,
@@ -271,8 +277,9 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
             http3 => { receive_body => 'buffered' },
             transport => {
                 stream_window => 32768,
-                # Six independent 32 KiB Readers plus fast response.
-                connection_window => 262144,
+                # One independent 32 KiB window per Reader plus two windows
+                # of headroom for the fast response and control traffic.
+                connection_window => 32768 * ($streams + 2),
             },
             on_ready => sub ($h3, $manager) {
                 $ready++;
@@ -331,7 +338,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                 );
                 $error ||= 'fast request was not admitted' unless $fast;
                 $hold_timer = Linux::Event::Kernel::Timer->new(
-                    loop => $loop, after => 0.5,
+                    loop => $loop, after => $hold_seconds,
                     on_timer => sub ($t) {
                         $hold_observed = 1;
                         $sample_readers->();
@@ -398,14 +405,14 @@ $watchdog = Linux::Event::Kernel::Timer->new(
 );
 $loop->run;
 
-is($error, undef, 'six independently held H3 Readers complete without starvation');
-is($ready, 1, 'all seven requests use one authenticated H3 connection');
+is($error, undef, "$streams independently held H3 Readers complete without starvation");
+is($ready, 1, 'all requests use one authenticated H3 connection');
 is($requests, $streams + 1, 'one upper Server receives all multiplexed requests');
 is($fast_finished, 1, 'small H3 response completed once');
-ok($fast_before_release, 'fast response finished while six Readers held credit');
+ok($fast_before_release, 'fast response finished while all Readers held credit');
 is($hold_observed, 1, 'all slow Readers were held before credit release');
-is($released, $streams, 'six Readers released one at a time');
-is($completed, $streams + 1, 'all seven requests completed');
+is($released, $streams, "$streams Readers released one at a time");
+is($completed, $streams + 1, 'all requests completed');
 my $pending_sum = 0;
 $pending_sum += $_ for @pending_at_release;
 ok($pending_sum > 0, 'at least one held Reader has uncredited body data');
@@ -459,7 +466,7 @@ is($native_accounting_mismatches, 0,
 note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", produced before release=" . join(',', @produced_at_release)
     . ", QUIC peak sampled=$quic_peak, poll turns=$poll_turns"
-    . ", send_limit=$send_limit, native peak=$native_retained_peak"
+    . ", streams=$streams, hold_seconds=$hold_seconds, send_limit=$send_limit, native peak=$native_retained_peak"
     . ", native per-stream peaks=" . join(',', @native_stream_peak)
     . ", producer blocks=" . join(',', @blocked));
 
