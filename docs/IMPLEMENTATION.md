@@ -550,9 +550,12 @@ chunks per turn was two. The full streamed receive was hashed
 byte-for-byte. Seven concurrent small HTTP3 exchanges also
 completed with the expected callbacks and native identity.
 
-A follow-up asserts small H3 request progress before the large
-streamed response completes; its CI run must be verified
-separately before recording that strengthened assertion as green.
+Follow-up CI 39088663590 PASS: 552 distribution checks and 369
+live checks, with a strengthened assertion that at least one
+smaller HTTP/3 response completes before the large streamed
+response. This demonstrates concurrent progress on the one
+QUIC connection, not general multi-stream fairness under
+arbitrarily blocked receivers.
 
 These counters describe HTTP/3's internal retained-body buffer
 relative to send_buffer_limit, NOT the UDP socket's queue size or
