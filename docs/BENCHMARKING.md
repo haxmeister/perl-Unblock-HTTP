@@ -152,6 +152,42 @@ manage that queue or expose a pending-byte high-water measurement.
 We have not established a bounded worst-case memory commitment,
 per-chunk copy counts, or actual sustained receiver-rate throughput.
 
+## Genuine cooperative producer backpressure (2026-10-17)
+
+The new xt/linux-event-producer-backpressure.t is a correctness and
+queue-observability fixture, NOT a throughput benchmark. The real
+LinuxEvent client socket stops reading for 400 ms while a streaming
+H1/H2 server produces eight MiB in eight-KiB chunks. The producer
+stops when native Transaction->write() returns false, resumes via
+on_drain, limits itself to eight chunks per deferred loop turn, and
+delivers every chunk once. The end() call is postponed if the final
+accepted write itself returned false.
+
+Transport configuration: high_watermark 32 KiB, low_watermark 8 KiB,
+max_pending_bytes 512 KiB, SO_SNDBUF 32 KiB; sample pending_bytes()
+after transport sends and drains. The maximum *sampled* bytes include
+only pending data in the LinuxEvent socket queue. They are NOT
+sufficient to bound HTTP2 nghttp2 provider queues, QUIC/HTTP3
+buffers, unsampled intervals, kernel socket memory or Perl allocations.
+
+Verified CI 39085138364: 552 distribution checks, 203 live TCP/QUIC
+checks, all green. Observations on that host:
+
+| Observed property | HTTP/1.1 | HTTP/2 |
+| --- | ---: | ---: |
+| Producer write() false | 51 | 95 |
+| Producer on_drain resumptions | 51 | 95 |
+| Actual TCP on_drain callbacks | 51 | 64 |
+| Maximum sampled pending_bytes | 32,856 B | 32,821 B |
+| Hard queue cap configured | 524,288 B | 524,288 B |
+
+The difference between HTTP/2 producer and TCP drain counts reflects
+engine-level flow control. High/low watermarks remain cooperative,
+while max_pending_bytes is a separate hard cap. This fixture has not
+forced that limit to reject an oversized write and does NOT establish
+the boundary's rejection or partial-write semantics. Do not assert
+a total bounded-buffer guarantee based on these numbers.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
