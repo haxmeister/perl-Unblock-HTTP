@@ -77,6 +77,51 @@ mixed response sizes while maintaining identical direct/unified fixtures.
 Then investigate copy/allocation measurement options and sustained slow
 readers; no speculative hot-path optimization from CI timings.
 
+## Expanded HTTP/3 workload profiling (2026-10-18)
+
+After separate-client/server isolation and no-cancel producer join were
+verified, bench/h3-workload-profile.pl added deterministic mixed-size
+response workloads. The fifth argument accepts one body size or up to eight
+comma-separated byte lengths, each <= 1 MiB. When mixed, client requests
+cycle URL targets /profile/0, /profile/1 etc. by request index; the
+separate but identical server process chooses the corresponding body from
+the target and both client modes validate it, including out-of-order
+multiplexed completions. Single-size runs retain the old /profile route.
+No protocol engine or QUIC source change; one connection per trial,
+client-only process CPU and sampled RSS, alternating trial order, warmup,
+and bounded concurrency remain unchanged. The script is a profiler,
+NOT a CI performance gate.
+
+Code commit c7ab7e174d047655d1cc8e82a885da468308f655,
+PERFORMANCE.md commit 43b8e0fcb560b015dfe598e03d65157e8508df96,
+and workflow smoke commit 829097cb80848404386569dadbe5f488bae6a040.
+CI run 39140119509 PASSED this source: 13 dist files / 552 checks,
+12 real TCP/QUIC files / 553 checks, 64 additional 128 KiB-budget
+checks, 58 additional 4 MiB-budget checks, plus all five benchmark
+smoke commands, including 16 KiB at 12 in-flight and alternating
+4 KiB / 256 KiB at 8 in-flight. Both produced all valid response
+bodies and once-only callbacks across three rounds per mode.
+
+Descriptive hosted-runner medians: 16 KiB / 12 concurrent direct ~799.8
+req/s vs unified ~740.2 req/s; mixed 4/256 KiB / 8 concurrent direct
+~149.4 req/s vs unified ~139.0 req/s. Only 60 or 64 measured requests
+per trial and three rounds; DO NOT assert precise performance regression
+or optimization from these CI timings. Client-only CPU and RSS still
+include Net::QUIC, TLS, engine, framework loop, shared mapped pages,
+and all request buffering; process CPU excludes the separate server.
+No allocation count, payload-copy count, or memory hard bound yet.
+
+All four main branches were rechecked against the saved starting SHAs
+and are unchanged. HTTP1/HTTP2/HTTP3 feature heads, Net::QUIC and
+Uniform::HTTP were not modified in this continuation. No merge, tag,
+release or version bump.
+
+NEXT: isolate allocation/copy costs on comparable request/response paths;
+exercise slow-reader pressure and larger numbers of simultaneous native
+H3 producers; evaluate repeatability across controlled machines before
+any change to the production Client hot path. Later return to the
+approved WebSocket / H1 successor-consumer / H2-H3 composition milestones.
+
 ## Client milestone continuation (2026-10-17)
 
 Branch/ref verification: all four published heads matched the supplied handoff at
