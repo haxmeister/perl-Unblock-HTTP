@@ -28,7 +28,7 @@ jobs:
           # Pin the standalone Net::QUIC MAX_DATA wakeup feature and the
           # coordinated HTTP engine source commits. Do not test moving main.
           for spec in \
-            perl-Net-QUIC:42a859e283a1cdd007f1461813d793bc66cc5abf \
+            perl-Net-QUIC:d6d4a3a59b78c013a04c0e48034488a570d222a6 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
             perl-Unblock-HTTP3:1bed34bc19213df6066fc72668cf0b9930de0d51; do
