@@ -180,6 +180,7 @@ printf "# unified/direct mock ratio %.3f (not network overhead)\n",
 
 # Optional phase split. This wrapper deliberately samples two clocks
 # per boundary per request, and therefore PERTURBS the benchmark.
+# Constructor timings are inclusive; residual is not an allocation count.
 # Do not compare these instrumented totals to the uninstrumented
 # per-request figures above or interpret them as exact production costs.
 my $split = $ENV{UNBLOCK_H3_DISPATCH_SPLIT} // '0';
@@ -188,9 +189,14 @@ die "UNBLOCK_H3_DISPATCH_SPLIT must be 0 or 1\n"
 if ($split) {
     my $original_dispatch = Unblock::HTTP::Client->can('_dispatch');
     my $original_engine_request = Local::H3::Engine->can('request');
+    my $original_uri_new = URI->can('new');
+    my $original_uniform_new = Uniform::HTTP::Request->can('new');
+    my $original_operation_new = Unblock::HTTP::_ClientOperation->can('new');
     for my $round (1 .. $rounds) {
         my ($request_time, $dispatch_time, $engine_time) = (0, 0, 0);
+        my ($uri_time, $uniform_time, $operation_time) = (0, 0, 0);
         my ($request_count, $dispatch_count, $engine_count) = (0, 0, 0);
+        my ($uri_count, $uniform_count, $operation_count) = (0, 0, 0);
         {
             no warnings 'redefine';
             local *Unblock::HTTP::Client::_dispatch = sub {
@@ -205,6 +211,27 @@ if ($split) {
                 my $out = $original_engine_request->(@_);
                 $engine_time += time() - $start;
                 $engine_count++;
+                return $out;
+            };
+            local *URI::new = sub {
+                my $start = time();
+                my $out = $original_uri_new->(@_);
+                $uri_time += time() - $start;
+                $uri_count++;
+                return $out;
+            };
+            local *Uniform::HTTP::Request::new = sub {
+                my $start = time();
+                my $out = $original_uniform_new->(@_);
+                $uniform_time += time() - $start;
+                $uniform_count++;
+                return $out;
+            };
+            local *Unblock::HTTP::_ClientOperation::new = sub {
+                my $start = time();
+                my $out = $original_operation_new->(@_);
+                $operation_time += time() - $start;
+                $operation_count++;
                 return $out;
             };
             for (1 .. $iterations) {
@@ -223,19 +250,29 @@ if ($split) {
         die "split: unexpected request, dispatch or fake engine count\n"
             unless $request_count == $iterations
                 && $dispatch_count == $iterations
-                && $engine_count == $iterations;
+                && $engine_count == $iterations
+                && $uri_count == $iterations
+                && $uniform_count == $iterations
+                && $operation_count == $iterations;
         die "split: request pool was not quiescent\n"
             if keys(%{ $client->{active_operations} })
                 || $pool->{connections}[0]{active}
                 || $client->pending_count || @deferred;
         printf "# split round=%d request_us=%.3f outside_dispatch_us=%.3f"
             . " dispatch_us=%.3f outside_engine_us=%.3f"
-            . " fake_engine_us=%.3f (CLOCK-INSTRUMENTED)\n",
+            . " fake_engine_us=%.3f uri_us=%.3f uniform_us=%.3f"
+            . " operation_us=%.3f residual_us=%.3f (CLOCK-INSTRUMENTED)\n",
             $round,
             1_000_000 * $request_time / $iterations,
             1_000_000 * ($request_time - $dispatch_time) / $iterations,
             1_000_000 * $dispatch_time / $iterations,
             1_000_000 * ($dispatch_time - $engine_time) / $iterations,
-            1_000_000 * $engine_time / $iterations;
+            1_000_000 * $engine_time / $iterations,
+            1_000_000 * $uri_time / $iterations,
+            1_000_000 * $uniform_time / $iterations,
+            1_000_000 * $operation_time / $iterations,
+            1_000_000 * ($request_time - $dispatch_time
+                - $uri_time - $uniform_time - $operation_time)
+                    / $iterations;
     }
 }
