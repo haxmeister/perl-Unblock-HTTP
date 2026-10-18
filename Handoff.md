@@ -1,3 +1,15 @@
+## 32-inflight direct vs unified HTTP3 profiler smoke (2026-10-18)
+
+The existing isolated client/server `bench/h3-workload-profile.pl` accepts
+up to 32 in-flight requests (was 16). Both paths still use the same
+authenticated QUIC connection, identical HTTP3 server, payload and workload,
+buffered body validation, separate client/server processes and per-trial
+process isolation. A 32 x 16 KiB response wave stays under default 1 MiB
+connection flow-control credit, avoiding the known aggregate-credit stall.
+The live workflow now runs a 64-request / 16-warmup / 2-round 32-inflight
+smoke before the known failing tight 12-producer case. This smoke is
+correctness validation and descriptive CPU/RSS telemetry, NOT a benchmark
+performance gate or malloc/copy-rate measurement. Verify CI results.
 ## Confirmed connection-window-sensitive HTTP3 starvation (2026-10-18)
 
 The 12-producer experiment now distinguishes two cases with every Reader

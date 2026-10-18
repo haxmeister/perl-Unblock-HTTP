@@ -59,6 +59,9 @@ jobs:
           # Diagnostic: isolate per-stream credit with abundant connection credit.
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
+          # Separate response-buffering smoke at 32 concurrent streams.
+          # This is correctness/resource telemetry, not a performance gate.
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
           UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t

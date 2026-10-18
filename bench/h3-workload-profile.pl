@@ -34,7 +34,7 @@ die "usage: perl bench/h3-workload-profile.pl [samples] [warmup] [rounds] [infli
     unless $samples =~ /\A[1-9][0-9]*\z/ && $samples <= 20000
         && $warmup =~ /\A[1-9][0-9]*\z/ && $warmup <= 2000
         && $rounds =~ /\A[1-9][0-9]*\z/ && $rounds <= 15
-        && $concurrency =~ /\A[1-9][0-9]*\z/ && $concurrency <= 16
+        && $concurrency =~ /\A[1-9][0-9]*\z/ && $concurrency <= 32
         && $body_bytes =~ /\A[1-9][0-9]*(?:,[1-9][0-9]*)*\z/;
 my @sizes = split /,/, $body_bytes;
 die "specify at most eight response sizes, each no larger than 1048576\n"

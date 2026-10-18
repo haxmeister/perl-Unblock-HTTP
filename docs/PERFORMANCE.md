@@ -16,6 +16,7 @@ perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 1 2
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 4 16384
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 200 40 7 4 262144
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 12 16384
+perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 32 16384
 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 500 80 7 8 4096,262144
 ```
 
@@ -29,6 +30,12 @@ change the expected body. Both modes use the same deterministic request
 sequence, server, payload contents and bounded concurrency. A single size
 retains the original `/profile` path for backwards comparison.
 The accepted ranges are documented in the script's usage and validation.
+
+The profiler permits up to 32 in-flight requests, which can be used to
+compare direct and unified response buffering at the upper pool's normal
+per-connection multiplexing limit. At 32 x 16 KiB, one full in-flight wave
+fits below the default 1 MiB connection receive window. This is NOT a
+connection-credit starvation regression or a throughput guarantee.
 
 A trial uses two fresh child processes: one running the HTTP/3 server and
 one running the measured client. They communicate over loopback UDP using
