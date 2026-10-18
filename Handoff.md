@@ -19,6 +19,41 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Coordinated standalone QUIC send-capacity wake feature (2026-10-18)
+
+User authorized changes to Net::QUIC with the strict independent-library
+requirement. The generic Net::QUIC feature/fair-stream-send-capacity adds
+only OPTIONAL Stream->send_some(..., limit_to_credit => 1) and retains
+original default send_some behavior. H3's two QUIC output bridges opt in
+without introducing HTTP-specific logic into Net::QUIC. Net::QUIC CI
+39146133370 PASS all 15 Linux/macOS/Windows jobs; H3 feature CI
+39146362177 and 39146357011 + Linux smoke 39146362182 PASS.
+
+Upper six-producer CI 39146210996 still FAILED after this first integration;
+slow0/1 finished, but slow2-5 remained blocked while QUIC TX buffer=0.
+A private diagnostic XSUB and upper probe conclusively measured remaining
+connection credit 261956, per-slow-stream credit ~32589-32763, unsent
+bytes 0, and QUIC buffered TX bytes 0 at the stall. Native H3 streams
+8,12,16,20 were still marked blocked. This was NOT an exhausted QUIC
+flow-control window; it was a missing shared-send-buffer wake event.
+
+Net::QUIC now tracks send_some callers whose accepted prefix was short;
+when ACK on a sibling frees shared connection send capacity, it wakes
+only those pending callers through existing generic per-stream activity,
+not all streams. No HTTP dependency or new public callback. Net::QUIC
+source commits a3fa2a66546adba8dd853070f5d1121f58fd643b,
+5ed667e33e99dff4727873b1d6ae03aad913c349,
+fcb62f70a8536120d60d18823d600d3f73585176; focused no-queue
+sibling capacity wake test 4b6dc21511ea32a275da99a36a1de2fe9bf4317a.
+Upper integration workflow pins exact NetQUIC feature commit in upper
+workflow commit eab69b3b0d56ac1a4e4c85d7f9da0daab0421224,
+run 39147266161 now underway. Standalone Net::QUIC CI 39147248665
+underway. DO NOT call the six-stream regression resolved until both pass.
+Temporary Net::QUIC private credit instrumentation and extra upper probe
+must be removed once the regression is verified, followed by final CI.
+The previous six-stream and three-stream fixtures stay in CI unchanged.
+No main, merge, version or release work.
+
 ## Six-producer native/QUIC pressure diagnosis and H3 rollback (2026-10-18)
 
 Diagnostic upper CI 39142115478 failed BOTH the existing three-Reader
