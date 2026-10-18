@@ -406,6 +406,33 @@ object allocation and URL validation from pool management and engine
 callback setup before broader optimizations are considered.
 See docs/BENCHMARKING.md for raw results and limitations.
 
+## Actual TCP slow-reader and socket watermark test (2026-10-17)
+
+xt/linux-event-slow-reader.t pauses reads on the real LinuxEvent client
+socket for 0.12 seconds while the H1 or H2 server streams a six-MiB
+response. The framework connection sets a small receive buffer;
+the server uses 16 KiB high / 4 KiB low output watermarks.
+The test verifies zero application reads before resumption, exact
+response bytes and SHA-256, one response/end/finish callback sequence,
+and native-transaction completion. This is an actual socket pause,
+not the synthetic accepted-but-blocked output injection in
+xt/linux-event-streaming.t.
+
+Verified upper GitHub Actions run 39083903027 on source commit
+5eaca204f773331eec98870bdfc5e64e948365e1:
+13 distribution files / 552 checks and four real TCP/QUIC files /
+168 checks, all PASS. The H1 transport reported one real
+unblock_send=false and one on_drain. H2 reported zero transport
+pressure/drain callbacks on that runner, despite successfully
+completing after its input pause; its stream/connection flow control
+can prevent TCP send-queue pressure before the framework watermark.
+
+This does not establish a bounded pending-output high-water mark:
+LinuxEvent high_watermark is advisory; max_pending_bytes is a
+different hard-limit option. Further work should measure real output
+queue sizes and exercise producer resume callbacks under sustained
+slow peers, including HTTP/3. No engine or core API change was needed.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
