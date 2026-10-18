@@ -84,6 +84,10 @@ jobs:
           UNBLOCK_H3_DISPATCH_SPLIT=1 perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 3000 3
           perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
+          # Paired three-mode real-QUIC comparison on the SAME CI runner.
+          # Fresh isolated client/server each trial, alternating two URLs.
+          # No checkpoint overhead or absolute timing pass/fail threshold.
+          UNBLOCK_H3_PROFILE_CACHE_AB=1 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 1024 64 3 16 4096,16384
           # Sustained identical direct/unified workload WITHOUT optional
           # checkpoint, registry or wire instrumentation. Descriptive
           # three-round throughput/latency comparison on hosted CI only.

@@ -1,3 +1,32 @@
+## Paired real-QUIC URL cache A/B profile (2026-10-18)
+
+Upper URL cache feature first commit 199e3b3b804f0acfdacd41d63cd4b444ccce2cdf
+failed distribution tests because the newly transcribed port regex
+had an extra backslash, making valid ports fail. Corrected in
+28b835719af69ad755c4f3c72442f752b9b97c9e (single-backslash
+Perl \A / \z anchors); tests now advance to full real-socket CI.
+This is an implementation typo, NOT a weakened numeric port policy.
+Check full primary published Net::QUIC 0.05 CI 39178289763 and
+optional diagnostic CI 39178289739.
+
+Added opt-in UNBLOCK_H3_PROFILE_CACHE_AB=1 support in the existing
+real-QUIC bench/h3-workload-profile.pl, and one primary CI paired
+three-mode run 1024 measured, 64 warmup, 3 rounds, 16 inflight,
+alternating 4096/16384-byte responses. Modes: direct, unified
+with default four-entry validated exact-URL parse cache, and unified
+with private URL parse cache disabled (diagnostic only). Every trial
+uses the SAME Net::QUIC driver, HTTP3 engine, response server,
+callbacks and loopback, with fresh isolated client/server child
+processes and rotating order. This is the proper within-run
+evidence for a URL cache benefit, NOT a hosted-runner timing gate.
+The default two-mode profiler, 16/32 concurrency memory guards,
+and held-Reader stress are unchanged.
+
+If the cache adds net cost or correctness risk, revert the
+production feature. Neither native allocs nor payload copy counts
+were measured. No main/merge/tag/release/version bump, and no
+Net::QUIC or HTTP engine changes. HTTP3 0.13 remains unreleased.
+
 ## Bounded repeated-URL parse cache experiment (2026-10-18)
 
 Recent 16/32-concurrent HTTP3 guarded memory benchmarks (published

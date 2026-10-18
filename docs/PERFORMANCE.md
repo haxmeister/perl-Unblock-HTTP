@@ -123,6 +123,22 @@ those two URLs does **not** establish an improvement for dynamic
 always-unique URL paths. This remains an experiment pending
 correctness, CI, and paired results; CI performance is not a gate.
 
+To compare the actual QUIC path fairly on one runner (rather than
+against another runner's baseline), the profiler now accepts:
+```sh
+UNBLOCK_H3_PROFILE_CACHE_AB=1 \
+  perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 1024 64 3 16 4096,16384
+```
+This adds a third `unified_uncached` mode using the SAME unified
+Client code, canonical URI validation, engine and QUIC transport, with
+only the private URL-cache limit set to zero. It measures direct,
+cached unified and uncached unified in rotating order in freshly
+isolated client/server processes, with identical response bodies and
+completion assertions. The output reports each mode's median wall
+time and an uncached/cached ratio. No CI timing threshold is imposed.
+The `UNBLOCK_H3_PROFILE_CACHE_AB` mode is diagnostic, not a public API;
+uncached experiments do not alter the normal application behavior.
+
 ## CPU-only request-dispatch control
 
 `bench/client-dispatch-profile.pl` compares a **ready, reusable**
