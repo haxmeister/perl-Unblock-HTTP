@@ -617,7 +617,41 @@ This slice adds a separate bounded live integration fixture:
   leave protocol engine and core API untouched unless failures expose a
   demonstrated defect. Verify via coordinated live GitHub CI.
 
-This is a plan pending live CI verification.
+Implemented and verified on the upper feature branch:
+- New xt/linux-event-slow-reader.t uses Linux::Event's actual socket
+  pause_read/resume_read controls and a constructor receive_buffer of 16 KiB
+  on the client. A framework timer suspends reads for 0.12 seconds while
+  a Server engine emits a bounded six-MiB response. Server output uses
+  a 16 KiB high/4 KiB low watermark. No core HTTP or engine source edit.
+- The test checks that no client application reads occur during the
+  pause; after resume, streamed H1/H2 response byte counts, SHA-256,
+  callback sequence and one-time transaction completion all succeed.
+  This is an actual socket pause, unlike the earlier fixture's synthetic
+  false-return acceptance/drain injection.
+- CI run 39083903027 PASS at source/test commit
+  5eaca204f773331eec98870bdfc5e64e948365e1:
+  13 distribution files / 552 checks and 4 live TCP/QUIC files /
+  168 checks, plus the existing direct/unified benchmark smoke.
+  On the CI Linux runner H1 observed one actual transport
+  unblock_send=false and one on_drain; H2 recorded zero of both
+  while the pause/resume and full body checks still passed.
+  H2 protocol flow control may throttle before transport watermarks;
+  do not infer otherwise from zero transport-drain notifications.
+- Two superseded CI runs initially failed because test-only code
+  passed unsupported socket_options => {...} instead of the actual
+  receive_buffer constructor keyword. The callback diagnostic was
+  hardened to accept pre-dispatch operation handles; corrected run green.
+- This does NOT measure peak queued output bytes, actual byte-copy
+  counts, or worst-case sustained slow peer memory. A soft output
+  high watermark is not a hard limit. LinuxEvent's max_pending_bytes
+  must be handled with its documented hard-limit behavior before
+  promising general bounded producer buffering.
+- No H1/H2/H3, Net::QUIC, Uniform::HTTP or main edits; no merge,
+  release, tag or version bump.
+
+Remaining: actual sustained producer on_drain flow control, a hard
+pending-output cap and measured queue high water, more concurrent
+slow readers including HTTP/3, and per-component Client profiling.
 
 ## Current implementation
 
