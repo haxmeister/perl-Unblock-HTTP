@@ -825,11 +825,15 @@ Implemented and first CI verification:
   on_drain=256, event turns=257, max two chunks per turn.
   The repeat direct-vs-unified benchmark smoke also ran; those noisy
   timing samples are not a throughput performance claim.
-- A follow-up assertion requires one small H3 response to finish
-  before the large streamed response; source test commit
-  3494d47227100c741d68a3a2e57b8f5c87df4e0f.
-  Wait for its corresponding CI PASS before marking its added
-  assertion verified. Documentation-only commits follow it.
+- Follow-up strengthens mixed QUIC multiplex fairness by asserting
+  at least one small H3 response completes before the large streamed
+  response. CI 39088663590 PASS on source commit
+  687e0a2126737b6ae940529b0921cb6998c7f011:
+  13 distribution files / 552 checks and eight live files /
+  369 checks, including this new assertion. The subsequent wording
+  correction 3494d47227100c741d68a3a2e57b8f5c87df4e0f
+  merely describes the verified assertion more precisely.
+  Documentation-only commits follow it.
 - H3 send_buffer_limit is a native HTTP3 retained-body threshold,
   NOT a UDP socket hard cap, aggregate QUIC buffering bound or
   memory measurement. H3 callback receipt currently consumes QUIC
