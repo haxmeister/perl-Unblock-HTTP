@@ -163,6 +163,10 @@ sub run_client_trial ($mode, $server_port, $round) {
             $count{$key} = $engine && ref($engine->{$key}) eq 'HASH'
                 ? scalar(keys %{ $engine->{$key} }) : undef;
         }
+        for my $key (qw(ready_transactions ready_informational)) {
+            $count{$key} = $engine && ref($engine->{$key}) eq 'ARRAY'
+                ? scalar(@{ $engine->{$key} }) : undef;
+        }
         $count{quic_send_buffered} = $quic
             ? $quic->send_buffered_bytes : undef;
         return \%count;
@@ -727,11 +731,13 @@ for my $round (1 .. $rounds) {
                     my $reg = $sample->{registry} // {};
                     printf "# registry mode=%s round=%d completed=%d"
                         . " tx=%s streams=%s messages=%s lifecycle=%s"
-                        . " outgoing=%s building=%s quic_send_buffered=%s\n",
+                        . " outgoing=%s building=%s ready_tx=%s"
+                        . " ready_info=%s quic_send_buffered=%s\n",
                         $mode, $round, $sample->{completed},
                         map { defined($reg->{$_}) ? $reg->{$_} : 'NA' }
                             qw(transactions streams messages
                                stream_lifecycle outgoing building
+                               ready_transactions ready_informational
                                quic_send_buffered);
                 }
                 ($last_count, $last_time) =
