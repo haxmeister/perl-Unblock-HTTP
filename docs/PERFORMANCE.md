@@ -60,38 +60,53 @@ or an unexpected transport error aborts the experiment.
 ## Sustained independent-Reader stress
 
 The real-socket `xt/linux-event-quic-six-credit.t` fixture defaults to six
-independent 1 MiB streamed HTTP/3 responses plus an independent fast response
-on one authenticated QUIC connection. It uses an 8192-byte advisory native
-producer threshold, staged Reader release, per-stream receive credit, digest
-checks, exactly-once completion and per-stream native retention accounting.
-Do not weaken that default regression.
+independent 1 MiB streamed HTTP/3 responses plus one independent fast response
+on an authenticated QUIC connection. Its 8192-byte native producer threshold,
+sequential Reader release, digests, producer fairness, exactly-once completion
+and per-stream retention accounting are unchanged.
 
-For an additional bounded contention check, the same test accepts
-`UNBLOCK_H3_CREDIT_STREAMS` from 6 through 16 and
-`UNBLOCK_H3_CREDIT_HOLD_SECONDS` of 0.5, 2 or 3 seconds. Each Reader keeps its
-own 32768-byte advertised receive window. The connection window scales to
-permit all independently held Readers, with headroom for the fast request.
-The extended modes do not change protocol engines or application code:
+The same fixture accepts `UNBLOCK_H3_CREDIT_STREAMS` from 6 through 16 and
+`UNBLOCK_H3_CREDIT_HOLD_SECONDS` of 0.5, 2 or 3. Each Reader has its own
+32768-byte receive window. The QUIC connection receive window also needs
+space for blocked sibling streams and timely connection-wide MAX_DATA
+advertisements. The tested bounded defaults are 256 KiB at six, 512 KiB
+for seven through twelve, and 1 MiB for thirteen through sixteen streams.
+These are configured receive-credit limits, not maximum process memory.
 
 ```sh
-UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 \\
+UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 \
     prove -v -b xt/linux-event-quic-six-credit.t
-UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 \\
+UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 \
     prove -v -b xt/linux-event-quic-six-credit.t
 ```
 
-The stress fixture also accepts `UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1`,
-which sets connection receive credit to 32 MiB without changing any
-individual Reader receive window, producer budget, assertion, or payload.
-This is a diagnostic to distinguish connection-wide MAX_DATA wakeups from
-ordinary per-stream receive flow control. The original bounded aggregate
-window stays the default; the 12-stream tight-window case currently fails
-and must not be skipped to claim a passing stress suite.
+The previous diagnostic set a 448 KiB connection window for 12 deliberately
+credit-held Readers. That fixture reliably stalled, despite each Stream
+having its own 32 KiB window and registered QUIC send-capacity waiters.
+The sender's connection send credit reached zero. ngtcp2 deliberately
+coalesces MAX_DATA increases until sufficient receive credit has been
+returned. With eleven other Readers held, the remaining aggregate receive
+space was too small to let the one active Reader trigger that update.
+Changing only the connection window to 512 KiB made all 12 complete with
+the same native budget, payloads and assertions. A 16-Reader case passed
+with a 1 MiB connection window. This is a receive-budget configuration
+constraint, not evidence that HTTP3 should broadcast ACK wakeups.
 
-These are deterministic concurrency/forward-progress regressions, not
-throughput benchmarks, lifetime memory caps, copy counts or long-duration
-soak tests. Hosted CI can validate the constraints without supplying
-meaningful peak-memory or production performance estimates.
+For comparative diagnostics, `UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1` uses
+a 32 MiB connection receive window. A selected diagnostic window can be
+specified using `UNBLOCK_H3_CREDIT_CONN_WINDOW` (458752, 524288, 720896
+or 1048576); the 458752-byte case is intentionally below the necessary
+headroom for the 12-Reader workload and is not a passing correctness gate.
+
+Published Net::QUIC 0.05 passed the original six-Reader and both expanded
+bounded-window regressions in the upper integration CI. A separate
+unreleased Net::QUIC feature branch independently corrects an activity
+notification when peer MAX_DATA increases, but that fix is not required
+for these correctly budgeted HTTP3 workload tests.
+
+These are deterministic forward-progress regressions, not throughput
+benchmarks, whole-process memory caps or measured allocation/copy counts.
+Hosted CI timing remains descriptive rather than a release performance gate.
 
 ## Reading the numbers
 
