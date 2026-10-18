@@ -1,3 +1,22 @@
+## Discard invalid grep-based HTTP3 weak pruning candidate (2026-10-18)
+
+The first periodic HTTP3 weak-slot cleanup 3f194ec51b19de73a986612763954c4184cb21d6
+FAILED standalone Linux matrix 39171819978 because grep-copying a weak
+reference promotes it to strong. A new t/27 live-old-head regression
+detected this. Do not use that candidate; any memory profile under its
+source would be invalid for the retention fix.
+
+HTTP3 feature 5e0d496bb52331670edc9850d6fa417d984d0e67 instead
+uses an in-place linear sweep that preserves each live entry's weakness
+while removing expired slots; the test also verifies isweak() after
+compaction. Updated BOTH upper workflow pins to the corrected feature.
+Standalone HTTP3 four-version matrix 39172069382 and interoperability
+39172069428 are running. Upper CI must revalidate 2048-request profiler,
+all checkpoints, ready_tx, private/PSS/RSS, active tx and full stress
+under published Net::QUIC 0.05. Do not report weak-queue cleanup as
+validated until those jobs finish. Keep main, releases and Net::QUIC
+untouched.
+
 ## Unified completed-operation ownership and H3 weak-queue compaction (2026-10-18)
 
 The suspected unified Client lifecycle cycle was independently reproduced
