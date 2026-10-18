@@ -32,7 +32,8 @@ my ($hold_timer, $poll_timer, $watchdog);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
 my ($slow_tx, $reader, $server_tx);
 my ($slow_finished, $fast_finished, $fast_before_resume) = (0, 0, 0);
-my ($hold_released, $pending_at_release, $max_pending) = (0, 0, 0);
+my ($hold_released, $pending_at_release, $max_pending, $produced_at_release)
+    = (0, 0, 0, 0);
 my ($slow_bytes, $slow_chunks, $poll_turns) = (0, 0, 0);
 my $digest = Digest::SHA->new(256);
 my $part = '0123456789abcdef' x 256;      # 4 KiB
@@ -232,6 +233,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                     loop => $loop, after => 0.5,
                     on_timer => sub ($t) {
                         $hold_released = 1;
+                        $produced_at_release = $produced;
                         $pending_at_release = $reader
                             ? $reader->pending_bytes : 0;
                         $max_pending = $pending_at_release
@@ -289,7 +291,12 @@ is($fast_finished, 1, 'fast H3 response finishes once');
 ok($fast_before_resume, 'fast H3 response completes before slow Reader is released');
 is($hold_released, 1, 'slow Reader remains unconsumed for a timed hold');
 ok($pending_at_release > 0, 'unconsumed Reader holds body bytes during pause');
-ok($pending_at_release < $length, 'unconsumed Reader does not hold entire 2 MiB body');
+cmp_ok($pending_at_release, '<=', 32768,
+    'pending Reader data fits configured QUIC receive window');
+cmp_ok($produced_at_release, '<', $parts,
+    'producer cannot issue entire response while receive credit is withheld');
+cmp_ok($max_pending, '<=', 32768,
+    'largest sampled Reader pending data fits configured receive window');
 is($slow_finished, 1, 'slow response reaches terminal only after Reader draining');
 is($slow_bytes, $length, 'slow Reader ultimately returns every byte');
 is($digest->hexdigest, $expected_digest, 'slow Reader SHA-256 matches');
@@ -301,6 +308,7 @@ is($blocked, $resumed, 'producer receives one resume for each blocked write');
 ok($max_burst <= 4, 'producer never exceeds four writes per event loop turn');
 ok($poll_turns > 1, 'pull Reader consumes in multiple scheduled polling turns');
 note("H3 Reader pending at release=$pending_at_release, peak sampled=$max_pending"
+    . ", producer chunks at release=$produced_at_release/$parts"
     . ", producer blocks=$blocked, resumes=$resumed, poll turns=$poll_turns");
 
 for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
