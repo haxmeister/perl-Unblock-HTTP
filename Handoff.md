@@ -961,15 +961,51 @@ accepted-byte writes, on_drain resumption, and bounded producer bursts.
 These are sampled specific buffer surfaces, not aggregate process
 memory or evidence of zero-copy.
 
-Feature-only test commit 9ce6c64db67a99cf1d4e2aace9d8bb3c04366c06;
-workflow addition d7e75d91b4ac7e458472da2b1d3feb7e8e9a7dd6.
-CI run 39095627619 was started. Its result must be inspected before
-this slice can be considered verified. No production engine, Net::QUIC,
-Uniform::HTTP, main, version, merge or release edits.
+Feature test was first published at 9ce6c64db67a99cf1d4e2aace9d8bb3c04366c06
+and added to the workflow at d7e75d91b4ac7e458472da2b1d3feb7e8e9a7dd6.
+Initial CI 39095627619 FAILED only the new 45s multi-reader watchdog.
+A correct nghttp3 flow-control block/unblock bridge was added on HTTP3
+feature source 14eaaf2f94173650b830799a2f43fca0c77ab0a1;
+HTTP3 matrix 39095993708 and interop 39095993713 PASSED.
+However upper 39096018997 still failed the multi-reader watchdog.
+Raising global H3 send_buffer_limit to 131072 still deadlocked upper
+39096310032: the slow0 Reader got 90112 bytes but could not finish.
+The aggregate native retained-body threshold is shared among all streams,
+and other blocked producers may consume it; this is a distinct
+aggregate-producer fairness issue, NOT resolved by nghttp3 stream scheduling.
 
-Remaining after this verification: native nghttp3/provider retention,
-total process RSS and copy instrumentation, broad multi-origin/QUIC load
-and direct H3 versus unified Client benchmark comparison.
+Final multi-Reader fixture isolates independent RECEIVE credit from
+aggregate producer backpressure: H3 send_buffer_limit is 4 MiB, exceeding
+the three 1 MiB streamed bodies. It deliberately does NOT assert a
+producer write(false) or on_drain. Existing single-Reader test with
+send_buffer_limit 8192 still exercises real producer backpressure, and
+the other H3 and H1/H2 tests remain in the workflow. One fast request
+completed while all three Readers withheld credit; Readers were then
+drained one at a time, with the other streams still incomplete and
+uncredited, and all final digests and lifecycle callbacks verified.
+
+VERIFIED: upper source/test commit ceeca6638e6faf6f2561089fcaaf3d5ad0c626d7,
+CI run 39096607845 PASS: 13 distribution files / 552 checks;
+10 live TCP/QUIC files / 446 checks; benchmark smoke PASS.
+Sampled three Reader pending counts at hold: 32739 bytes each
+(advertised per-stream window 32768); maximum sampled QUIC transmit
+retention 3061953 bytes for this intentionally large-buffer fixture.
+Producers had all submitted 256 chunks each by the hold; that does not
+show producer stall or memory efficiency. No total process RSS/native
+provider memory bound has been established.
+
+The only engine production changes in this slice are HTTP3 native
+nghttp3 block/unblock handoff and output scheduling; HTTP1/HTTP2,
+Net::QUIC and Uniform remain unchanged. Main, versions, tags, merges
+and releases remain untouched.
+
+NEXT: solve aggregate producer fairness without unlimited buffering:
+design per-stream retained-byte observability and producer readiness
+under a bounded global send budget; regression-test the original
+tiny-global-limit multi-reader case rather than silently weakening it.
+Also native nghttp3/provider retained buffers, process RSS and copy
+instrumentation, broader multi-origin/QUIC stress and direct H3 vs
+unified Client benchmarks.
 
 ## Current implementation
 
