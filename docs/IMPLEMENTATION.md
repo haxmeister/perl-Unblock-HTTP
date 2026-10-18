@@ -526,6 +526,42 @@ one localhost endpoint, NOT a measured fairness guarantee under
 hundreds of clients or across H3 streams/origins. The engine/provider
 and kernel pending bytes still require separate monitoring.
 
+## HTTP/3 native producer backpressure over live QUIC/TLS (2026-10-17)
+
+xt/linux-event-quic-producer.t extends the live H3 loopback fixture:
+seven small buffered responses and one 2 MiB incremental response
+run concurrently on a SINGLE authenticated Net::QUIC connection.
+The reusable upper Server configures http3 send_buffer_limit=8192.
+Its real engine Transaction responds with stream_body => 1,
+then writes 4 KiB chunks through a deferred producer (no more than
+four chunks per event loop turn). A false native write() is an
+accepted-body backpressure signal. Production stops until the
+native on_drain callback wakes it; even the final end() waits
+after a blocked last write. No body callback forwarding wrapper
+is inserted into the upper Client or Server.
+
+Initial coordinated upper CI 39088458914 PASS on source
+c47bd77b574f97218984c3a7c0bb96c53741aa62:
+13 distribution files / 552 checks and eight real TCP/QUIC
+files / 368 checks. In the H3 producer fixture the native engine
+reported 256 backpressure events, 256 resumptions, 256 drain
+callbacks, and 257 producer event-loop turns; maximum produced
+chunks per turn was two. The full streamed receive was hashed
+byte-for-byte. Seven concurrent small HTTP3 exchanges also
+completed with the expected callbacks and native identity.
+
+A follow-up asserts small H3 request progress before the large
+streamed response completes; its CI run must be verified
+separately before recording that strengthened assertion as green.
+
+These counters describe HTTP/3's internal retained-body buffer
+relative to send_buffer_limit, NOT the UDP socket's queue size or
+maximum Net::QUIC memory. HTTP3 callback streaming returns receive
+credit automatically; the test does not pause receiving credit on
+an individual H3 stream and therefore is not equivalent to the
+H1/H2 socket-pause fixtures. Additional instrumented memory and
+QUIC receive-flow-control testing remains outstanding.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
