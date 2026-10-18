@@ -868,20 +868,52 @@ buffered/no on_data, so an advanced pull-mode stress fixture should
 use the existing low-level H3 Client over the upper QUIC helper,
 paired with a reusable upper Server. No production API change needed.
 
-Test plan: live authenticated QUIC/TLS, one 2 MiB H3 streamed
-server response and one small peer response on the same connection;
-client low-level request(receive_body => 'stream') obtains Reader
-without on_data. Hold Reader consumption for 0.5s with a configured
-small QUIC stream receive window and sample pending_bytes while
-holding credit; assert no early consumption, stream isn't terminal,
-small response succeeds, and producer stops advancing well before
-all 2 MiB are written. After hold timer release, consume queued
-Reader chunks in bounded deferred bursts and verify exact body
-digest, terminal callbacks and producer resumed/finish behavior.
-This exposes Reader-held body bytes only; it is NOT total native
-nghttp3 or Net::QUIC memory usage. Run coordinated upper CI; any
-failing receive-credit invariant requires inspection before changing
-H3 engine code. Net::QUIC/Uniform stay read-only.
+Implemented and verified:
+- New xt/linux-event-quic-reader-credit.t uses the proven upper
+  QUIC manager/server and direct lower HTTP3 Client in receive_body
+  => 'stream' pull mode. Net::QUIC client advertises
+  stream_window => 32768 and connection_window => 131072.
+- Hold Body::Reader->next_chunk() consumption for 0.5s while a
+  native 4KiB/chunk H3 server Transaction streams 2 MiB. Observe
+  Reader->pending_bytes, retain the queued chunks without credit
+  return, and ensure a concurrent small response finishes before
+  releasing credit. The slow Transaction remains nonterminal; the
+  producer cannot submit the entire body until credit is returned.
+- After the hold, a timer-driven pull consumer uses at most eight
+  queued chunks per turn. Each next_chunk() returns the associated
+  QUIC receive credit. Full body SHA-256, byte length, once-only
+  completion, producer write(false)/on_drain pairs and stream
+  isolation all pass. No upper Client API changes were necessary.
+- Initial CI 39092684191 failed in test setup due the optional
+  QUIC helper calling on_ready($h3,$manager) while test declared
+  only one argument. It was corrected in the test; no production
+  changes were required.
+- Corrected CI 39092855745 PASS at upper test-only source
+  f185fbce8a40bb1326ea65e70a0d906a1c906993:
+  13 distribution files / 552 checks, 9 live TCP/QUIC files /
+  387 checks, plus benchmark smoke. Observed H3 Reader
+  pending_at_release=32739 bytes, maximum sampled pending=32739,
+  producer blocks=257, native resumptions=257, pull polling
+  turns=667. The fast request completed before the hold ended.
+- Further strengthened xt checks explicitly assert that the
+  producer is still stalled at release and that the maximum
+  sampled Reader pending bytes stay <= the advertised 32KiB
+  stream receive window. Source commit
+  b352f51bed7f4b9a9b8179aaa0df28a41fc93926; await
+  coordinated CI for these stronger assertions before declaring
+  them separately verified.
+- The Reader pending count is only application-visible queued
+  response body bytes. It does not include native nghttp3/QUIC
+  buffers, kernel datagram queues, retransmissions, Perl allocator
+  overhead, or full process RSS. This establishes actual
+  application-driven QUIC receive credit withholding, NOT a
+  whole-stack memory bound or published high-level Client pull API.
+
+Remaining: aggregate native buffer and RSS/copy instrumentation;
+multiple independently credit-blocked H3 streams; large-scale load,
+and fair direct H3-vs-unified Client benchmarking. No engine
+or Net::QUIC/Uniform changes, main edits, merges, tags,
+releases or version bumps.
 
 ## Current implementation
 
