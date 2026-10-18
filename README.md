@@ -157,6 +157,13 @@ using fresh connections; a transmitted request is never replayed.
 `$client->pool_stats` returns read-only origin and pool counts to
 inspect queued, connecting, active, idle, and retiring connections.
 
+Fatal hard-limit output rejection is distinct from cooperative
+backpressure. The optional LinuxEvent integration propagates
+max_pending_bytes violations as transport errors; it does not
+replay the rejected bytes. The coordinated HTTP1 feature engine
+waits until attached output is accepted before reporting a
+successful server terminal callback. See docs/IMPLEMENTATION.md.
+
 Idle connection eviction is opt-in with `idle_timeout => $seconds`.
 When enabled, the framework supplies `schedule_timer` and may supply
 `release_connection($host, $engine, $protocol, $reason)` to close its own
