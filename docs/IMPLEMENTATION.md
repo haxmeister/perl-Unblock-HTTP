@@ -876,8 +876,20 @@ even-round median logic were added at
 The expanded workflow at cff8be90c8f3b9183557addfea03ff516504ab43
 runs 100 measured/20 warmup requests, concurrency 4, 16KiB body,
 3 alternating rounds; plus 30/10 requests, concurrency 2, 256KiB
-body, 3 rounds. CI 39137178777 was pending at this checkpoint.
-Do not treat these changes as verified until that run passes.
+body, 3 rounds. CI 39137178777 PASSED: 552 distribution tests,
+485 live TCP/QUIC checks across 11 files, and 64/58 additional H3
+flow-credit checks; all benchmark smoke commands passed.
+
+At 16KiB, 4 outstanding, the three-round medians were
+283.6 req/s direct and 271.0 req/s unified (elapsed ratio 1.047).
+At 256KiB, 2 outstanding, both median throughputs were
+~30.1 req/s (ratio 1.000). Isolated child RSS at start/end
+was stable across alternating rounds, unlike the first
+non-isolated profiler; it includes both server and client.
+Process CPU nearly matched wall time. None of these CI
+samples isolate client-only CPU/memory, count copies,
+or establish a statistically controlled regression.
+Full raw results: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39137178777 .
 Usage and interpretation instructions are in docs/PERFORMANCE.md.
 
 Remaining: CPU/allocation/copy and RSS instrumentation with
