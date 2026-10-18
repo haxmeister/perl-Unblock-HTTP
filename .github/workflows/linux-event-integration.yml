@@ -31,7 +31,7 @@ jobs:
             perl-Net-QUIC:566366819b21c30e449bf13f55ec1d6ebfc5de64 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
-            perl-Unblock-HTTP3:96cf41e9378333fb4f7b48d89c8311c1dcf7cee7; do
+            perl-Unblock-HTTP3:e6c1cbb0e54b0dbe40ed6d29e5884e50983a3319; do
             project=${spec%%:*}
             revision=${spec#*:}
             source_dir="/tmp/unblock-sources/$project"
@@ -53,7 +53,7 @@ jobs:
           make test
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
-          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
           UNBLOCK_H3_MULTI_SEND_LIMIT=4194304 prove -v -b xt/linux-event-quic-multi-credit.t
       - name: Direct versus shared Client benchmark smoke (not a performance gate)
