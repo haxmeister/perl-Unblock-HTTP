@@ -19,6 +19,41 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Six simultaneous H3 producers: active diagnostic (2026-10-18)
+
+A new upper xt/linux-event-quic-six-credit.t increases the existing real
+QUIC multi-Reader fixture from three to six independent 1 MiB streamed
+responses plus a fast response, using 8192 advisory native send bytes,
+32768 QUIC credit per Reader, 262144 connection receive window and
+sequential Reader credit release. It preserves the accepted-whole-write
+contract, per-stream native accounting, SHA-256 and once-only callbacks.
+Unlike previous three-stream and join/cancel fixtures, this reproduces
+severe producer starvation: original pinned H3 run 39141085484 and
+adjusted missing-Reader fixture 39141149693 both failed after 60s.
+Only streams 0 and 1 completed; streams 2-5 stopped after their first
+accepted 4096-byte write, despite legitimate Reader credit release.
+Do not weaken this regression or claim the extended stress passes.
+
+Investigated H3 Connection's blocked_output and producer sharing.
+The engine initially wakes a stream blocked by partial QUIC send only on
+that stream's own activity. An ACK-driven sibling wakeup experiment on
+H3 feature code 40868d12a343fc217a4aea01199c83ee5e511fe5
+passed full H3 matrix 39141613551 and interoperability 39141613659;
+upper pins it at 920eec03ad992766eb2f28a90eca9c5024968173.
+However upper 39141722608 still FAILED after 60s: several streams
+produced some bytes but then stalled, even after the attempted wakeup.
+Therefore this production experiment is NOT verified as a fix.
+
+The six-stream fixture now has an eight-second diagnostic probe
+(cf12fd418a6264df090ee5ec9cc891afe4d8a20a) capturing QUIC send
+retention, native body retention per stream, ACK offsets, number of
+active native producers, blocked_output IDs and actual Reader progress.
+CI 39142115478 is pending. Inspect its SIX-CONTEST probe before further
+production work. Do not remove the failing test merely to green CI.
+The established earlier upper implementation and its last verified
+benchmark/three-stream CI remain intact. All main refs, versions, tags,
+release state and read-only dependencies remain unchanged.
+
 ## Optional HTTP3 client heap and wire instrumentation (2026-10-18)
 
 Starting upper branch 3ee7ce3163eaa14fa0cd80fa0339c0d0b7c95b53,
