@@ -592,6 +592,33 @@ request construction and queue admission, plus true sustained slow-receiver
 backpressure/high-water behavior. Preserve correctness, error/cancel order
 and event-loop neutrality before any deeper fast-path optimization.
 
+## Genuine slow-reader socket validation (2026-10-17)
+
+Current verified head 68113bd06372e0376ee0d92c4d2eaa8613f0bce5,
+CI 39079482114 PASS. New work stays on feature/high-level-client-server;
+all engine and main refs unchanged. Read the four approved upper design
+documents and Linux::Event 0.117 stream contracts first.
+
+A previous live test injected a false return from unblock_send AFTER
+acceptance. It proved that accepted-but-blocked output resumes without
+duplicating data, but did NOT prove real socket send queue pressure.
+This slice adds a separate bounded live integration fixture:
+- Use the actual Linux::Event socket pause_read/resume_read control on
+  the HTTP Client transport, with a timer and modest receive buffer.
+  Server transport uses small high/low write watermarks and a multi-MiB
+  streamed response with a reproducible integrity digest.
+- Inspect real unblock_send=false and on_drain outcomes if the kernel
+  backpressures. Validate integrity, callback order, completion, no
+  early receiver-side delivery while paused, and timeout safety.
+- Do not conflate a low watermark with a hard queue cap. Keep the test's
+  body size bounded and do not assert peak pending bytes unless the
+  framework exposes an authoritative measurement.
+- Keep genuine socket pressure test separate from bench timing, and
+  leave protocol engine and core API untouched unless failures expose a
+  demonstrated defect. Verify via coordinated live GitHub CI.
+
+This is a plan pending live CI verification.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
