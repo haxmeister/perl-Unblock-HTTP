@@ -1,7 +1,7 @@
 use v5.36;
 use strict;
 use warnings;
-use Time::HiRes qw(time);
+use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 use File::Temp qw(tempdir);
 use JSON::PP ();
 use POSIX qw(_exit);
@@ -62,6 +62,15 @@ sub percentile {
     return $sorted->[$index];
 }
 
+sub median {
+    my ($values) = @_;
+    my @ordered = sort { $a <=> $b } @$values;
+    my $mid = int(@ordered / 2);
+    return @ordered % 2
+        ? $ordered[$mid]
+        : ($ordered[$mid - 1] + $ordered[$mid]) / 2;
+}
+
 sub run_trial ($mode) {
     my $loop = Linux::Event::Loop->new;
     my ($server, $server_socket, $server_timer, $driver, $client_socket,
@@ -71,7 +80,7 @@ sub run_trial ($mode) {
     my ($phase, $phase_target) = ('warmup', $warmup);
     my ($elapsed, $cpu_seconds, $call_seconds, $call_count)
         = (undef, undef, 0, 0);
-    my ($start, $rss_start, $rss_peak, $rss_end, @cpu_before);
+    my ($start, $cpu_start, $rss_start, $rss_peak, $rss_end);
     my @latency;
     my ($pump, $schedule, $check_ready, $sample_rss);
 
@@ -124,16 +133,15 @@ sub run_trial ($mode) {
                         $phase = 'measure';
                         $phase_target = $samples;
                         ($sent, $finished, $max_inflight) = (0, 0, 0);
-                        @cpu_before = times();
+                        $cpu_start = clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
                         $start = time();
                         $rss_start = sampled_rss_kib();
                         $rss_peak = $rss_start;
                         $schedule->();
                     } else {
                         $elapsed = time() - $start;
-                        my @after = times();
-                        $cpu_seconds = $after[0] + $after[1]
-                            - $cpu_before[0] - $cpu_before[1];
+                        $cpu_seconds = clock_gettime(CLOCK_PROCESS_CPUTIME_ID)
+                            - $cpu_start;
                         $rss_end = sampled_rss_kib();
                         $sample_rss->();
                         $phase = 'finished';
@@ -383,7 +391,7 @@ sub run_isolated_trial ($mode) {
 print "# HTTP3 loopback: direct engine vs pooled unified Client.\n";
 print "# same QUIC Driver, server, body and concurrency; TLS handshake excluded.\n";
 print "# requested samples=$samples warmup=$warmup rounds=$rounds inflight=$concurrency response_bytes=$body_bytes\n";
-print "# CPU is process user+system; RSS is /proc/self/status VmRSS sampled every 16 completions.\n";
+print "# CPU uses Linux process CPU clock (user+system); RSS is sampled VmRSS every 16 completions.\n";
 print "# Each trial runs in a separate child process; RSS includes server and client, sampled not allocator peak.\n";
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
 print "# Host CI timing is not a stable performance claim. Copy and allocation counts unavailable.\n";
@@ -405,8 +413,7 @@ for my $round (1 .. $rounds) {
 }
 my %median;
 for my $mode (qw(direct unified)) {
-    my @sorted = sort { $a <=> $b } @{ $times{$mode} };
-    $median{$mode} = $sorted[int(@sorted/2)];
+    $median{$mode} = median($times{$mode});
     printf "# %s median wall %.4fs (%.1f req/s)\n",
         $mode, $median{$mode}, $samples / $median{$mode};
 }
