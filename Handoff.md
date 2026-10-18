@@ -938,6 +938,40 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Concurrent HTTP3 workload profiling continuation (2026-10-18)
+
+Remote branch check on entry: upper feature 1aa49c88dd1652dc1fdf872f1fe8de0bb2d449c9;
+H1 bb8349ef, H2 51fb1ad9, H3 721395e9. All four main baselines match
+prior documented hashes, and Net::QUIC/Uniform are read-only.
+Reviewed upper Handoff, design-handoff, IMPLEMENTATION and ENGINE-CONTRACTS,
+engine handoffs, existing H3 benchmark and CI workflow.
+No local checkout was supplied. Changes are connector-authored on the
+explicit upper feature branch only; H1/H2/H3 source unchanged.
+
+New opt-in bench/h3-workload-profile.pl adds a controlled-workload-oriented
+comparison to existing serial bench/h3-client-vs-direct.pl. One reused
+authenticated QUIC connection and same server/Net::QUIC::Driver for both
+direct Unblock::HTTP3::Client and unified Unblock::HTTP::Client. A warmup
+phase finishes completely before timed dispatch. Bounded concurrent
+request windows (1..16), configurable buffered response body (1..1MiB),
+alternating trial order, repeated trials. Measures request() inclusive
+call time, end-to-end wall interval, per-completed-request p50/p95/p99
+latency, per-process user+system CPU via Perl times, and sampled Linux
+/proc/self/status VmRSS. Validates complete body and status for every
+request. These are NOT allocation/copy counts, an allocator RSS high
+water mark, or isolated server/client memory (both share one process).
+Worker scheduling, cryptography and the shared CI runner inject noise;
+no speedup/regression claim warranted without repeat controlled host.
+
+Benchmark-only feature commit cbbca7182f9d6aa2721a01adf84cb765c0ea9098;
+workflow smoke commit 49f2968e5296d8bfdc7fed1b94cae38a8b041a98
+runs 30 measured/8 warmup requests x 2 rounds x concurrency 4 at
+16KiB response, and 12/4 x 2 rounds x concurrency 2 at 256KiB.
+Existing direct serial H3, H1/H2, and eleven live TCP/QUIC tests retained.
+CI 39136691305 in progress at this checkpoint; inspect result, repair
+only on approved feature branch as needed, and record measured outputs.
+No versions, main, merges, tags or releases touched.
+
 ## Dynamic HTTP3 cancellation and direct benchmark verified (2026-10-18)
 
 H3 native source e6c1cbb0e54b0dbe40ed6d29e5884e50983a3319
