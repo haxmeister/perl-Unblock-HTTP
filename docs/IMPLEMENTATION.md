@@ -470,6 +470,49 @@ testing should cover hard-cap rejection, partial transport writes,
 multiple slow peers with fairness, total engine memory high-water,
 and H3 stream producer backpressure. See docs/BENCHMARKING.md.
 
+## Fatal socket output cap and attached H1 completion (2026-10-17)
+
+The real LinuxEvent max_pending_bytes is a fatal output hard cap, not
+a cooperative high-water mark. When a write would exceed the cap,
+LinuxEvent reports structured Error(type=output_limit,
+operation=write, pending_bytes, limit) and closes the Stream.
+The bytes from that rejected write were not fully accepted. An
+attached transport adapter must fail the HTTP connection instead
+of interpreting the failed write as "accepted, please resume later."
+The upper LinuxEvent adapter already throws when its underlying
+write closed the stream; the native engines abort appropriately.
+
+New xt/linux-event-hard-output-limit.t forces a 2 MiB response
+through an attached HTTP1/2 Server with a 4096-byte pending-output
+cap. It verifies both fatal errors, immediate socket teardown,
+absence of ordinary producer on_drain, no complete response at
+the client and exactly-once server terminal notification.
+
+The test exposed an H1-specific lifecycle bug: while parsing pipelined
+input, the H1 engine completed buffered server transactions before
+the outgoing bytes had been accepted by the host. This could report
+on_finish(complete) despite a fatal synchronous output rejection.
+The coordinated H1 feature branch now holds pending terminal
+notifications until the batched output is accepted, or fails those
+transactions on host rejection. It preserves coalesced pipeline
+output, normal graceful close and manual mode. A false return from
+an alive host still means whole-buffer acceptance and congestion,
+NOT a hard rejection. Neither normal terminal completion nor
+host acceptance guarantees remote peer consumption.
+
+Verified H1 feature source 783e2a951dafac2756ba2c3cf34ea35fc043de6f:
+full Linux/macOS/Windows CI 39087355734 PASS (37 H1 files /
+324 Linux checks) and framework examples 39087355806 PASS.
+The upper integration workflow pins this source; CI 39087487036
+PASS with 13 distribution files / 552 checks and six live
+TCP/QUIC files / 226 checks.
+
+A follow-up xt/linux-event-pool-fairness.t now exercises two
+simultaneously paused slow readers plus one fast connection, using
+per-tick bounded streamed producers and native on_drain. Its
+separate CI run must pass before this additional fairness milestone
+is considered verified.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
