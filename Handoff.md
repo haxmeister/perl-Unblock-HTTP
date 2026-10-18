@@ -1,3 +1,37 @@
+## Released Net::QUIC 0.05 / HTTP3 0.13 candidate integration verified (2026-10-18)
+
+Net::QUIC v0.05 has been published to GitHub and CPAN. Net::QUIC main
+beca1afdbc49e64a54827cd3118270e98469b0f7 is not modified further.
+Unblock::HTTP3 feature/unified-receive-lifecycle now contains the 0.13
+candidate, with all 15 modules versioned consistently, prerequisite
+Net::QUIC >= 0.05, no development Net::QUIC installer/pin, updated docs,
+PAUSE static-version regression, and released-CPAN-backed standalone CI.
+H3 tested source commit 1bed34bc19213df6066fc72668cf0b9930de0d51
+PASSED Linux 5.20/5.28/5.36/5.44 test matrix 39155065291 (including
+5.44 distcheck/disttest/POD and installed native header test),
+independent quic-go/public server interop 39154958488, Linux::Event
+example smoke 39154958508 and benchmark smoke 39154810871. H3 subsequent
+commit c743a1a6bf02189c49e7b865ca7e924d369ffadc is documentation-only.
+
+Upper real-socket workflow removes its temporary Net::QUIC source checkout,
+installs `Net::QUIC@0.05` from CPAN, verifies the version, and pins H3
+0.13 candidate 1bed34bc plus unchanged H1/H2 feature source. Upper
+workflow/Makefile commit 1e1645d6c4d7afbde50adb3ea0bd09deba2ec13c;
+GitHub Actions run 39155180473 PASSED ALL stages: 552 distribution
+assertions, 13 live TCP/QUIC files (including six independent 1 MiB HTTP3
+streaming responses, one fast response and sequential Reader credit),
+128-KiB and 4-MiB send budget variations and benchmark smoke.
+SHA-256, exactly-once completion, fair producer resume and native retained
+byte checks were retained. This validates the published Net::QUIC baseline,
+not a development commit. Hosted benchmark timings are not performance gates.
+
+No main, merge, release, tag or CPAN upload for H3/H1/H2/upper is authorized
+by this verification. Net::QUIC remains independently useful and unchanged.
+Pending sequence: maintainer approval to merge/publish HTTP3 0.13, then
+coordinate HTTP1/HTTP2 remaining feature releases, and finally resume the
+unified-layer release work. This section supersedes older handoff language
+calling the now-released Net::QUIC 0.05 feature 'unreleased'.
+
 # Unblock::HTTP implementation handoff
 
 Updated: 2026-10-17
