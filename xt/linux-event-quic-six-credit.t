@@ -211,7 +211,19 @@ $server->start;
 # receive credit merely because the first Reader is now being consumed.
 $poll = sub {
     my $i = $release_stage;
-    return if $i < 0 || $i >= $streams || $error || !$reader[$i];
+    return if $i < 0 || $i >= $streams || $error;
+    # A late response HEADERS callback is possible under contention.
+    # Wait for this stream's Reader without granting credit to siblings.
+    if (!$reader[$i]) {
+        $poll_timer = Linux::Event::Kernel::Timer->new(
+            loop => $loop, after => 0.005,
+            on_timer => sub ($t) {
+                undef $poll_timer;
+                $poll->();
+            },
+        );
+        return;
+    }
     $poll_turns++;
     my $burst = 0;
     while ($burst < 8) {
@@ -328,8 +340,8 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                             $pending_at_release[$i] = $reader[$i]
                                 ? $reader[$i]->pending_bytes : 0;
                             $produced_at_release[$i] = $produced[$i];
-                            $error ||= "Reader slow$i missing during hold"
-                                unless $reader[$i];
+                            $error ||= "slow$i producer absent at hold"
+                                unless $server_tx[$i] && $produced[$i] > 0;
                             $error ||= "slow$i completed with credit held"
                                 if $finished[$i];
                         }
