@@ -159,6 +159,12 @@ for my $protocol ('http/1.1', 'h2') {
         on_finish => sub ($tx) {
             $FINISHED++;
             push @EVENTS, 'finish';
+            if (!$tx->can('is_complete')) {
+                $ERROR ||= "$protocol failed before dispatch: "
+                    . ($tx->error || $tx->state);
+                $LOOP->stop;
+                return;
+            }
             $ERROR ||= "$protocol transaction not complete"
                 unless $tx->is_complete;
             $LOOP->stop;
@@ -172,7 +178,7 @@ for my $protocol ('http/1.1', 'h2') {
             $LOOP->stop;
         },
     );
-    $LOOP->run;
+    $LOOP->run unless $ERROR;
 
     is($ERROR, undef, "$protocol slow reader completes without HTTP error");
     is($RELEASED, 1, "$protocol reader resumed by framework timer");
