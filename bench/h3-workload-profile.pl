@@ -3,6 +3,8 @@ use strict;
 use warnings;
 use Time::HiRes qw(time);
 use File::Temp qw(tempdir);
+use JSON::PP ();
+use POSIX qw(_exit);
 use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Address;
 use Linux::Event::Kernel::Timer;
@@ -16,7 +18,8 @@ use Unblock::HTTP3::Client;
 # Opt-in workload profiler. Not a CI performance gate.
 # Same HTTP3 Server, Net::QUIC::Driver, TLS, payload, and UDP loopback
 # on both paths. One connection per trial; concurrency is strictly bounded.
-# CPU is per-process user+system; VmRSS is sampled, not peak allocator usage.
+# Each trial forks a fresh process. CPU is process user+system; VmRSS is
+# sampled, not a peak allocator measurement.
 my ($samples, $warmup, $rounds, $concurrency, $body_bytes) = @ARGV;
 $samples     //= 150;
 $warmup      //= 24;
@@ -338,17 +341,56 @@ sub run_trial ($mode) {
     };
 }
 
+# Fork BEFORE creating any event loop, socket or QUIC connection for the
+# trial. This resets process RSS and native resources between alternating
+# direct and unified modes. The parent holds only fixture inputs/results.
+sub run_isolated_trial ($mode) {
+    pipe(my $from_child, my $to_parent) or die "pipe: $!";
+    my $pid = fork();
+    die "fork: $!" unless defined $pid;
+
+    if ($pid == 0) {
+        close $from_child;
+        my ($result, $error);
+        eval { $result = run_trial($mode); 1 } or $error = "$@";
+        my $json = JSON::PP->new->encode(
+            $error ? { error => $error } : { result => $result }
+        );
+        print {$to_parent} $json or _exit(1);
+        close $to_parent;
+        _exit($error ? 1 : 0);
+    }
+
+    close $to_parent;
+    my $report;
+    {
+        local $/;
+        $report = <$from_child>;
+    }
+    close $from_child;
+    waitpid($pid, 0);
+    my $status = $?;
+    die "$mode child produced no profile data (exit status $status)\n"
+        unless defined($report) && length($report);
+    my $decoded = JSON::PP->new->decode($report);
+    die "$mode child profile failed: $decoded->{error}\n"
+        if defined $decoded->{error};
+    die "$mode child did not exit successfully (status $status)\n"
+        if $status;
+    return $decoded->{result};
+}
+
 print "# HTTP3 loopback: direct engine vs pooled unified Client.\n";
 print "# same QUIC Driver, server, body and concurrency; TLS handshake excluded.\n";
 print "# requested samples=$samples warmup=$warmup rounds=$rounds inflight=$concurrency response_bytes=$body_bytes\n";
 print "# CPU is process user+system; RSS is /proc/self/status VmRSS sampled every 16 completions.\n";
-print "# RSS is process-wide, includes server+client, sampled not allocator peak; trials share one process.\n";
+print "# Each trial runs in a separate child process; RSS includes server and client, sampled not allocator peak.\n";
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
 print "# Host CI timing is not a stable performance claim. Copy and allocation counts unavailable.\n";
 my %times;
 for my $round (1 .. $rounds) {
     for my $mode ($round % 2 ? ('direct', 'unified') : ('unified', 'direct')) {
-        my $v = run_trial($mode);
+        my $v = run_isolated_trial($mode);
         push @{ $times{$mode} }, $v->{elapsed};
         printf "%-7s round=%d req/s=%.1f wall=%.4fs cpu=%.4fs"
             . " request_us=%.2f p50_us=%.1f p95_us=%.1f p99_us=%.1f"
