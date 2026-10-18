@@ -260,9 +260,13 @@ CI 39092855745 PASS: 552 ordinary distribution checks and
 | Producer native on_drain resumptions | 257 |
 | Bounded Reader polling turns | 667 |
 
-A subsequent test-only change adds explicit producer-stalled-at-release
-and Reader-pending-at-most-advertised-window assertions, pending
-their own CI result.
+Strengthened CI 39093070343 PASS with 552 distribution and
+389 live checks. At the 500ms hold release the producer
+had submitted only 10 out of 512 chunks and the maximum
+sampled Reader pending was 32,739 bytes, at or below
+the configured 32KiB stream window. This is direct
+receive-credit stalling evidence, but still not total
+process memory instrumentation.
 
 Body::Reader->pending_bytes is the Reader's queued decoded body
 bytes ONLY. It does NOT count all retained H3 native data, QUIC
