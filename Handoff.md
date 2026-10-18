@@ -1,3 +1,36 @@
+## Request-path constructor cost instrumentation (2026-10-18)
+
+CPU-only mock H3 diagnostic at upper 92d9c1e CI 39173943511 PASS
+published Net::QUIC 0.05 and 39173943480 PASS QUIC feature. Primary
+direct_mock median 15.917 us, unified_mock median 55.054 us;
+diagnostic-feature run direct 9.432, unified 31.267 us. Large runner
+variance makes these *diagnostic* only; the ratio is NOT real H3
+throughput. Existing real workload is still the end-to-end signal.
+
+Primary published Net::QUIC 0.05 CI 39174402639 PASS first phase split:
+CLOCK-INSTRUMENTED unified request_us 47.627/47.523/47.455;
+outside_dispatch_us 41.133/41.041/41.020;
+dispatch_us 6.494/6.483/6.435;
+fake_engine_us 1.382/1.386/1.361, microseconds per request.
+Most request() CPU is outside _dispatch; the split itself changes
+timings and should NOT be combined with uninstrumented totals.
+The current bench-only commit 36a01319 extends that instrumented split
+to URI->new, Uniform::HTTP::Request->new, _ClientOperation->new
+and the residual. New upper CI 39174909939 / 39174909923 running.
+Benchmark docs updated in docs/PERFORMANCE.md. Do not optimize native
+byte copies or claim body throughput gains based on this CPU-only fake.
+
+Separately, upper 34a3070f H3-only Alt-Svc no-observer cleanup
+is green on QUIC diagnostic CI 39174722889; primary published
+Net::QUIC 0.05 integration 39174722982 is pending at this point.
+Mixed TCP/H3 Alt-Svc discovery is preserved; pure H3 buffered and
+streaming callbacks now have explicit tests.
+
+No main changes, merges, tags, releases, version bumps, Net::QUIC or
+HTTP engine edits. Continue checking the published 0.05 workflow,
+evaluate breakdown, and decide whether targeted request-path work is
+justified. HTTP3 0.13 remains unreleased.
+
 ## H3-only Alt-Svc callback fast-path cleanup (2026-10-18)
 
 After CPU-only profiling showed repeated request setup/dispatch overhead,

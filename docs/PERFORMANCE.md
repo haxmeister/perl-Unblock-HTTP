@@ -76,14 +76,31 @@ UNBLOCK_H3_DISPATCH_SPLIT=1 \
 ```
 
 With `UNBLOCK_H3_DISPATCH_SPLIT=1`, a separate follow-up
-run intercepts the **real** unified `_dispatch` method and
-the fake H3 engine `request` method to report inclusive
-`request_us`, `outside_dispatch_us`, `dispatch_us`,
-`outside_engine_us`, and `fake_engine_us`.
+run intercepts the **real** unified `_dispatch` method, the
+fake H3 engine `request`, and the three constructors
+`URI->new`, `Uniform::HTTP::Request->new`, and
+`_ClientOperation->new`. It reports `request_us`,
+`outside_dispatch_us`, `dispatch_us`, `fake_engine_us`,
+`uri_us`, `uniform_us`, `operation_us` and a
+`residual_us` that includes remaining validations, origin/pool
+lookup, callback extraction and measurement overhead.
 The phase timers wrap every request, and so change its measured CPU
 cost. These phase totals are diagnostic and MUST NOT be directly
 compared with the uninstrumented medians as if they were the same
-measurement. They include clock and wrapper overhead; the phase
+measurement.
+
+The pre-constructor-split primary published-Net::QUIC-0.05 integration
+workflow [39174402639](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39174402639)
+PASS reported three separate CLOCK-INSTRUMENTED rounds:
+`request_us` 47.627, 47.523, 47.455;
+`outside_dispatch_us` 41.133, 41.041, 41.020;
+`dispatch_us` 6.494, 6.483, 6.435;
+`fake_engine_us` 1.382, 1.386, 1.361.
+The uninstrumented mock medians on the same run were direct 14.445 us
+and unified 58.899 us per request/callback cycle. Different instrumentation,
+different scope: those totals are **not** interchangeable. This result
+motivated constructor-specific timing, not a production optimization
+inside the very small fake engine boundary. They include clock and wrapper overhead; the phase
 subtractions are approximate. In particular, `outside_dispatch`
 includes URI parsing, Uniform construction, operation creation,
 origin lookup, and the time spent outside the fast dispatch call.
