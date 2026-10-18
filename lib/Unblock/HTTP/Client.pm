@@ -704,7 +704,13 @@ sub _dispatch {
     $engine_callback{on_drain} = $callbacks->{on_drain}
         if $callbacks->{on_drain};
 
-    if ($pool->{info}{scheme} eq 'https' && $self->{policy}->enabled('h3')) {
+    # Alt-Svc discovery only affects later TCP-first requests. A Client
+    # configured for H3 alone can never consult the alternative cache;
+    # avoid allocating and running an unused per-response observer there.
+    if ($pool->{info}{scheme} eq 'https'
+        && $self->{policy}->enabled('h3')
+        && ($self->{policy}->enabled('h2')
+            || $self->{policy}->enabled('http/1.1'))) {
         # Once per response headers, not on the body hot path.
         $engine_callback{on_response} = sub {
             my ($tx, $response) = @_;

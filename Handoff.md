@@ -1,3 +1,24 @@
+## H3-only Alt-Svc callback fast-path cleanup (2026-10-18)
+
+After CPU-only profiling showed repeated request setup/dispatch overhead,
+the upper Client feature was narrowly changed to avoid installing an
+Alt-Svc on_response observer for an H3-only policy. That observer was
+unusable: the Alt-Svc cache can only select alternatives for later
+TCP-first requests, and a Client configured with only H3 never issues
+TCP-first requests. Mixed H1/H2+H3 policies KEEP the observer.
+H3-only streaming applications still receive their on_response header
+callback directly, and buffered application on_response remains in
+on_complete. t/15-client-pool.t adds buffered and streaming H3-only
+response/finish ordering checks and the absent unneeded observer check.
+
+This is an application-request/response-header path optimization only,
+not a per-byte copy change. No public API, engine, QUIC, ABI or version
+change. Real-QUIC, established callback/pull memory, release-stress
+and interop tests must all remain green. Benchmark A/B across hosted
+runs is noisy; do not advertise an overhead improvement without
+matched repeated measurement. This implementation is experimental on
+the authorized upper feature branch only.
+
 ## Instrumented split of ready Client dispatch (2026-10-18)
 
 First completed CPU-only diagnostic (optional Net::QUIC feature workflow

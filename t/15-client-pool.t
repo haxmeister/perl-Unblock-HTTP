@@ -241,6 +241,30 @@ isa_ok($h3op->transaction->{engine}, 'Unblock::HTTP3::Client');
 is($h3op->transaction->{engine}{started}, 1, 'HTTP3 starts exactly once');
 ok(!exists($h3op->transaction->{engine}{options}{enable_extended_connect}), 'H3 Client does not receive Server-only CONNECT setting');
 $h3op->transaction->finish;
+my @h3_buffered;
+my $h3_buffered = $h3->request(
+    url => 'https://quic.test/buffered', http_version => '3',
+    on_response => sub { push @h3_buffered, 'response' },
+    on_finish => sub { push @h3_buffered, 'finish' },
+);
+ok(!exists($h3_buffered->transaction->{callbacks}{on_response}),
+    'H3-only buffered request skips unneeded Alt-Svc header observer');
+$h3_buffered->transaction->finish;
+is_deeply(\@h3_buffered, ['response', 'finish'],
+    'H3-only buffered response still delivers response then finish');
+
+my @h3_streamed;
+my $h3_streamed = $h3->request(
+    url => 'https://quic.test/streamed', http_version => '3',
+    on_data => sub { push @h3_streamed, 'data' },
+    on_response => sub { push @h3_streamed, 'headers' },
+    on_finish => sub { push @h3_streamed, 'finish' },
+);
+ok(exists($h3_streamed->transaction->{callbacks}{on_response}),
+    'H3-only streaming response keeps header observer');
+$h3_streamed->transaction->finish('x');
+is_deeply(\@h3_streamed, ['headers', 'data', 'finish'],
+    'H3-only streaming callback order preserved');
 ok(!eval { $h3->request(url => 'http://quic.test/'); 1 },
     'H3 cleartext URL rejected');
 
