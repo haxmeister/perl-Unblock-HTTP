@@ -672,6 +672,59 @@ a bounded fair aggregate producer budget with regression at
 8192/131072, process RSS/copy measurement, and larger-scale
 direct-H3 vs unified stress benchmarking.
 
+## H3 fair-share outgoing producer wakeup, small budget verified (2026-10-17)
+
+New HTTP3 feature code uses internal native per-stream retained-body
+byte accounting (separate from receive-side Reader pending bytes and
+Net::QUIC send_buffered_bytes). Its active unfinished producer count
+divides the existing send_buffer_limit into dynamic per-stream shares.
+write(false) is still complete-byte acceptance, now advisory about
+that stream's share rather than a shared aggregate condition that
+can starve other producers. on_drain wakes a producer only once its
+own retained bytes have decreased below its current share. nghttp3
+QUIC-partial-output block/unblock remains as in the prior milestone.
+No public NativeABI layout or framework-facing API was changed.
+
+HTTP3 feature source 96cf41e9378333fb4f7b48d89c8311c1dcf7cee7
+PASSED the full engine matrix CI 39098239956; its same production
+code passed the interoperability suite 39098219785. The upper
+workflow pins this exact source. All other engines stay pinned.
+
+The original three-Reader small-budget stress case now passes:
+xt/linux-event-quic-multi-credit.t tests three independently streamed
+1 MiB responses (and a fourth fast response) using ONE authenticated
+QUIC connection, send_buffer_limit=8192, with individual 32 KiB
+receive stream windows. Hold all Readers, then release each separately
+and confirm the remaining streams stay unfinished, each producer
+observes true accepted-write backpressure/on_drain wakeups, final
+body lengths and SHA-256 match and terminal callbacks fire once.
+At the first hold one Reader may have no pending body data yet because
+of nghttp3/QUIC interleaving; the regression does not confuse zero
+pending with having consumed receive credit. With a separate 4 MiB
+native buffer, all three Readers must have pending bytes before the
+first release, validating independent flow-control observation.
+
+VERIFIED source/test commit a545a4ddecef5501e3392dcd3f4f3a4a56223efd:
+upper GitHub Actions integration 39098422769 PASS,
+13 distribution test files / 552 tests, ten real TCP/QUIC files /
+453 tests using the 8192 native limit, and a separate high-budget
+multi-stream file / 56 tests. Benchmark smoke ran but was not
+a controlled throughput claim. QUIC retained send samples at
+the peaks were 8192 bytes (small native limit) and 3061953 bytes
+(large native limit), respectively; these are fixture values,
+not proof of a process, nghttp3, kernel or retransmission
+memory cap.
+
+The send_buffer_limit is SOFT: every application write is accepted
+before the false return, and one oversized write can exceed its
+fair share. Do not represent the calculation as a hard upper memory
+limit. Remaining milestones: per-stream native body retention and
+copy/RSS measurement, bigger concurrent stream/burst stress,
+fairness of dynamic producer joins and cancellations,
+and controlled direct-engine versus unified Client benchmarks.
+HTTP1/HTTP2, Net::QUIC and Uniform unchanged, no main edits,
+releases, merges, tags or version changes.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
