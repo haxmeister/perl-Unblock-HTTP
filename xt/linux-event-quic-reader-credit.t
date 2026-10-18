@@ -34,6 +34,10 @@ my ($slow_tx, $reader, $server_tx);
 my ($slow_finished, $fast_finished, $fast_before_resume) = (0, 0, 0);
 my ($hold_released, $pending_at_release, $max_pending, $produced_at_release)
     = (0, 0, 0, 0);
+# Net::QUIC's public counter includes retained stream data awaiting ACK.
+# It does not include H3's own native queued body or process allocations.
+my ($quic_buffered_peak, $quic_buffered_at_release, $quic_samples)
+    = (0, 0, 0);
 my ($slow_bytes, $slow_chunks, $poll_turns) = (0, 0, 0);
 my $digest = Digest::SHA->new(256);
 my $part = '0123456789abcdef' x 256;      # 4 KiB
@@ -44,6 +48,15 @@ my ($produced, $blocked, $resumed, $on_drains, $end_count, $producer_turns, $max
     = (0) x 7;
 my ($producer_waiting, $producer_queued, $producer_done) = (0, 0, 0);
 my ($emit, $schedule, $poll);
+my $sample_quic = sub {
+    return unless $server;
+    for my $session ($server->sessions) {
+        my $retained = $session->quic->send_buffered_bytes;
+        $quic_samples++;
+        $quic_buffered_peak = $retained
+            if $retained > $quic_buffered_peak;
+    }
+};
 
 $schedule = sub {
     return if $producer_queued || $producer_done || $error;
@@ -69,6 +82,7 @@ $emit = sub {
         }
     }
     $max_burst = $burst if $burst > $max_burst;
+    $sample_quic->();
     if ($produced == $parts && !$producer_waiting) {
         $producer_done = 1;
         $end_count++;
@@ -82,6 +96,7 @@ my $server_socket = Linux::Event::IO::Sock::Dgram->new(
     loop => $loop, host => '127.0.0.1', port => 0,
     on_datagram => sub ($sock, $bytes, $peer) {
         $server->receive($bytes, $sock->local->sockaddr, $peer->sockaddr);
+        $sample_quic->();
     },
     on_drain => sub ($sock) { $server->writable },
     on_error => sub ($sock, $e) {
@@ -234,6 +249,10 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                     on_timer => sub ($t) {
                         $hold_released = 1;
                         $produced_at_release = $produced;
+                        $sample_quic->();
+                        my @sessions = $server->sessions;
+                        $quic_buffered_at_release = @sessions
+                            ? $sessions[0]->quic->send_buffered_bytes : 0;
                         $pending_at_release = $reader
                             ? $reader->pending_bytes : 0;
                         $max_pending = $pending_at_release
@@ -307,8 +326,13 @@ ok($blocked > 0 && $resumed > 0, 'H3 outbound producer backs off and resumes');
 is($blocked, $resumed, 'producer receives one resume for each blocked write');
 ok($max_burst <= 4, 'producer never exceeds four writes per event loop turn');
 ok($poll_turns > 1, 'pull Reader consumes in multiple scheduled polling turns');
+ok($quic_samples > 0, 'Net::QUIC public retained-send counter was sampled');
+cmp_ok($quic_buffered_peak, '>=', $quic_buffered_at_release,
+    'maximum sampled QUIC send retention includes hold-release observation');
 note("H3 Reader pending at release=$pending_at_release, peak sampled=$max_pending"
     . ", producer chunks at release=$produced_at_release/$parts"
+    . ", QUIC send-buffered at release=$quic_buffered_at_release"
+    . ", peak sampled QUIC send-buffered=$quic_buffered_peak"
     . ", producer blocks=$blocked, resumes=$resumed, poll turns=$poll_turns");
 
 for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
