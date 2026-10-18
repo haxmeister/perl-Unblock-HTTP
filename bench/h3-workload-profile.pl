@@ -43,6 +43,11 @@ my @bodies = map { 'B' x $_ } @sizes;
 my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
 my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
+my $profile_registry = $ENV{UNBLOCK_H3_PROFILE_REGISTRY} // 0;
+die "UNBLOCK_H3_PROFILE_REGISTRY must be 0 or 1\n"
+    unless $profile_registry =~ /\A[01]\z/;
+die "UNBLOCK_H3_PROFILE_REGISTRY requires memory checkpoints\n"
+    if $profile_registry && !$checkpoint_every;
 die "UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY must be 0 or an integer 64..4096\n"
     unless $checkpoint_every =~ /\A(?:0|[1-9][0-9]*)\z/
         && ($checkpoint_every == 0
@@ -139,6 +144,30 @@ sub run_client_trial ($mode, $server_port, $round) {
         $heap_files{$when} = $path;
     };
 
+    my $snapshot_registries = sub {
+        return {} unless $profile_registry;
+        my $engine = $direct;
+        if ($mode eq 'unified' && $unified) {
+            # Diagnostic-only introspection. The unified pool owns the
+            # actual same HTTP3 engine; do not alter application APIs.
+            for my $pool (values %{ $unified->{pools} // {} }) {
+                for my $conn (@{ $pool->{connections} // [] }) {
+                    $engine = $conn->{engine}
+                        if $conn->{protocol} eq 'h3';
+                }
+            }
+        }
+        my %count;
+        for my $key (qw(transactions streams messages stream_lifecycle
+                        outgoing building)) {
+            $count{$key} = $engine && ref($engine->{$key}) eq 'HASH'
+                ? scalar(keys %{ $engine->{$key} }) : undef;
+        }
+        $count{quic_send_buffered} = $quic
+            ? $quic->send_buffered_bytes : undef;
+        return \%count;
+    };
+
     $sample_rss = sub {
         my $rss = sampled_rss_kib();
         return unless defined $rss;
@@ -199,6 +228,7 @@ sub run_client_trial ($mode, $server_port, $round) {
                             rss => sampled_rss_kib(),
                             pss => $rollup->{pss},
                             private => $rollup->{private},
+                            registry => $snapshot_registries->(),
                         };
                     }
                 }
@@ -381,6 +411,22 @@ sub run_client_trial ($mode, $server_port, $round) {
         unless @latency == $samples;
     die "$mode concurrency $max_inflight out of range\n"
         if !$max_inflight || $max_inflight > $concurrency;
+    if ($checkpoint_every) {
+        my $expected = int($samples / $checkpoint_every);
+        die "$mode checkpoint count mismatch: "
+            . scalar(@checkpoints) . " != $expected\n"
+            unless @checkpoints == $expected;
+        my ($last_count, $last_time) = (0, -1);
+        for my $checkpoint (@checkpoints) {
+            die "$mode checkpoint count or time is nonmonotonic\n"
+                unless $checkpoint->{completed} == $last_count
+                    + $checkpoint_every
+                    && $checkpoint->{elapsed} > $last_time;
+            ($last_count, $last_time) = (
+                $checkpoint->{completed}, $checkpoint->{elapsed},
+            );
+        }
+    }
     my @ordered = sort { $a <=> $b } @latency;
     return {
         mode => $mode,
@@ -637,6 +683,8 @@ print "# Host CI timing is not a stable performance claim. Copy and allocation c
 print "# Client PSS/private memory is sampled at phase boundaries; neither is allocation count.\n";
 print "# Memory checkpoints at every $checkpoint_every completions; timing is instrumented.\n"
     if $checkpoint_every;
+print "# Private engine registry counts enabled, diagnostic only.\n"
+    if $profile_registry;
 print "# Timeout watchdog=$watchdog_seconds seconds per trial.\n"
     if $watchdog_seconds != 60;
 print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
@@ -675,6 +723,17 @@ for my $round (1 .. $rounds) {
                     (defined($sample->{rss}) ? $sample->{rss} : 'NA'),
                     (defined($sample->{pss}) ? $sample->{pss} : 'NA'),
                     (defined($sample->{private}) ? $sample->{private} : 'NA');
+                if ($profile_registry) {
+                    my $reg = $sample->{registry} // {};
+                    printf "# registry mode=%s round=%d completed=%d"
+                        . " tx=%s streams=%s messages=%s lifecycle=%s"
+                        . " outgoing=%s building=%s quic_send_buffered=%s\n",
+                        $mode, $round, $sample->{completed},
+                        map { defined($reg->{$_}) ? $reg->{$_} : 'NA' }
+                            qw(transactions streams messages
+                               stream_lifecycle outgoing building
+                               quic_send_buffered);
+                }
                 ($last_count, $last_time) =
                     ($sample->{completed}, $sample->{elapsed});
             }
