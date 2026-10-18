@@ -30,7 +30,7 @@ if (system('openssl', 'req', '-x509', '-newkey', 'rsa:2048',
 
 my $loop = Linux::Event::Loop->new;
 my ($server, $client, $server_timer, $client_timer, $client_socket);
-my ($hold_timer, $poll_timer, $watchdog);
+my ($hold_timer, $poll_timer, $watchdog, $diagnostic_timer);
 my ($error, $ready, $requests, $completed) = (undef, 0, 0, 0);
 my $streams = $ENV{UNBLOCK_H3_CREDIT_STREAMS} // 6;
 die "UNBLOCK_H3_CREDIT_STREAMS must be an integer from 6 through 16\n"
@@ -337,6 +337,34 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
                     },
                 );
                 $error ||= 'fast request was not admitted' unless $fast;
+                if ($streams > 6) {
+                    $diagnostic_timer = Linux::Event::Kernel::Timer->new(
+                        loop => $loop, after => $hold_seconds + 4,
+                        on_timer => sub ($t) {
+                            undef $diagnostic_timer;
+                            my @sessions = $server->sessions;
+                            my @blocked = map { join(',', sort { $a <=> $b } keys %{ $_->{blocked_output} }) } @sessions;
+                            my @retained = map { $_->{native}->streaming_retained_bytes } @sessions;
+                            my @quic_send = map { $_->quic->send_buffered_bytes } @sessions;
+                            my @ack = map {
+                                my $tx = $server_tx[$_];
+                                my $s = $tx && @sessions ? $sessions[0]{streams}{ $tx->stream_id } : undef;
+                                $s ? $s->acked_offset : -1
+                            } 0 .. $streams - 1;
+                            diag('STRESS-PROBE sessions=' . scalar(@sessions)
+                                . ' blocked=' . join(';', @blocked)
+                                . ' retained=' . join(',', @retained)
+                                . ' quic_send=' . join(',', @quic_send)
+                                . ' ack=' . join(',', @ack)
+                                . ' produced=' . join(',', @produced)
+                                . ' blocked_writes=' . join(',', @blocked)
+                                . ' resumed=' . join(',', @resumed)
+                                . ' waiting=' . join(',', @waiting)
+                                . ' received=' . join(',', @received)
+                                . ' pending=' . join(',', map { $_ ? $_->pending_bytes : -1 } @reader));
+                        },
+                    );
+                }
                 $hold_timer = Linux::Event::Kernel::Timer->new(
                     loop => $loop, after => $hold_seconds,
                     on_timer => sub ($t) {
@@ -388,7 +416,7 @@ $client_socket = Linux::Event::IO::Sock::Dgram->connect(
     },
 );
 $watchdog = Linux::Event::Kernel::Timer->new(
-    loop => $loop, after => 60,
+    loop => $loop, after => $streams == 6 ? 60 : 20,
     on_timer => sub ($t) {
         $sample_readers->();
         my @sessions = $server->sessions;
@@ -470,7 +498,7 @@ note("H3 slow Reader pending=" . join(',', @pending_at_release)
     . ", native per-stream peaks=" . join(',', @native_stream_peak)
     . ", producer blocks=" . join(',', @blocked));
 
-for my $timer ($hold_timer, $poll_timer, $watchdog, $server_timer, $client_timer) {
+for my $timer ($hold_timer, $poll_timer, $watchdog, $diagnostic_timer, $server_timer, $client_timer) {
     $timer->cancel if $timer && $timer->is_active;
 }
 done_testing;

@@ -1,3 +1,20 @@
+## Extended HTTP3 stress exposed a new stall (2026-10-18)
+
+Real UDP/QUIC CI 39157085119 FAILED at the new 12-producer, two-second hold.
+The original six-producer test passed. All twelve Readers initially held
+their independent ~32 KiB receive windows and all twelve producers started.
+After release, slow0 received just 98184 bytes and stopped; only 25 complete
+4 KiB writes were produced for slow0 and 9 for every other producer.
+The watchdog fired at 60 seconds with no completion. This is a NEW
+reproducible high-concurrency starvation finding, not a release-ready check.
+Do not weaken or remove the 12/16 mode to obtain green CI.
+
+This diagnostic commit adds a stress-only state probe while the QUIC
+connection is still active (ACK offsets, native/QUIC retained bytes,
+blocked H3 output IDs, producer and Reader progress) and shortens only the
+stress-mode watchdog to 20 seconds. Its results are not yet verified.
+Investigate root cause before any engine or Net::QUIC change. Keep both
+libraries event-loop-neutral. No main branches changed.
 ## Scale-up of six-producer HTTP3 credit regression (2026-10-18)
 
 The original six-producer test is retained as the default, with every
