@@ -19,6 +19,39 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Six-producer native/QUIC pressure diagnosis and H3 rollback (2026-10-18)
+
+Diagnostic upper CI 39142115478 failed BOTH the existing three-Reader
+fixture and new six-Reader fixture when using experimental H3 code
+40868d12a343fc217a4aea01199c83ee5e511fe5. The measured six-reader
+stall at 8 sec showed native retained 23634 bytes and QUIC retained send
+bytes 8192 (full); blocked nghttp3 IDs 0,8,12,16,20, six unfinished
+native producers, and ACK offsets 36896,32768,32768,24599,1008,5.
+The credited slow0 Reader got 36864 bytes but no further progress;
+several sibling Readers held independent credit. This isolates a severe
+connection-wide QUIC send-buffer/output scheduling starvation under six
+held Readers. It is NOT an allocation or hard-memory-bound observation.
+
+The production ACK-unblock experiment was reverted fully to prior H3
+Connection.pm source, H3 rollback commit
+b6f068fde2e279258f9247a7b8c26252245d8008. H3 full matrix CI
+39142506332 and interoperability 39142506370 both PASSED again.
+Upper workflow now pins this exact rollback in commit
+8ea44673be206e2c80b8cc9e241743f5953c6e59.
+The six-Reader regression xt/linux-event-quic-six-credit.t remains in the
+live workflow and is EXPECTED TO FAIL until the genuine shared QUIC
+output-starvation issue is corrected; do not silently exclude it to claim
+passing CI. Previous three-Reader and no-cancel join tests passed on the
+original engine and are not production regressions. This branch is still
+an active feature branch, not release-ready.
+
+Net::QUIC remains explicitly read-only. Its Endpoint transport options
+do not expose a send_buffer_limit knob; they configure connection and
+stream receive windows. A correct fix may need permission for a separate
+Net::QUIC scheduling investigation or a demonstrated safe workaround
+in H3. Do not alter Net::QUIC without new authorization. Preserve the
+six-stream reproducer and all metrics for a dedicated continuation.
+
 ## Six simultaneous H3 producers: active diagnostic (2026-10-18)
 
 A new upper xt/linux-event-quic-six-credit.t increases the existing real
