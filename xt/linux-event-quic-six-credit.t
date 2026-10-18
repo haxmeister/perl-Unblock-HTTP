@@ -399,13 +399,13 @@ $watchdog = Linux::Event::Kernel::Timer->new(
 $loop->run;
 
 is($error, undef, 'six independently held H3 Readers complete without starvation');
-is($ready, 1, 'all four requests use one authenticated H3 connection');
+is($ready, 1, 'all seven requests use one authenticated H3 connection');
 is($requests, $streams + 1, 'one upper Server receives all multiplexed requests');
 is($fast_finished, 1, 'small H3 response completed once');
 ok($fast_before_release, 'fast response finished while six Readers held credit');
 is($hold_observed, 1, 'all slow Readers were held before credit release');
 is($released, $streams, 'six Readers released one at a time');
-is($completed, $streams + 1, 'all four requests completed');
+is($completed, $streams + 1, 'all seven requests completed');
 my $pending_sum = 0;
 $pending_sum += $_ for @pending_at_release;
 ok($pending_sum > 0, 'at least one held Reader has uncredited body data');
