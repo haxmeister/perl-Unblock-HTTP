@@ -18,8 +18,9 @@ use Unblock::HTTP3::Client;
 # Opt-in workload profiler. Not a CI performance gate.
 # Same HTTP3 Server, Net::QUIC::Driver, TLS, payload, and UDP loopback
 # on both paths. One connection per trial; concurrency is strictly bounded.
-# Each trial forks a fresh process. CPU is process user+system; VmRSS is
-# sampled, not a peak allocator measurement.
+# Each trial forks fresh, separate server/client processes before initializing
+# their event loops or QUIC. Client CPU is process user+system; client VmRSS
+# is sampled, not an allocator high-water mark.
 my ($samples, $warmup, $rounds, $concurrency, $body_bytes) = @ARGV;
 $samples     //= 150;
 $warmup      //= 24;
@@ -71,12 +72,12 @@ sub median {
         : ($ordered[$mid - 1] + $ordered[$mid]) / 2;
 }
 
-sub run_trial ($mode) {
+sub run_client_trial ($mode, $server_port) {
     my $loop = Linux::Event::Loop->new;
-    my ($server, $server_socket, $server_timer, $driver, $client_socket,
-        $client_timer, $quic, $direct, $unified, $factory_ready);
+    my ($driver, $client_socket, $client_timer, $quic, $direct, $unified,
+        $factory_ready);
     my ($attached, $error, $sent, $finished, $inflight, $max_inflight,
-        $responses, $pump_queued) = (0, undef, 0, 0, 0, 0, 0, 0);
+        $pump_queued) = (0, undef, 0, 0, 0, 0, 0);
     my ($phase, $phase_target) = ('warmup', $warmup);
     my ($elapsed, $cpu_seconds, $call_seconds, $call_count)
         = (undef, undef, 0, 0);
@@ -189,48 +190,6 @@ sub run_trial ($mode) {
         }
     };
 
-    $server_socket = Linux::Event::IO::Sock::Dgram->new(
-        loop => $loop, host => '127.0.0.1', port => 0,
-        on_datagram => sub ($socket, $bytes, $peer) {
-            $server->receive($bytes, $socket->local->sockaddr, $peer->sockaddr);
-        },
-        on_drain => sub ($socket) { $server->writable },
-        on_error => sub ($socket, $e) {
-            $error = "server UDP: $e"; $loop->stop;
-        },
-    );
-    $server = Unblock::HTTP::QUIC->server(
-        certificate_file => $cert, private_key_file => $key,
-        server => Unblock::HTTP::Server->new(
-            http3 => {},
-            on_request => sub ($tx, $request) {
-                $responses++;
-                $tx->respond(status => 200, body => $body);
-            },
-            on_error => sub ($tx, $e) {
-                $error = "server HTTP3: $e"; $loop->stop;
-            },
-        ),
-        send => sub ($packet) {
-            $server_socket->send($packet->data,
-                to => Linux::Event::Address->new($packet->peer));
-        },
-        set_timeout => sub ($seconds) {
-            $server_timer->cancel if $server_timer && $server_timer->is_active;
-            undef $server_timer;
-            if (defined $seconds) {
-                $server_timer = Linux::Event::Kernel::Timer->new(
-                    loop => $loop, after => $seconds,
-                    on_timer => sub ($timer) {
-                        undef $server_timer;
-                        $server->timeout;
-                    },
-                );
-            }
-        },
-    );
-    $server->start;
-
     $check_ready = sub {
         return if $attached || !$quic || !$quic->ready;
         return if $mode eq 'unified' && !$factory_ready;
@@ -250,7 +209,7 @@ sub run_trial ($mode) {
 
     $client_socket = Linux::Event::IO::Sock::Dgram->connect(
         loop => $loop, host => '127.0.0.1',
-        port => $server_socket->local->port,
+        port => $server_port,
         on_ready => sub ($socket) {
             if ($mode eq 'unified') {
                 $unified = Unblock::HTTP::Client->new(
@@ -319,14 +278,12 @@ sub run_trial ($mode) {
         },
     );
     $loop->run;
-    for my $timer ($watchdog, $server_timer, $client_timer) {
+    for my $timer ($watchdog, $client_timer) {
         $timer->cancel if $timer && $timer->is_active;
     }
     die "$error\n" if $error;
     die "$mode ended before measurement finished\n"
         unless $phase eq 'finished' && defined $elapsed;
-    die "$mode server processed $responses, expected " . ($warmup + $samples) . "\n"
-        unless $responses == $warmup + $samples;
     die "$mode request count $call_count != $samples\n"
         unless $call_count == $samples;
     die "$mode latency sample count mismatch\n"
@@ -349,9 +306,177 @@ sub run_trial ($mode) {
     };
 }
 
+# The server gets its own process and event loop. It stays alive until the
+# client validates its last response and writes 'D' to the control pipe.
+# Polling for shutdown begins only after all server requests were handled.
+sub run_server ($ready_fh, $done_fh) {
+    my $loop = Linux::Event::Loop->new;
+    my ($server, $server_socket, $server_timer, $done_timer);
+    my ($responses, $error) = (0, undef);
+    my $check_done;
+    $check_done = sub {
+        my $readable = '';
+        vec($readable, fileno($done_fh), 1) = 1;
+        my $ready = select($readable, undef, undef, 0);
+        if (!defined $ready) {
+            $error = "server control select: $!";
+            $loop->stop;
+            return;
+        }
+        if ($ready) {
+            my $n = sysread($done_fh, my $command, 1);
+            if (defined($n) && $n == 1 && $command eq 'D') {
+                $loop->stop;
+                return;
+            }
+            $error = "server lost client completion signal";
+            $loop->stop;
+            return;
+        }
+        $done_timer = Linux::Event::Kernel::Timer->new(
+            loop => $loop, after => 0.02,
+            on_timer => sub ($timer) {
+                undef $done_timer;
+                $check_done->();
+            },
+        );
+    };
+
+    $server_socket = Linux::Event::IO::Sock::Dgram->new(
+        loop => $loop, host => '127.0.0.1', port => 0,
+        on_datagram => sub ($socket, $bytes, $peer) {
+            $server->receive($bytes, $socket->local->sockaddr, $peer->sockaddr);
+        },
+        on_drain => sub ($socket) { $server->writable },
+        on_error => sub ($socket, $e) {
+            $error = "server UDP: $e"; $loop->stop;
+        },
+    );
+    $server = Unblock::HTTP::QUIC->server(
+        certificate_file => $cert, private_key_file => $key,
+        server => Unblock::HTTP::Server->new(
+            http3 => {},
+            on_request => sub ($tx, $request) {
+                $responses++;
+                $tx->respond(status => 200, body => $body);
+                $check_done->() if $responses == $warmup + $samples;
+            },
+            on_error => sub ($tx, $e) {
+                $error = "server HTTP3: $e"; $loop->stop;
+            },
+        ),
+        send => sub ($packet) {
+            $server_socket->send($packet->data,
+                to => Linux::Event::Address->new($packet->peer));
+        },
+        set_timeout => sub ($seconds) {
+            $server_timer->cancel if $server_timer && $server_timer->is_active;
+            undef $server_timer;
+            if (defined $seconds) {
+                $server_timer = Linux::Event::Kernel::Timer->new(
+                    loop => $loop, after => $seconds,
+                    on_timer => sub ($timer) {
+                        undef $server_timer;
+                        $server->timeout;
+                    },
+                );
+            }
+        },
+    );
+    $server->start;
+
+    print {$ready_fh} $server_socket->local->port . "\n"
+        or die "server port handshake: $!";
+    close $ready_fh or die "close port handshake: $!";
+
+    my $watchdog = Linux::Event::Kernel::Timer->new(
+        loop => $loop, after => 60,
+        on_timer => sub ($timer) {
+            $error = "server watchdog: handled=$responses/"
+                . ($warmup + $samples);
+            $loop->stop;
+        },
+    );
+    $loop->run;
+    for my $timer ($watchdog, $server_timer, $done_timer) {
+        $timer->cancel if $timer && $timer->is_active;
+    }
+    die "$error\n" if $error;
+    die "server handled $responses, expected " . ($warmup + $samples) . "\n"
+        unless $responses == $warmup + $samples;
+    return { responses => $responses };
+}
+
+# The trial process is the client process. The coordinator forks a fresh trial
+# process, which forks the server BEFORE either side creates sockets or loops.
+sub run_trial ($mode) {
+    pipe(my $port_read, my $port_write) or die "port pipe: $!";
+    pipe(my $stop_read, my $stop_write) or die "control pipe: $!";
+    pipe(my $report_read, my $report_write) or die "server report pipe: $!";
+    my $server_pid = fork();
+    die "server fork: $!" unless defined $server_pid;
+
+    if ($server_pid == 0) {
+        close $port_read;
+        close $stop_write;
+        close $report_read;
+        my ($result, $error);
+        eval { $result = run_server($port_write, $stop_read); 1 }
+            or $error = "$@";
+        my $json = JSON::PP->new->encode(
+            $error ? { error => $error } : { result => $result },
+        );
+        print {$report_write} $json or _exit(1);
+        close $report_write;
+        _exit($error ? 1 : 0);
+    }
+
+    close $port_write;
+    close $stop_read;
+    close $report_write;
+    my ($result, $client_error);
+    eval {
+        my $port = <$port_read>;
+        die "server did not announce a port\n"
+            unless defined $port && $port =~ /\A[1-9][0-9]*\n\z/
+                && $port <= 65535;
+        close $port_read;
+        $result = run_client_trial($mode, 0 + $port);
+        1;
+    } or $client_error = "$@";
+
+    if ($client_error) {
+        kill 'TERM', $server_pid;
+    } else {
+        print {$stop_write} 'D' or $client_error = "server stop pipe: $!";
+    }
+    close $port_read if defined fileno($port_read);
+    close $stop_write;
+
+    my $report;
+    {
+        local $/;
+        $report = <$report_read>;
+    }
+    close $report_read;
+    waitpid($server_pid, 0);
+    my $status = $?;
+    die $client_error if $client_error;
+    die "server child produced no result (status $status)\n"
+        unless defined($report) && length($report);
+    my $decoded = JSON::PP->new->decode($report);
+    die "server child: $decoded->{error}\n"
+        if defined $decoded->{error};
+    die "server child exited unsuccessfully (status $status)\n"
+        if $status;
+    die "server response count mismatch\n"
+        unless $decoded->{result}{responses} == $warmup + $samples;
+    return $result;
+}
+
 # Fork BEFORE creating any event loop, socket or QUIC connection for the
-# trial. This resets process RSS and native resources between alternating
-# direct and unified modes. The parent holds only fixture inputs/results.
+# trial. Each trial child also forks its dedicated server. This resets
+# client resources and keeps server CPU/RSS out of the client's measurements.
 sub run_isolated_trial ($mode) {
     pipe(my $from_child, my $to_parent) or die "pipe: $!";
     my $pid = fork();
@@ -391,8 +516,8 @@ sub run_isolated_trial ($mode) {
 print "# HTTP3 loopback: direct engine vs pooled unified Client.\n";
 print "# same QUIC Driver, server, body and concurrency; TLS handshake excluded.\n";
 print "# requested samples=$samples warmup=$warmup rounds=$rounds inflight=$concurrency response_bytes=$body_bytes\n";
-print "# CPU uses Linux process CPU clock (user+system); RSS is sampled VmRSS every 16 completions.\n";
-print "# Each trial runs in a separate child process; RSS includes server and client, sampled not allocator peak.\n";
+print "# CPU uses client-only process CPU clock (user+system); RSS is sampled client VmRSS.\n";
+print "# Every trial uses fresh client and server processes; samples exclude the server process.\n";
 print "# Each request validates the complete buffered response; no 0-RTT or connection migration.\n";
 print "# Host CI timing is not a stable performance claim. Copy and allocation counts unavailable.\n";
 my %times;
@@ -400,9 +525,9 @@ for my $round (1 .. $rounds) {
     for my $mode ($round % 2 ? ('direct', 'unified') : ('unified', 'direct')) {
         my $v = run_isolated_trial($mode);
         push @{ $times{$mode} }, $v->{elapsed};
-        printf "%-7s round=%d req/s=%.1f wall=%.4fs cpu=%.4fs"
+        printf "%-7s round=%d req/s=%.1f wall=%.4fs client_cpu=%.4fs"
             . " request_us=%.2f p50_us=%.1f p95_us=%.1f p99_us=%.1f"
-            . " inflight_peak=%d rss_start_kib=%s rss_end_kib=%s rss_sample_peak_kib=%s\n",
+            . " inflight_peak=%d client_rss_start_kib=%s client_rss_end_kib=%s client_rss_sample_peak_kib=%s\n",
             $mode, $round, $samples / $v->{elapsed}, $v->{elapsed}, $v->{cpu},
             $v->{call_us}, $v->{p50}, $v->{p95}, $v->{p99},
             $v->{inflight_peak},
