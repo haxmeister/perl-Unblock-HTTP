@@ -1,3 +1,45 @@
+## Completed sustained HTTP3 uninstrumented throughput/latency follow-up (2026-10-18)
+
+Upper feature 0f5cb2bfb545c0d9308888a469c54bb3b25bc55c verified
+with published CPAN Net::QUIC 0.05 in **full upper integration**
+GitHub Actions 39172590547 PASS. Companion unreleased Net::QUIC
+feature diagnostic 39172590469 PASS, NOT a required release dependency.
+Both workflows completed distribution tests, real TCP/QUIC/held-Reader
+stress, checkpointed 2048 memory profile, sustained uninstrumented
+2048-profile, and the short benchmark smoke stage.
+
+New UNINSTRUMENTED matched same-connection H3 profile:
+2048 measured requests after 128 warmup, 3 fresh isolated rounds for
+each client mode, 16 concurrent GET requests, alternating 4096/16384
+byte buffered responses, full body/status/callback assertions.
+Direct R1/R2/R3: 1081.6/1091.7/1083.1 req/s; setup
+136.30/136.22/135.92 us. Unified R1/R2/R3:
+998.5/985.8/994.3 req/s; setup 190.52/194.35/189.95 us.
+Median wall direct 1.8908s, unified 2.0598s (ratio 1.089).
+Direct p50 latency 8848.9/8769.0/8759.0 us; unified
+9366.0/8923.1/8789.1 us. Full p50/p95/p99 and exact
+setup values now in docs/PERFORMANCE.md, with provenance and caveats.
+
+The 1.089 is a hosted-runner DESCRIPTIVE ratio, NOT a reliable
+performance or overhead claim; request_us is synchronous setup,
+not network RTT, and the one-host CI is affected by scheduler/TLS/UDP.
+No allocation event counts, native-copy counts, or memcpy volumes
+were measured. Do not infer native memory overhead from RSS or
+wire bytes. Further copy optimization should require instrumenting
+specified copy sites in a carefully scoped build after establishing
+a repeatable dedicated-host baseline.
+
+The independently VERIFIED retention tests from prior upper
+39172126688 remain PASS at this source: ready_tx 2..3 and unified
+private memory 7.3..7.5 MiB rather than 2176 stale slots and ~95 MiB.
+HTTP3 four-version matrix 39172069382 and interop 39172069428 PASS
+against production HTTP3 source 5e0d496b. Additional test-only HTTP3
+t/27 moved-weak-slot assertions at 27eae747 PASS four-version matrix
+39172771475; engine production source unchanged. H3 Handoff also
+updated (latest docs/test head 6687bcef). All main branches, Net::QUIC,
+HTTP1/HTTP2 untouched. No merges/releases/tags/version bumps.
+Unblock::HTTP3 0.13 is still UNRELEASED.
+
 ## Verified bounded unified HTTP3 memory; uninstrumented profile follow-up (2026-10-18)
 
 PRIMARY upper feature 9da9a02fc562259003aa9ac446fe7159bca73aeb

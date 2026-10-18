@@ -253,8 +253,9 @@ hold arbitrary response Readers for minutes; that is a separate,
 application-specific slow-consumer scenario. Native payload copy counts
 remain unknown without source-level instrumentation at the exact copy
 boundaries. UDP send/receive counts and retained-heap snapshots are not
-substitutes for those counters. CI runs a shorter 2048-request, two-round
-instrumented smoke, not the 10,000-request manual example.
+substitutes for those counters. CI runs both a 2048-request, two-round instrumented retention smoke
+and a 2048-request, three-round uninstrumented comparison; neither
+replaces the 10,000-request manual dedicated-host example.
 
 ## Completed-Transaction retention fix and verification (October 18, 2026)
 
@@ -319,10 +320,46 @@ The memory-checkpoint run reported direct 1553.4 and 1574.1 requests/s
 versus unified 1342.7 and 1365.1 requests/s on one hosted runner.
 Its 256-completion smaps scans and registry introspection perturb
 the timings; **do not use those figures as an API overhead benchmark**.
-A separate 2048-request/128-warmup, 3-round matched direct-versus-unified
-test **without** optional checkpoint/registry/wire instrumentation has
-been added to primary integration CI. Treat its hosted timing as a
-diagnostic, not a performance gate or a portable speed claim.
+The matched 2048-request / 128-warmup, 3-round test **without**
+optional checkpoint/registry/wire instrumentation passed against
+published Net::QUIC 0.05 in upper CI
+[39172590547](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39172590547).
+Direct rounds delivered 1081.6, 1091.7, 1083.1 requests/s; unified
+rounds delivered 998.5, 985.8, 994.3 requests/s. Median wall time was
+1.8908 s direct versus 2.0598 s unified (ratio 1.089). Per-round
+synchronous request() setup time was 136.30, 136.22, 135.92 microseconds
+direct versus 190.52, 194.35, 189.95 microseconds unified.
+
+End-to-end callback latency samples, in microseconds, were:
+
+| Mode / round | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| Direct 1 | 8848.9 | 14079.1 | 14632.0 |
+| Unified 1 | 9366.0 | 12878.2 | 13964.9 |
+| Unified 2 | 8923.1 | 12965.9 | 13721.9 |
+| Direct 2 | 8769.0 | 13908.9 | 14315.8 |
+| Direct 3 | 8759.0 | 13930.1 | 14559.0 |
+| Unified 3 | 8789.1 | 12892.0 | 13344.0 |
+
+All status/body and exactly-once callback validation passed. The
+additional optional unreleased Net::QUIC feature diagnostic CI
+[39172590469](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39172590469)
+also passed, but is not a release dependency. The matched workload
+suggests a measurable **request-construction/scheduling** difference at
+this concurrency, not an identified individual hot-path cause.
+The HTTP3 client remains correct and bounded in the independent
+instrumented memory test.
+
+**Do not interpret the 1.089 CI wall-time ratio as a stable overhead
+estimate**. All results are single-run hosted Linux CI, with OS scheduling
+and native TLS/UDP effects; they are neither dedicated-host repeated
+benchmarking nor actual payload-copy/allocation instrumentation.
+Request_us is time inside synchronous request(), *not* network latency.
+The known audited byte copy sites in HTTP3 and Net::QUIC remain
+unmeasured. A controlled dedicated-host profile at fixed versions,
+multiple body sizes, equal concurrency, and repeated runs is needed
+before deciding whether any native allocation/copy optimization is
+worth production complexity.
 
 The remaining measurement task is controlled repeated high-concurrency
 latency and throughput on a quiet dedicated Linux machine with a fixed
