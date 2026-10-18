@@ -938,6 +938,56 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Dynamic HTTP3 cancellation and direct benchmark verified (2026-10-18)
+
+H3 native source e6c1cbb0e54b0dbe40ed6d29e5884e50983a3319
+extends t/01-native with producer join, native discard, EOF and
+repeated discard per-stream retained-byte accounting. Full H3
+Linux Perl matrix CI 39133563818 PASS. This is a test-only engine
+change beyond previously verified fair-share production code;
+H3 interoperability source remains otherwise unchanged.
+
+Upper CI 39133882442 PASS on source
+9a507a5534c138e6eebe5d09ab9e6646c259ddb4:
+552 distribution checks, eleven real TCP/QUIC files / 485 checks,
+extra 128 KiB multi-reader 64 checks, extra 4 MiB 58 checks and
+benchmark smoke PASS. New xt/linux-event-quic-join-cancel.t:
+one authenticated QUIC socket, a held 1 MiB pull Reader,
+a cancelled active producer (twice, idempotent), a late 512 KiB
+streamed producer, and a separate fast response. Validated
+client and server terminal cancellation, native discarded-body
+counter zero, exactly-once response and matching SHA256,
+producer write(false)/on_drain resumptions, bounded 4-write
+deferred bursts, native per-stream/aggregate count reconciliation.
+No production changes to upper Client/Server in this slice.
+
+New opt-in bench/h3-client-vs-direct.pl directly compares
+Unblock::HTTP3::Client against shared Unblock::HTTP::Client
+using identical Net::QUIC::Driver transport, a shared upper
+Server, local UDP/TLS and one outstanding small GET. A separate
+warmup excludes handshake, run order alternates and script
+reports completed-request interval and inclusive request()
+time, NOT process memory or copies. Its first smoke failed
+due a BENCHMARK callback-shape bug: direct on_complete($tx)
+receives one argument, versus upper on_response($tx,$response).
+Corrected benchmark source 10a6b57109f76ced416aa05b0343ef08615e9cb3.
+Upper coordinated CI 39134487091 PASS including benchmark smoke;
+552 distribution + 485 live + 64 + 58 extra checks still PASS.
+30 measured GETs after 8 warmup on the shared runner produced
+574 req/s direct and 542 req/s unified; direct/unified
+mean request call times 237.41/309.59 us. One short run is NOT
+a statistically controlled baseline, alloc/RSS measurement
+or a defensible performance claim.
+
+Final feature source docs followed tested benchmark source.
+HTTP1/HTTP2 branches and all four main refs unchanged;
+Net::QUIC and Uniform::HTTP read-only. No merge, release,
+tag or version bump. Next: repeated controlled H3 direct
+benchmark with realistic concurrent/body sizes and RSS,
+copy/CPU instrumentation; then resume future HTTP/WebSocket
+protocol integration milestones. Observe per-stream fair-share
+producer scheduling as new streams join and cancel.
+
 ## HTTP3 dynamic stream join/cancellation continuation (2026-10-18)
 
 Starting remote heads: upper 103c6714982aeb5a9bb547533039fcd70cf16d5d;
