@@ -1,3 +1,30 @@
+## CPU-only request/dispatch profiling experiment (2026-10-18)
+
+Resumed after successful bounded-memory fix and three-round
+uninstrumented real H3 baseline. Current primary upper branch was
+19a53fb088fc6070b5a5279ee5ed77f2a24840c1.
+New bench/client-dispatch-profile.pl compares canonical Uniform
+request + mock direct HTTP3 request/callback finish against the real
+upper Client ready-connection, URL parsing, operation registration,
+callback and dispatch path backed by the SAME lightweight fake engine.
+No QUIC, UDP, TLS, native payload or body reads. This is a diagnostic
+CPU-only control, **not** an end-to-end HTTP3 throughput claim. It
+asserts callback counts, terminal operations, no pending/deferred
+work and empty active-operation registry after each mode.
+
+Both upper workflows now run 3000 requests x 3 rounds of this
+instrument after bench/request-setup.pl; inspect CI before interpreting
+any numbers. Existing memory/real-QUIC 2048 profiles, standalone
+HTTP3 matrix/interoperability and stress fixtures are preserved.
+The real QUIC hosted baseline had direct median 1083.1 requests/s,
+unified 994.3, 1.089 wall ratio (single hosted run only), and
+separately request_us about 136 vs 190-194. The CPU-only control
+should determine whether setup/dispatch is a sensible place for an
+optimization experiment, but not assign costs to native copies.
+No production code, Net::QUIC, HTTP1, HTTP2, main, versions, tags
+or release changes. Next steps: verify CI smoke, evaluate results,
+then only optimize paths supported by measurements.
+
 ## Completed sustained HTTP3 uninstrumented throughput/latency follow-up (2026-10-18)
 
 Upper feature 0f5cb2bfb545c0d9308888a469c54bb3b25bc55c verified

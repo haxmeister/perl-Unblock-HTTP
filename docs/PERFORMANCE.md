@@ -57,6 +57,32 @@ from accumulating in later trials. Both modes validate every buffered
 response body and status. A request that does not finish, a wrong payload,
 or an unexpected transport error aborts the experiment.
 
+## CPU-only request-dispatch control
+
+`bench/client-dispatch-profile.pl` compares a **ready, reusable**
+`Unblock::HTTP::Client` and a direct fake HTTP3 engine with the same
+`Uniform::HTTP::Request` implementation. It deliberately stubs only
+`Unblock::HTTP3::Client`; the unified Client's URL validation, pool
+lookup, operation lifetime tracking, callback adapters and scheduler
+are real. Both paths finish a fake transaction and validate
+`on_response` and exactly-once `on_finish` counts. Each round
+alternates which mode runs first. No real HTTP3 frames, TLS, network,
+Net::QUIC, response buffering or body copies take place.
+
+```sh
+perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 20000 7
+```
+
+This separates application request/dispatch overhead from real QUIC
+transport costs. It is **not** a fair end-to-end direct-vs-unified HTTP3
+benchmark, because the dummy engine removes shared engine/transport
+work and the direct path does not parse a full URL or perform pooling.
+The results are a diagnostic bound/lead, not evidence of a production
+speedup or an actual native copy count. The separate
+`bench/request-setup.pl` measures Uniform construction and URI
+parsing in isolation. Compare this control with the real QUIC workload
+before deciding where to optimize.
+
 ## Sustained independent-Reader stress
 
 The real-socket `xt/linux-event-quic-six-credit.t` fixture defaults to six
