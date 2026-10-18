@@ -211,6 +211,28 @@ not cover H3 stream multiplexing, cross-origin competition,
 thousands of sockets, Linux scheduler variance, or absolute
 engine-buffer high water under sustained peer flow-control loss.
 
+## Live H3 producer backpressure and mixed-stream progress (2026-10-17)
+
+The existing H3/QUIC test suite now includes
+xt/linux-event-quic-producer.t. An actual HTTP3::Transaction feeds a
+2 MiB response through 4 KiB writes, at most four per deferred event-loop
+turn. Native write(false) stops production; engine on_drain wakes it
+without replaying bytes. Seven small buffered responses concurrently
+share the same Net::QUIC connection and UDP socket.
+
+CI 39088458914 PASS: 552 distribution and 368 live checks. The
+H3 producer observed 256 native backpressure events and the same
+number of on_drain wakeups, in 257 turns with a maximum burst of
+two chunks per turn. Every response's integrity and lifecycle checks
+passed. Native send_buffer_limit was set to 8192 bytes.
+
+The H3 native send_buffer_limit is not an aggregate Net::QUIC or UDP
+memory limit. This workload does not stop H3 stream receive-credit
+return, nor measure packet/stream outstanding bytes, allocator
+high-water, CPU, or latency percentiles. These should be measured
+separately before a general "bounded memory" or cross-stream
+fairness claim is made.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
