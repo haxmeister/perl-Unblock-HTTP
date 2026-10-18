@@ -938,6 +938,43 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## HTTP3 dynamic stream join/cancellation continuation (2026-10-18)
+
+Starting remote heads: upper 103c6714982aeb5a9bb547533039fcd70cf16d5d;
+H1 bb8349efdc5cf55d7730b40d55eff665cc3a245c,
+H2 51fb1ad9ef97ff7a4451b10d14a505df4d55fae4,
+H3 da4789e588ff525fda1339002a88aab607752bfb.
+All four main baselines unchanged. Approved design/handoff,
+implementation/engine-contract docs and all three engine
+handoffs reviewed. No read-only dependency modifications.
+
+Native engine test-only source e6c1cbb0e54b0dbe40ed6d29e5884e50983a3319
+extends H3 t/01-native with join, discard/cancellation simulation,
+EOF and repeated discard per-stream retained-byte invariants;
+full Perl matrix CI 39133563818 PASS. Existing HTTP3 producer
+fair-share implementation unchanged.
+
+New upper xt/linux-event-quic-join-cancel.t on the existing
+real UDP/QUIC/TLS LinuxEvent fixture keeps one 1 MiB streamed
+response's pull Reader uncredited, concurrently starts another
+streaming producer, cancels that producer's client transaction
+twice (idempotence), and then joins a 512 KiB response using
+the same authenticated QUIC connection. An independent small
+response proves multiplex isolation. It checks native aggregate
+and per-stream accounting, cancellations, full payload SHA256,
+once-only terminal outcomes, response end, write(false)/on_drain
+and cooperative deferred producer bursts. A live test-only
+source d97697e3f02063b7342247184b1a64343c336c4f
+and upper CI source 9a507a5534c138e6eebe5d09ab9e6646c259ddb4
+pin the native test commit and add xt to LinuxEvent workflow.
+
+CI 39133882442 was in progress; do not call this live case
+verified until its result has passed. Fix test bugs on upper
+feature and production defects only in authorized H3 feature.
+Do not edit main, Net::QUIC, Uniform, release, merge, tag or
+bump versions. Continue with quantitative direct-H3
+measurements after the dynamic lifecycle is green.
+
 ## Live H3 native per-stream retention reconciliation (2026-10-17)
 
 Starting upper feature source a545a4ddecef5501e3392dcd3f4f3a4a56223efd,
