@@ -968,11 +968,39 @@ Follow-up profiler commit 82e5bf55f88e2e7515cd6b82e42be2b24f83b7a6
 uses high-resolution Linux CLOCK_PROCESS_CPUTIME_ID rather than
 quantized Perl times and a true average of even-round median
 values. Workflow commit cff8be90c8f3b9183557addfea03ff516504ab43
-increases smoke to 100 measured / 20 warmup / 3 alternating
+increased the smoke to 100 measured / 20 warmup / 3 alternating
 rounds at 4 in-flight, 16KiB, and 30/10/3 at 2 in-flight,
-256KiB. Coordinated CI 39137178777 IN PROGRESS at this
-checkpoint. Check its conclusion and logs before calling
-the new CPU/median data verified.
+256KiB. Coordinated CI 39137178777 PASSED:
+552 distribution checks, 11 real TCP/QUIC files / 485 checks,
+64 extra checks at 128KiB and 58 at 4MiB, and all benchmark
+smoke commands. Each isolated trial verified exact response
+body, status, completed count and measured in-flight bound.
+
+16KiB / 4 concurrent / 100 measured per round:
+median direct 0.3526s (283.6 req/s), unified 0.3691s
+(271.0 req/s), unified/direct elapsed ratio 1.047.
+Direct mean synchronous request() call ~233-235us; unified
+~301-314us. P50 response latency ~6.9ms direct and
+~7.2ms unified. Observed isolated process RSS start
+~27.2MiB direct versus ~27.9MiB unified; end
+~33.7MiB direct versus ~34.8MiB unified.
+
+256KiB / 2 concurrent / 30 measured per round:
+median direct 0.9954s and unified 0.9955s (both
+~30.1 req/s), elapsed ratio 1.000. Per-round CPU closely
+followed elapsed on both, but includes server and client.
+Isolated VmRSS peaks remained ~59MiB direct and ~60MiB
+unified in these trials. These observed values are
+NOT client-only memory, allocated bytes or a memory cap.
+
+All results are shared-runner observations, NOT a stable
+performance regression or confidence interval. They
+establish repeatability/correctness of the new profiler
+and initial workload shapes. Preserve raw logs at
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39137178777 .
+Next: larger controlled bench on idle host, capture allocation
+and copy counts, consider separate client/server process timing,
+vary concurrent streams, body sizes, and slow receivers.
 
 Benchmark compares a direct engine request with the full
 URL-parsing pooled API by design, not an equal-cost wrapper.
