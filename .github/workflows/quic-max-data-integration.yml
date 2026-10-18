@@ -1,0 +1,78 @@
+name: QUIC MAX_DATA feature integration
+
+on:
+  push:
+    branches:
+      - feature/high-level-client-server
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  real-sockets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpanminus build-essential pkg-config libssl-dev openssl zlib1g-dev libnghttp2-dev
+      - name: Install protocol engines and Linux::Event
+        run: |
+          trap 'sudo tail -n 100 /root/.cpanm/build.log' ERR
+          sudo cpanm --notest --quiet Linux::Event@0.117
+          sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
+          sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
+          mkdir -p /tmp/unblock-sources
+          # Pin the standalone Net::QUIC MAX_DATA wakeup feature and the
+          # coordinated HTTP engine source commits. Do not test moving main.
+          for spec in \
+            perl-Net-QUIC:fceb8f65feee6c9caf1254b5ae112c5a6e33ab4f \
+            perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
+            perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
+            perl-Unblock-HTTP3:1bed34bc19213df6066fc72668cf0b9930de0d51; do
+            project=${spec%%:*}
+            revision=${spec#*:}
+            source_dir="/tmp/unblock-sources/$project"
+            git init --quiet "$source_dir"
+            git -C "$source_dir" remote add origin "https://github.com/haxmeister/$project.git"
+            git -C "$source_dir" fetch --quiet --depth=1 origin "$revision"
+            git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
+            test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
+            echo "$project $revision"
+          done
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Net-QUIC
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP1
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP2
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP3
+      - name: Build and run distribution tests
+        run: |
+          perl Makefile.PL
+          make
+          make test
+      - name: Test live TCP and QUIC sockets using Linux::Event
+        run: |
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
+          # Exercise more than the original six simultaneous slow producers,
+          # with independent Reader credit held for a sustained three seconds.
+          # Diagnostic: isolate per-stream credit with abundant connection credit.
+          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
+          UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
+          # Separate response-buffering smoke at 32 concurrent streams.
+          # This is correctness/resource telemetry, not a performance gate.
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
+          UNBLOCK_H3_CREDIT_STREAMS=12 UNBLOCK_H3_CREDIT_HOLD_SECONDS=2 prove -v -b xt/linux-event-quic-six-credit.t
+          UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 prove -v -b xt/linux-event-quic-six-credit.t
+          UNBLOCK_H3_MULTI_SEND_LIMIT=131072 prove -v -b xt/linux-event-quic-multi-credit.t
+          UNBLOCK_H3_MULTI_SEND_LIMIT=4194304 prove -v -b xt/linux-event-quic-multi-credit.t
+      - name: Direct versus shared Client benchmark smoke (not a performance gate)
+        run: |
+          perl -Iblib/lib -Iblib/arch bench/client-vs-direct.pl 1000 100 3
+          perl -Iblib/lib -Iblib/arch bench/request-setup.pl 3000 3
+          perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 30 10 3 2 262144
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 60 12 3 12 16384
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 3 8 4096,262144
+          UNBLOCK_H3_PROFILE_WIRE=1 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 24 8 1 4 4096,16384
