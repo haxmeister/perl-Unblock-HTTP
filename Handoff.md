@@ -1,3 +1,40 @@
+## Completed handle must not own the origin pool (2026-10-18)
+
+Following the passing unified HTTP3 memory and constructor-path work,
+a separate avoidable retention path was found: `_ClientOperation->new`
+created both a weak Client reference and a STRONG `origin` pool
+reference. A caller intentionally retaining a completed request handle
+therefore inadvertently kept the origin pool, unrelated connections
+and their QUIC/TCP state alive even after dropping the Client. The
+public contract guarantees that an intentionally retained handle
+keeps its **real engine Transaction**, not the other sessions in that
+pool.
+
+The minimal ownership change makes the **private** `origin` reference
+weak at operation construction. The Client itself owns the pools,
+queued operations live in the pool's pending array, and active
+operations are held in the Client's active registry. A pending timer
+also holds the Client while active. Thus this change removes an
+unnecessary owner without callbacks, hot-path allocations, structural
+API change, or post-completion cleanup requiring tricky reentrancy.
+The op's `request`, `transaction()`, terminal/error/cancel state and
+callbacks behave as before. No public method accesses the private
+origin pointer.
+
+The extended t/22-client-operation-lifetime.t tests all H1/H2/H3
+mock engines: keep completed operation handle, drop Client/pool/engine,
+assert pool reclaimed and actual Transaction still reachable and
+terminal. Existing tests exercise queued, pending, timer, late
+callback, credit and cancellation lifetime behavior. Check PRIMARY
+published Net::QUIC 0.05 full Linux::Event CI plus the separate
+QUIC-feature diagnostic, and do not claim a pass before the run
+completes. This is a bounded-retention fix, not an actual native
+allocation/copy-count measurement.
+
+No main, merge, tag, release, version bump, Net::QUIC, HTTP1/2/3
+engine changes; upper feature branch only. HTTP3 0.13 remains
+unreleased.
+
 ## Published-Net::QUIC 0.05 request constructor breakdown complete (2026-10-18)
 
 Feature code 36a013195e633d33ef8b59e8379f7c48753a3685 PASSED

@@ -19,6 +19,10 @@ sub new {
         timeout_error => undef,
     }, $class;
     weaken($self->{client});
+    # The Client owns its pools and their active/queued work. A retained
+    # completed handle must not keep the entire pool and unrelated
+    # connections alive through its private origin bookkeeping.
+    weaken($self->{origin});
     return $self;
 }
 

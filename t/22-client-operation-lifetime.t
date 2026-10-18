@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use Test::More;
-use Scalar::Util qw(refaddr weaken);
+use Scalar::Util qw(refaddr weaken isweak);
 
 BEGIN {
     package Uniform::HTTP::Request;
@@ -156,6 +156,30 @@ for my $protocol (qw(http1 http2 http3)) {
         "$protocol: completed pool does not retain an operation registry");
     is(scalar(keys %{ $engine->{live} }), 0,
         "$protocol: fake engine has no unfinished transactions");
+
+    # Caller-held terminal handles intentionally retain their actual
+    # Transaction, NOT the entire shared origin pool and other sockets.
+    my ($pool) = values %{ $client->{pools} };
+    my $weak_pool = $pool;
+    weaken($weak_pool);
+    my $kept_after_client = $client->request(url => $url);
+    my $retained_transaction = $kept_after_client->transaction;
+    $retained_transaction->finish;
+    is($kept_after_client->state, 'complete',
+        "$protocol: retained handle stays terminal");
+    ok(isweak($kept_after_client->{origin}),
+        "$protocol: private operation origin is not an owning reference");
+    my $retained_tx_id = refaddr($retained_transaction);
+    undef $retained_transaction;
+    undef $pool;
+    undef $engine;
+    undef $client;
+    ok(!defined($weak_pool),
+        "$protocol: completed handle cannot pin unrelated pooled connections");
+    is(refaddr($kept_after_client->transaction), $retained_tx_id,
+        "$protocol: real engine transaction survives Client disposal");
+    is($kept_after_client->cancel, 0,
+        "$protocol: completed detached operation is still terminal");
 }
 
 done_testing;
