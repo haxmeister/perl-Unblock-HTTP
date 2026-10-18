@@ -24,14 +24,15 @@ jobs:
           sudo cpanm --notest --quiet Linux::Event@0.117
           sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
           sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
+          sudo cpanm --notest --quiet Net::QUIC@0.05
+          perl -MNet::QUIC -e 'die "Expected CPAN Net::QUIC 0.05\n" unless $Net::QUIC::VERSION eq "0.05"'
           mkdir -p /tmp/unblock-sources
           # Pin the coordinated receive/lifecycle engine commits. Publish these
           # feature commits before this upper branch; never silently test main.
           for spec in \
-            perl-Net-QUIC:4d3a45aa2d3efb27523c6733c71d31cf527130a8 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
-            perl-Unblock-HTTP3:9d329e2adb64e0a71d58ee549f947b8972190d18; do
+            perl-Unblock-HTTP3:1bed34bc19213df6066fc72668cf0b9930de0d51; do
             project=${spec%%:*}
             revision=${spec#*:}
             source_dir="/tmp/unblock-sources/$project"
@@ -42,7 +43,6 @@ jobs:
             test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
             echo "$project $revision"
           done
-          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Net-QUIC
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP1
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP2
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP3

@@ -15,7 +15,7 @@ WriteMakefile(
         'URI'              => 0,
         'Unblock::HTTP1'   => '0.11',
         'Unblock::HTTP2'   => '0.11',
-        'Unblock::HTTP3'   => '0.11',
+        'Unblock::HTTP3'   => '0.13',
         'Uniform::HTTP'   => '0.06',
     },
     TEST_REQUIRES => {
