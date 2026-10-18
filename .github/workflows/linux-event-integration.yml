@@ -78,6 +78,10 @@ jobs:
           perl -Iblib/lib -Iblib/arch bench/request-setup.pl 3000 3
           perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
+          # Sustained identical direct/unified workload WITHOUT optional
+          # checkpoint, registry or wire instrumentation. Descriptive
+          # three-round throughput/latency comparison on hosted CI only.
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 2048 128 3 16 4096,16384
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 30 10 3 2 262144
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 60 12 3 12 16384
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 3 8 4096,262144

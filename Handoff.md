@@ -1,3 +1,43 @@
+## Verified bounded unified HTTP3 memory; uninstrumented profile follow-up (2026-10-18)
+
+PRIMARY upper feature 9da9a02fc562259003aa9ac446fe7159bca73aeb
+plus HTTP3 feature 5e0d496bb52331670edc9850d6fa417d984d0e67
+PASS upper published Net::QUIC 0.05 full integration GitHub Actions
+39172126688, including 2048-request/128-warmup two-round 16-inflight
+profile, complete Linux::Event TCP/QUIC and held Reader stress, upper
+distribution tests and short benchmark smokes. Separate diagnostic
+using standalone unreleased Net::QUIC feature PASS upper 39172126759,
+but the HTTP3 candidate requires *only published Net::QUIC 0.05*.
+Standalone H3 Linux Perl 5.20/5.28/5.36/5.44 matrix 39172069382 PASS,
+independent quic-go/public-server interoperability 39172069428 PASS.
+
+All 256-request checkpoints in both rounds show unified ready_tx=2..3
+(vs 2176 stale array slots before final compaction) and unified active
+tx=1..16, streams=7..22, ready_info=0, QUIC buffered TX=0..240 bytes.
+Direct ready_tx=1..5. Private client KiB direct R1 6340->6416, R2
+6292->6364; unified R1 7356->7480, R2 7396->7436. RSS/PSS also
+nearly flat. This RESOLVES completed-Transaction cycle and weak queue
+stale-slot growth in callback-based sustained same-connection workload.
+Caller-retained operations still own actual completed Transaction;
+pull-only notification retention remains strong by contract.
+
+The first HTTP3 weak compaction 3f194... was broken (Perl grep
+accidentally strengthens weak references); it was replaced at 5e0d49
+by in-place weak-preserving compaction tested explicitly in t/27.
+Do NOT use initial 39171819978 failing matrix or intermediate
+39171896551 memory profile as evidence of final fix.
+
+This commit adds a sustained **uninstrumented** matched 2048/128/3/16
+4096,16384-byte diagnostic to the PRIMARY upper integration workflow
+and records final memory/checkpoint metrics in docs/PERFORMANCE.md.
+Check new CI and compare within-trial direct/unified throughput,
+p50/p95/p99/request_us, but hosted runner timing is NOT an overhead
+benchmark. Do not infer native allocation or copy counts from memory
+or wire counters. No main merges/tags/releases/version changes,
+Net::QUIC modifications or HTTP1/2 edits. HTTP3 0.13 is still
+unreleased; remaining work is optional controlled dedicated-host
+profiling and precise native copy instrumentation if justified.
+
 ## Discard invalid grep-based HTTP3 weak pruning candidate (2026-10-18)
 
 The first periodic HTTP3 weak-slot cleanup 3f194ec51b19de73a986612763954c4184cb21d6

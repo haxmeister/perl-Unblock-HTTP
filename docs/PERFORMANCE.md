@@ -256,6 +256,80 @@ boundaries. UDP send/receive counts and retained-heap snapshots are not
 substitutes for those counters. CI runs a shorter 2048-request, two-round
 instrumented smoke, not the 10,000-request manual example.
 
+## Completed-Transaction retention fix and verification (October 18, 2026)
+
+The upper Client's operation handle had an ownership cycle:
+operation -> Transaction -> on_finish closure -> operation. The closure
+also captured Client/pool/connection strongly. Callback-driven HTTP3
+response completion therefore retained every finished Transaction while
+the connection stayed open, even after the HTTP3 engine had begun using
+weak entries for callback-owned pull notifications.
+
+The upper feature branch now uses a strong active-operation registry
+until terminal completion, with weak references from engine callbacks
+back to the Client/pool/connection/operation. Handles intentionally kept
+by the application still expose the **same real** engine Transaction.
+The engine fix preserves callback/pull FIFO identity and strongly queued
+pull-only entries. Its periodic weak-slot compaction (every 64 callback
+insertions) also prevents a live old callback notification from pinning
+thousands of expired weak *queue slots* behind it. Neither the active
+transaction nor the payload is duplicated in a new wrapper.
+
+Verification was performed against **published Net::QUIC 0.05**, with
+the corrected HTTP3 feature commit
+`5e0d496bb52331670edc9850d6fa417d984d0e67`, at upper CI
+[39172126688](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39172126688).
+The workflow completed distribution tests, real-socket TCP/H3 integration,
+12/16 independent held-Reader stress including a 10-second hold, and
+the deterministic 128-warmup + 2048-measured request profile in each
+of two isolated direct and two isolated unified client processes.
+All response bodies/statuses/callbacks were validated. The standalone
+HTTP3 Perl 5.20/5.28/5.36/5.44 matrix
+[39172069382](https://github.com/haxmeister/perl-Unblock-HTTP3/actions/runs/39172069382)
+and independent interoperability
+[39172069428](https://github.com/haxmeister/perl-Unblock-HTTP3/actions/runs/39172069428)
+also passed.
+
+| Client / round | Private KiB at start | Private KiB at end | PSS KiB start -> end | RSS KiB start -> end |
+| --- | ---: | ---: | --- | --- |
+| Direct / 1 | 6340 | 6416 | 11916 -> 11985 | 26524 -> 26576 |
+| Unified / 1 | 7356 | 7480 | 12795 -> 12913 | 27152 -> 27260 |
+| Unified / 2 | 7396 | 7436 | 12831 -> 12865 | 27180 -> 27204 |
+| Direct / 2 | 6292 | 6364 | 11906 -> 11969 | 26580 -> 26624 |
+
+At **every 256-completion checkpoint** (256..2048, both rounds),
+unified HTTP3 `ready_transactions` had only **2 or 3 entries**;
+the direct client had 1..5. Unified active HTTP3 transaction registry
+was 1..16, streams 7..22, buffered QUIC send bytes 0..240 in this
+workload; `ready_informational` was always zero. These figures are
+snapshots taken during the completion callback, so one just-finished
+transaction can legitimately remain visible. The earlier unbounded
+unified `ready_transactions` count 2176 and ~95 MiB private end
+footprint are no longer present. Private/PSS/RSS changes across the
+2,048 measured requests are small in both modes.
+
+These are **bounded-retention observations for this workload**, not
+proof of no leaks for every user application or data size. RSS/PSS/private
+do **not** count temporary allocations, native retained payload buffers,
+or actual byte copies. User-held operation handles intentionally
+retain the completed Transaction and its response by contract.
+Unconsumed pull-only notifications remain strongly queued by design.
+
+The memory-checkpoint run reported direct 1553.4 and 1574.1 requests/s
+versus unified 1342.7 and 1365.1 requests/s on one hosted runner.
+Its 256-completion smaps scans and registry introspection perturb
+the timings; **do not use those figures as an API overhead benchmark**.
+A separate 2048-request/128-warmup, 3-round matched direct-versus-unified
+test **without** optional checkpoint/registry/wire instrumentation has
+been added to primary integration CI. Treat its hosted timing as a
+diagnostic, not a performance gate or a portable speed claim.
+
+The remaining measurement task is controlled repeated high-concurrency
+latency and throughput on a quiet dedicated Linux machine with a fixed
+Perl/XS/QUIC dependency set. Exact native copy/allocate counts would
+require temporary counters at the audited copy sites rather than
+extrapolating from RSS or UDP wire bytes.
+
 ## Comparing results fairly
 
 Use a quiet, otherwise idle machine, a fixed Perl/XS/QUIC stack and
