@@ -65,3 +65,4 @@ jobs:
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 30 10 3 2 262144
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 60 12 3 12 16384
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 3 8 4096,262144
+          UNBLOCK_H3_PROFILE_WIRE=1 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 24 8 1 4 4096,16384
