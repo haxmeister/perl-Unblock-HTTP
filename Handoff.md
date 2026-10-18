@@ -19,6 +19,42 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Isolated HTTP/3 client resource profiling (2026-10-18)
+
+Starting feature head da8032840d3f81beff37d60f3eb60bb46339ee27,
+matching the latest user handoff. HTTP1 bb8349ef, HTTP2 51fb1ad9,
+HTTP3 721395e9 also matched; H1/H2/H3 handoffs reviewed.
+No shell checkout/fetch (DNS unavailable), so publication uses GitHub
+connector with explicit upper feature branch only. All engine sources,
+Net::QUIC, Uniform::HTTP and all main branches are unchanged.
+
+bench/h3-workload-profile.pl now runs the same authenticated QUIC workload
+with separate server and measured client processes per trial, forked before
+creating sockets/event loops/QUIC. The dedicated server announces its bound
+loopback port over a pipe and remains live until the client finishes body,
+status and terminal-callback verification for every warmup/measured request.
+A client completion signal then ends the server loop; the server child
+reports its exact request count or error. Each trial still alternates modes
+and is independently forked from the coordinator. This isolates client
+process CPU (CLOCK_PROCESS_CPUTIME_ID) and client sampled VmRSS from the
+server process. The measured client still includes event loop, QUIC, TLS,
+engine and kernel work; shared RSS mappings, allocator counts and payload
+copies are not measured. End-to-end time still depends on server scheduling.
+The workload and bounded concurrency have not changed.
+
+Published code commit 4f5217f07a6c5416d6df639fa4ffa7b2f590bb1f and
+performance documentation commit 61b8988eb17068ea129721e1807c5aa3cf4e27a6.
+CI validation is pending; do not call this milestone verified until the
+feature branch workflow completes (distribution, live TCP/QUIC and two H3
+workload benchmark smoke configurations). A local shell lacks the required
+Linux::Event/QUIC dependency stack and GitHub DNS, so CI is authoritative.
+Do not interpret hosted-runner timing as a performance improvement.
+
+NEXT: review new CI outcome and fix any benchmark smoke regression; then
+add a real late producer join *without* cancelling an existing H3 producer
+on a small native send budget. Retain the original stream and tx identities,
+digests, fair producer wakeups and retained-byte invariants.
+
 ## Client milestone continuation (2026-10-17)
 
 Branch/ref verification: all four published heads matched the supplied handoff at
