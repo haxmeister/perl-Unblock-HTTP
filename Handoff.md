@@ -938,6 +938,42 @@ H3 streams and larger concurrency stress; fair direct-H3 vs
 unified Client benchmarking. No engine or read-only dependency
 changes, main edits, merges, tags, releases or version bumps.
 
+## Bounded shared HTTP3 producer fairness continuation (2026-10-17)
+
+Starting source heads were upper b86aa43ea0b97a21faa1ac2f7d1866c3e1272992;
+H1 bb8349ef, H2 51fb1ad9, H3 7bbca3ed.
+All main refs verified unchanged. Reviewed all four upper approved docs
+and all three engine handoffs; no local shell git checkout available.
+
+New feature-branch-only HTTP3 native code tracks per-stream retained
+body bytes and number of active unfinished native streaming producers
+(HTTP3 source 96cf41e9378333fb4f7b48d89c8311c1dcf7cee7).
+Its connection-level write(false) and on_drain policy compares each
+producer's retained bytes with its share of send_buffer_limit instead
+of allowing unrelated flow-control-blocked streams to suppress all
+drain callbacks. Writes remain accepted in full even when returning
+false; a single oversized write can exceed the advisory limit.
+No Net::QUIC or Uniform changes; no public NativeABI change.
+
+Upper xt/linux-event-quic-multi-credit.t now defaults to the previously
+starving 8192-byte native buffer threshold, checks that production
+stalls during the hold and each blocked producer receives drain
+wakeup when its own Reader is released. A second mode retains the
+large 4 MiB threshold for independent QUIC receive-credit isolation.
+The CI workflow runs BOTH modes and pins the precise HTTP3 source.
+Test commit 5a89a34d685fd7756a8479a4e39d4b303bd786b7;
+workflow source commit 0786d84704c950ded3c307037c95086403bd93a1.
+Engine full matrix run 39098239956 and upper integration
+39098276763 were in progress when documented. Inspect results,
+fix any failures on authorized feature refs and update this file.
+Do not declare tiny-buffer fairness verified without PASS.
+
+Remaining after CI: per-stream native retained measurement under load,
+large concurrent producers, accounting invariants on reset/discard,
+whole-process RSS and copies, direct-H3 baseline and memory bounds.
+No source changes to H1/H2 or read-only deps; no main, merge, tag,
+release or version changes.
+
 ## Multiple simultaneous H3 receive-credit holds (2026-10-17)
 
 Starting upper ref 56aa303dc959fe1130708304b7313efcf0ba3670;
