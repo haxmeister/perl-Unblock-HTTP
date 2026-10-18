@@ -188,7 +188,7 @@ sub request {
             unless defined($host) && length($host);
         $port = $uri->port;
         croak 'request(): invalid URL port'
-            unless defined($port) && $port =~ /\\A[0-9]+\\z/
+            unless defined($port) && $port =~ /\A[0-9]+\z/
                 && $port > 0 && $port <= 65535;
         $authority = $uri->authority;
         $target = $uri->path_query;
