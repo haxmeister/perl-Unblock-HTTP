@@ -19,6 +19,44 @@ release or bump versions. Net::QUIC and Uniform::HTTP are read-only dependencies
 Upper branch: feature/high-level-client-server.
 All engine branches: feature/unified-receive-lifecycle.
 
+## Optional HTTP3 client heap and wire instrumentation (2026-10-18)
+
+Starting upper branch 3ee7ce3163eaa14fa0cd80fa0339c0d0b7c95b53,
+engine feature refs HTTP1 bb8349ef, HTTP2 51fb1ad9 and HTTP3
+721395e9, unchanged. Read current handoff, performance docs and
+client/profiler source before continuing. No main or dependency edits.
+
+bench/h3-workload-profile.pl now samples /proc/self/smaps_rollup Pss and
+Private_Clean + Private_Dirty at warmup/measurement boundary and measured
+end, in the isolated client process only. Values are NA when unsupported;
+these are NOT allocation counts, native-only bytes, nor memory bounds.
+UNBLOCK_H3_PROFILE_WIRE=1 optionally measures client QUIC datagram bytes
+and packet counts at the host send/receive callback boundary during the
+measured phase. Those counters do NOT measure payload copies or retention.
+UNBLOCK_H3_HEAP_DIR optionally writes Devel::MAT::Dumper Perl heap snapshots
+before and after measured traffic; optional module loaded only when requested,
+not a runtime dependency. Snapshots show live Perl SVs at two times and
+perturb memory/CPU, so dump-enabled timings are NOT comparative benchmarks.
+Nothing changes production Client, HTTP engines, Net::QUIC or Uniform.
+
+Changes: benchmark code 2b09b5496722184e3e219c5be3bcbb834a555465,
+performance usage docs 95ee2eae8bd142a76fce1e0ed1daa8f715e6858e,
+CI optional-wire smoke cb13b182619684f0c09458902fc1df32e3bedd99.
+VERIFIED integration run 39140829724 PASS: 552 distribution checks,
+553 live TCP/QUIC checks, 64 extra 128-KiB, 58 extra 4-MiB checks;
+all existing and new benchmark smoke cases passed. Logged isolated
+client PSS/private values and measured UDP sent/received byte/packet totals.
+For 24 measured mixed 4/16 KiB requests, sampled client received about
+257 KiB wire bytes in either mode, but this is NOT Perl/C copy count.
+Optional Devel::MAT heap mode was not exercised in this CI, requires
+manual separate installation. See docs/PERFORMANCE.md for interpretation.
+
+NEXT: increase simultaneous QUIC pull Reader/producer contention beyond
+three, preserving tight advisory native send budget and per-stream credit,
+watch for starvation and accounting discrepancies. Longer-term allocation
+rate/copy counting needs dedicated instrumentation; do not optimize on
+hosted-runner timing alone.
+
 ## Isolated HTTP/3 client resource profiling (2026-10-18)
 
 Starting feature head da8032840d3f81beff37d60f3eb60bb46339ee27,
