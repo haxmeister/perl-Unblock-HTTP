@@ -895,13 +895,17 @@ Implemented and verified:
   pending_at_release=32739 bytes, maximum sampled pending=32739,
   producer blocks=257, native resumptions=257, pull polling
   turns=667. The fast request completed before the hold ended.
-- Further strengthened xt checks explicitly assert that the
-  producer is still stalled at release and that the maximum
-  sampled Reader pending bytes stay <= the advertised 32KiB
-  stream receive window. Source commit
-  b352f51bed7f4b9a9b8179aaa0df28a41fc93926; await
-  coordinated CI for these stronger assertions before declaring
-  them separately verified.
+- Strengthened xt checks explicitly assert that the producer
+  is still stalled at release and that the maximum sampled
+  Reader pending stays <= the advertised 32KiB receive window.
+  Source commit b352f51bed7f4b9a9b8179aaa0df28a41fc93926;
+  coordinated CI 39093070343 PASS with 13 distribution files /
+  552 checks and nine live files / 389 checks. At credit release,
+  the producer had submitted only 10 of 512 complete 4KiB chunks;
+  Reader pending was 32,739 bytes (also the maximum sampled).
+  This distinguishes an actual QUIC credit stall from an
+  application-only callback delay. Producer blocks=257,
+  native resumptions=257; Reader polling turns=708.
 - The Reader pending count is only application-visible queued
   response body bytes. It does not include native nghttp3/QUIC
   buffers, kernel datagram queues, retransmissions, Perl allocator
