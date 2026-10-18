@@ -804,19 +804,42 @@ feature heads checked; Net::QUIC and Uniform::HTTP remain read-only.
 Read the approved four upper docs and H3 feature Handoff.md,
 Transaction.pm, Body::Stream.pm, Connection.pm before editing.
 
-Plan: expand existing real QUIC/TLS and mixed H3 transaction coverage
-with one 2 MiB cooperative streamed response producer on the real
-HTTP3 Transaction, bounded 4 KiB chunks (max four per deferred turn)
-and native on_drain callback. Force H3 internal retained-buffer pressure
-with a small send_buffer_limit; track write(false), resumption,
-byte-exact streamed receive SHA256, and final end() deferral after
-a blocked final write. Send seven ordinary buffered requests on the
-same Net::QUIC connection to exercise stream isolation. Retain the
-established UDP driver/timer framework boundary and direct engines.
-Do not claim QUIC socket high-water or actual paused H3 receive credit
-from this test. If H3 engine backpressure notifications stall or fail,
-confirm in CI and add narrowly scoped H3 engine regressions rather
-than inventing a new framework abstraction.
+Implemented and first CI verification:
+- New xt/linux-event-quic-producer.t reuses proven real UDP/QUIC/TLS
+  connection, native H3 Transaction and driver callbacks. Concurrent
+  work is one 2 MiB streamed response plus seven ordinary buffered
+  request/response exchanges on the same authenticated QUIC socket.
+  Producer writes 4096-byte chunks with a maximum four per deferred
+  event-loop turn and stops on write(false). It resumes only from
+  the native HTTP3 on_drain callback and defers end() if the last
+  complete write reported backpressure.
+- H3 server send_buffer_limit is set to 8192 bytes to expose
+  protocol-level retained-body pressure. The test validates byte
+  counts, streamed SHA-256, exactly one end, callback order, native
+  object identity, concurrent stream isolation and bounded
+  producer bursts; it does not add body forwarding in the upper API.
+- CI 39088458914 PASS on upper production-unchanged source/test
+  c47bd77b574f97218984c3a7c0bb96c53741aa62:
+  13 distribution files / 552 checks; eight real TCP/QUIC files /
+  368 checks. Native H3 producer blocks=256, resumptions=256,
+  on_drain=256, event turns=257, max two chunks per turn.
+  The repeat direct-vs-unified benchmark smoke also ran; those noisy
+  timing samples are not a throughput performance claim.
+- A follow-up assertion requires one small H3 response to finish
+  before the large streamed response; source test commit
+  3494d47227100c741d68a3a2e57b8f5c87df4e0f.
+  Wait for its corresponding CI PASS before marking its added
+  assertion verified. Documentation-only commits follow it.
+- H3 send_buffer_limit is a native HTTP3 retained-body threshold,
+  NOT a UDP socket hard cap, aggregate QUIC buffering bound or
+  memory measurement. H3 callback receipt currently consumes QUIC
+  receive credit automatically, so no receiver pause is being
+  simulated or inferred. Remaining: actual H3 slow reader with
+  explicit receive-credit control, aggregate buffering observability,
+  concurrent stress beyond eight streams, and a direct H3 baseline.
+
+No H3/H1/H2 engine sources or Net::QUIC/Uniform changed in this H3
+slice. Main, tags, releases and version numbers remain untouched.
 
 No main/merge/release/tag/version changes. Record exact source
 commits, tests, and limits here after CI.
