@@ -84,6 +84,61 @@ surfaces, kernel buffers, packet loss, slow readers, streaming response
 throughput or multi-origin pooling. The native retained-byte integration tests cover a distinct
 part of those questions.
 
+## Memory diagnostics and transport-byte accounting
+
+The profiler now samples client-only Linux smaps_rollup memory **at the start
+and end** of the post-warmup phase: \`client_pss_start_kib\`,
+\`client_pss_end_kib\`, \`client_private_start_kib\` and
+\`client_private_end_kib\`. PSS is proportional resident set size; private
+memory is Private_Clean plus Private_Dirty. Values are printed as \`NA\` if
+the kernel does not expose smaps_rollup. Neither metric counts allocations,
+distinguishes Perl objects from native QUIC/TLS state, nor establishes a
+transient maximum. Compare deltas only under otherwise identical conditions.
+
+To count bytes and datagrams crossing the **client QUIC UDP socket boundary**
+during the measured phase, enable the opt-in wire counters:
+
+\`\`\`sh
+UNBLOCK_H3_PROFILE_WIRE=1 perl -Iblib/lib -Iblib/arch \
+    bench/h3-workload-profile.pl 500 80 7 8 4096,262144
+\`\`\`
+
+The reported sent/received byte totals include QUIC framing, ACKs, TLS
+handshake follow-up traffic and retransmissions in the measured phase.
+They do **not** count Perl string copies, borrowed-input copies or bytes
+retained by nghttp3/Net::QUIC. This opt-in adds small per-datagram counter
+operations; compare wire totals rather than treating its elapsed time as an
+uninstrumented performance baseline.
+
+For a snapshot of **live Perl SVs and their references**, the client can
+optionally dump its heap at the warmup/measurement boundary and immediately
+after the measured phase. Install \`Devel::MAT::Dumper\` separately; it is **not**
+a distribution or benchmark-default dependency:
+
+\`\`\`sh
+cpanm Devel::MAT::Dumper
+mkdir -p /tmp/unblock-h3-heap
+UNBLOCK_H3_HEAP_DIR=/tmp/unblock-h3-heap \
+    perl -Iblib/lib -Iblib/arch \
+    bench/h3-workload-profile.pl 500 80 3 8 4096,262144
+\`\`\`
+
+For every direct/unified round, this produces two \`.pmat\` files named with
+mode, round, client PID and \`before\`/\`after\`. Review them with
+\`Devel::MAT\` analysis tools (separate optional installation). The dumps
+describe **retained objects at two instants**, not the number of temporary
+SVs allocated/freed in between. Native C heap allocations and kernel
+buffers are not included. Heap dumping also perturbs heap state and can
+consume substantial CPU/memory; ignore throughput, CPU and RSS
+comparisons from heap-dump runs. Do not publish dumps indiscriminately:
+they can contain application data, TLS state and strings from memory.
+
+No instrument here can legitimately claim the number of internal
+Perl-to-native payload copies. To determine copy counts, a separate
+instrumented engine/allocator build or an allocation profiler with a
+known scope and control workload would be required. Preserve the
+production engine paths while gathering this evidence.
+
 ## Comparing results fairly
 
 Use a quiet, otherwise idle machine, a fixed Perl/XS/QUIC stack and
