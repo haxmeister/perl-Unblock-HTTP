@@ -713,6 +713,36 @@ socket high watermark itself is a hard upper bound.
 No H1/H2/H3, Net::QUIC, Uniform::HTTP or main source changes; no
 merges, tags, releases or version bumps.
 
+## Transport hard-cap failure contract (2026-10-17)
+
+Starting ref 9e71ba158896e5be6b4cbd4b1580c458ffca0b32,
+upper CI 39085500207 PASS; all 4 main refs and all 3 engine
+feature heads unchanged. Reviewed original approved handoff, current
+implementation/engine contracts and LinuxEvent main _ByteStream.pm
+write(), _xs_output_limit and Linux::Event::Error.
+
+Discovery: LinuxEvent max_pending_bytes is a fatal hard output limit,
+not advisory producer backpressure. When a new write would exceed the
+limit, LinuxEvent emits an Error(type => 'output_limit', operation
+=> 'write', limit, pending_bytes) and fails the stream. The returned
+false is NOT a promise that the oversized bytes were accepted. The
+upper optional LinuxEvent adapter's unblock_send() checks is_closed,
+dies after a synchronous fatal write and the native engine must
+abort rather than invoke on_drain or replay rejected bytes.
+
+New milestone: add an isolated real TCP hard-limit-exceed test using
+the upper Server and actual H1/H2 native engines. Exercise a bounded
+oversized response with a paused client and a tiny socket hard cap.
+Verify structured output_limit, no completed/successful HTTP
+transaction, exactly-once terminal error, no producer on_drain replay.
+If platform variation prevents a deterministic H2 transport overflow,
+report it distinctly rather than pretend the H2 stream flow-control
+limit was reached. CI-verify and update handoff. Then consider
+several simultaneously slow clients with a fairness test.
+
+No changes to any main branch, no engine or QUIC/Uniform sources by
+default, no release, tags, merge, or version bumps.
+
 ## Current implementation
 
 - Server is a reusable definition with shared protocol policy. Attachments
