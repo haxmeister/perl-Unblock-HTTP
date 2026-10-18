@@ -725,6 +725,51 @@ and controlled direct-engine versus unified Client benchmarks.
 HTTP1/HTTP2, Net::QUIC and Uniform unchanged, no main edits,
 releases, merges, tags or version changes.
 
+## Live native retained-body accounting, three buffer budgets (2026-10-17)
+
+xt/linux-event-quic-multi-credit.t now samples internal native per-stream
+outgoing retained-body byte counts while three concurrent 1 MiB H3
+streamed responses are active. Every sample reconciles their sum with
+the H3 native connection-wide retained-body counter. Distinct sampled
+QUIC send_buffered_bytes and per-Reader pending_bytes are retained
+separately. This test instrumentation does not change the public API
+or imply a full-stack memory limit.
+
+Upper feature source 556d296392745b7ab16a31b7b213bcf62638aa6b,
+CI 39098755460 PASS: 552 distribution checks, 10 real TCP/QUIC
+files / 455 checks at send_buffer_limit 8192, 64 checks
+at 131072, and 58 checks at 4194304; benchmark smoke PASS.
+No native per-stream versus aggregate accounting mismatches.
+All three streamed responses complete under real small-buffer
+backpressure; all separate Reader release and checksum checks
+pass. The earlier 8192 deadlock and the 131072 deadlock are
+no longer reproducible under this fixture.
+
+Observed native producer-retained peaks at limits
+8192, 131072, 4194304 respectively: 13618, 173406,
+3047511 bytes. QUIC sampled send-retained peaks were
+8192, 131072, 3061953 bytes, respectively.
+Per-stream native peak measurements in the 8192 case
+were 5391, 5397, 9493 bytes; the individual peaks
+occurred at different times, so they cannot be summed
+as a simultaneous aggregate sample. The native soft
+threshold is not a hard cap: full accepted writes
+can exceed active shares. Buffering at the QUIC,
+TLS, kernel and allocator layers is not bounded here.
+
+Engine source pin remains
+96cf41e9378333fb4f7b48d89c8311c1dcf7cee7,
+previously verified HTTP3 full CI matrix and interop.
+No HTTP1/HTTP2, Net::QUIC, Uniform, main, release,
+tag or version changes.
+
+Follow-up: dynamic producer arrival/cancel/EOF stress,
+native discard and ACK-accounting invariants, controlled
+throughput and latency baseline, RSS/copy instrumentation,
+larger stream concurrency, and direct engine vs unified
+Client performance comparison. Do not claim a throughput
+improvement from CI smoke timings.
+
 ## Later design milestones
 
 Cross-host Alt-Svc, DNS HTTPS discovery, explicit network-change
