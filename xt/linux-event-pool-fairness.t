@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test::More;
 use Digest::SHA qw(sha256_hex);
+use Scalar::Util qw(refaddr);
 
 use Linux::Event::Loop;
 use Linux::Event::Kernel::Timer;
@@ -171,7 +172,7 @@ for my $protocol ('http/1.1', 'h2') {
                 on_drain => sub ($active_tx) {
                     $SERVER_DRAINS++;
                     $ERROR ||= "$key drain transaction changed"
-                        unless $active_tx == $tx;
+                        unless refaddr($active_tx) == refaddr($tx);
                     my $p = $PRODUCERS{$key};
                     if ($p->{waiting}) {
                         $p->{waiting} = 0;
@@ -278,8 +279,12 @@ for my $protocol ('http/1.1', 'h2') {
         . "$SERVER_DRAINS, socket drains=$SOCKET_DRAINS, "
         . "maximum sampled socket queue=$MAX_SOCKET_PENDING bytes");
     $WATCHDOG->cancel if $WATCHDOG && $WATCHDOG->is_active;
-    $_->cancel if $_->is_active for @TIMERS;
-    $_->close unless $_->is_closed for @STREAMS;
+    for my $timer (@TIMERS) {
+        $timer->cancel if $timer->is_active;
+    }
+    for my $stream (@STREAMS) {
+        $stream->close unless $stream->is_closed;
+    }
     $listener->close if $listener->can('close');
 }
 
