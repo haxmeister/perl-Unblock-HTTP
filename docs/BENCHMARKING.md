@@ -238,6 +238,41 @@ high-water, CPU, or latency percentiles. These should be measured
 separately before a general "bounded memory" or cross-stream
 fairness claim is made.
 
+## Pull Reader credit gating and observed queue bytes (2026-10-17)
+
+The additional live H3 test at xt/linux-event-quic-reader-credit.t
+uses an advanced HTTP3::Body::Reader without on_data. Holding off
+next_chunk() for 500 ms stops application QUIC body-credit return.
+The QUIC client advertises a 32768-byte per-stream receive window.
+A short independent H3 response completes on the same authenticated
+connection while a 2 MiB long response remains awaiting Reader
+consumption. After release, deferred bounded polling drains the
+queued body, resumes producer progress and verifies SHA-256.
+
+CI 39092855745 PASS: 552 ordinary distribution checks and
+387 live checks in nine files. Recorded observations:
+
+| Quantity | Result |
+| --- | ---: |
+| Reader pending body bytes at hold release | 32,739 |
+| Peak sampled Reader pending bytes | 32,739 |
+| Producer backpressure events | 257 |
+| Producer native on_drain resumptions | 257 |
+| Bounded Reader polling turns | 667 |
+
+A subsequent test-only change adds explicit producer-stalled-at-release
+and Reader-pending-at-most-advertised-window assertions, pending
+their own CI result.
+
+Body::Reader->pending_bytes is the Reader's queued decoded body
+bytes ONLY. It does NOT count all retained H3 native data, QUIC
+retransmission/stream/packet buffers, network socket memory or
+Perl object allocator overhead. An actual end-to-end bounded
+memory measurement must combine native engine statistics,
+QUIC buffer accounting and process high-water metrics under
+a steady slow receiver, not extrapolate these Reader values.
+No rate or throughput claim is made from this correctness fixture.
+
 ## Next benchmarks to implement
 
 - Concurrent client sockets, changing connection/stream caps, idle
