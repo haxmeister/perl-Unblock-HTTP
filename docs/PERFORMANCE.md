@@ -44,8 +44,28 @@ and per-256-completion memory and engine-registry checkpoints. This
 compares bounded-retention behavior when the pool doubles its active
 stream capacity, with no additional native copy/alloc counters. The
 32-concurrency scenario is a resource and correctness stress, not a
-repeatable throughput claim. Check its run status and checkpoint values
-before calling it validated.
+repeatable throughput claim. Published Net::QUIC 0.05 CI
+[39176260513](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39176260513)
+PASSED, as did independent optional QUIC-feature CI 39176260525.
+At 32 concurrent requests the unified private process memory in KiB
+went 7,744 -> 7,900 (round 1) and 7,844 -> 7,860 (round 2);
+direct memory went 6,744 -> 6,788 and 6,604 -> 6,716.
+At every checkpoint unified ready_transactions stayed between 2 and
+13 queue slots, not proportional to completed requests, and the
+active engine transaction registry stayed within concurrency.
+RSS/PSS also remained nearly flat. These are bounded-retention
+observations for this particular callback-driven workload.
+
+CI now also enables `UNBLOCK_H3_PROFILE_ASSERT_BOUNDED=1` for BOTH
+the sustained 16- and 32-concurrent profiles. This opt-in diagnostic
+requires registry checkpoints, and checks each 256-completion sample:
+`ready_transactions <= concurrency+64`, live engine Transactions
+`<= concurrency+1`, and no more than 8 MiB of private-memory growth
+since measurement began. The last is intentionally a generous
+regression guard for the original approximately 80+ MiB growth;
+it is not a CI throughput performance gate or a universal memory
+bound for arbitrary request/response sizes. RSS/PSS/private
+memory do not count temporary Perl or native allocations or copies.
 
 A trial uses two fresh child processes: one running the HTTP/3 server and
 one running the measured client. They communicate over loopback UDP using

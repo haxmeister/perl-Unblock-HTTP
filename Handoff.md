@@ -1,3 +1,37 @@
+## Automatic HTTP3 bounded-memory regression guard (2026-10-18)
+
+Sustained 32-inflight real-QUIC test in primary published Net::QUIC
+0.05 workflow 39176260513 PASS; optional separate QUIC feature
+39176260525 PASS. Both include full upper tests and live socket
+stress. Compared with the original 16-inflight sustained run:
+128 warmup, 2048 measured, two independent client/server rounds,
+alternating 4096/16384-byte buffered responses, SHA/body and
+exactly-once callbacks. At 32: unified private memory KiB round 1
+7744->7900, round 2 7844->7860; direct 6744->6788 and
+6604->6716. Unified ready_transactions slots every 256 completions
+stay 2..13, final tx registry=1 during terminal callback, RSS/PSS
+nearly flat. This corroborates bounded retention under the largest
+configured 32 H3 streams per pooled connection, not a native
+alloc/copy measurement.
+
+This commit enforces opt-in regression assertions in
+bench/h3-workload-profile.pl with
+UNBLOCK_H3_PROFILE_ASSERT_BOUNDED=1.
+Only for callback-only 4/16 KiB CI with CHECKPOINT_EVERY and
+REGISTRY enabled: at each sample ready_tx <= concurrency+64,
+engine active tx <= concurrency+1, private growth <= 8192 KiB
+compared with pre-measurement warmup. Catch reintroduction of
+previous approx 80 MiB linear leak without a timing threshold
+or restricting legitimate pull-only consumers. Diagnostic values
+are not general guarantees for arbitrary payload sizes.
+
+Previous private weak-origin lifetime fix upper 945734c PASSED
+full published QUIC-0.05 upper CI 39175957247 and independent
+diagnostic 39175957301. No main, merge, tag, release, version
+bump, HTTP engine change or Net::QUIC source change. This guard
+must be verified by next primary CI before claiming green.
+HTTP3 0.13 still unreleased.
+
 ## Sustained callback memory verification at 32 H3 concurrent requests (2026-10-18)
 
 The original memory regression was fixed and measured at 16

@@ -44,6 +44,11 @@ my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
 my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
 my $profile_registry = $ENV{UNBLOCK_H3_PROFILE_REGISTRY} // 0;
+my $assert_bounded = $ENV{UNBLOCK_H3_PROFILE_ASSERT_BOUNDED} // 0;
+die "UNBLOCK_H3_PROFILE_ASSERT_BOUNDED must be 0 or 1\n"
+    unless $assert_bounded =~ /\A[01]\z/;
+die "UNBLOCK_H3_PROFILE_ASSERT_BOUNDED requires registry checkpoints\n"
+    if $assert_bounded && (!$profile_registry || !$checkpoint_every);
 die "UNBLOCK_H3_PROFILE_REGISTRY must be 0 or 1\n"
     unless $profile_registry =~ /\A[01]\z/;
 die "UNBLOCK_H3_PROFILE_REGISTRY requires memory checkpoints\n"
@@ -234,6 +239,37 @@ sub run_client_trial ($mode, $server_port, $round) {
                             private => $rollup->{private},
                             registry => $snapshot_registries->(),
                         };
+                        if ($assert_bounded) {
+                            my $sample = $checkpoints[-1];
+                            my $reg = $sample->{registry};
+                            # For the 4/16 KiB callback-only CI workload,
+                            # catch old strong queue/Transaction retention.
+                            # Private KiB is not an allocation counter.
+                            if (!defined($reg->{ready_transactions})
+                                || $reg->{ready_transactions} > $concurrency + 64
+                                || !defined($reg->{transactions})
+                                || $reg->{transactions} > $concurrency + 1
+                                || !defined($memory_start->{private})
+                                || !defined($sample->{private})
+                                || $sample->{private} - $memory_start->{private}
+                                    > 8192) {
+                                $error = "$mode bounded-memory assertion at "
+                                    . "$finished completions: ready_tx="
+                                    . (defined($reg->{ready_transactions})
+                                        ? $reg->{ready_transactions} : 'NA')
+                                    . " transactions="
+                                    . (defined($reg->{transactions})
+                                        ? $reg->{transactions} : 'NA')
+                                    . " private_start="
+                                    . (defined($memory_start->{private})
+                                        ? $memory_start->{private} : 'NA')
+                                    . " private_now="
+                                    . (defined($sample->{private})
+                                        ? $sample->{private} : 'NA');
+                                $loop->stop;
+                                return;
+                            }
+                        }
                     }
                 }
                 if ($finished == $phase_target && !$inflight) {
@@ -689,6 +725,8 @@ print "# Memory checkpoints at every $checkpoint_every completions; timing is in
     if $checkpoint_every;
 print "# Private engine registry counts enabled, diagnostic only.\n"
     if $profile_registry;
+print "# Opt-in bounded-memory regression guard enabled for callback-only 4/16 KiB workload.\n"
+    if $assert_bounded;
 print "# Timeout watchdog=$watchdog_seconds seconds per trial.\n"
     if $watchdog_seconds != 60;
 print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
