@@ -69,6 +69,7 @@ sub new {
         factory => \%factory,
         limit => \%limit,
         pending_count => 0,
+        active_operations => {},
         pools => {},
         alt_svc => $alt_svc,
         idle_timeout => $idle_timeout,
@@ -684,6 +685,17 @@ sub _dispatch {
     $self->_cancel_idle($conn) if $conn->{idle_cancel};
     $conn->{active}++;
     $op->{state} = 'active';
+    # The Client owns in-flight operations even if the caller discards its
+    # handle. Transaction callbacks must not own the operation or pool:
+    # once terminal, that would retain the Transaction through a cycle.
+    my $op_id = refaddr($op);
+    $self->{active_operations}{$op_id} = $op;
+    my ($weak_self, $weak_pool, $weak_conn, $weak_op) =
+        ($self, $pool, $conn, $op);
+    weaken($weak_self);
+    weaken($weak_pool);
+    weaken($weak_conn);
+    weaken($weak_op);
     my $callbacks = $op->{callbacks};
     my %engine_callback;
     $engine_callback{on_data} = $callbacks->{on_data} if $callbacks->{on_data};
@@ -696,7 +708,8 @@ sub _dispatch {
         # Once per response headers, not on the body hot path.
         $engine_callback{on_response} = sub {
             my ($tx, $response) = @_;
-            $self->_learn_alt_svc($pool, $conn, $response);
+            $weak_self->_learn_alt_svc($weak_pool, $weak_conn, $response)
+                if $weak_self && $weak_pool && $weak_conn;
             $callbacks->{on_response}->($tx, $response)
                 if $callbacks->{on_data} && $callbacks->{on_response};
         };
@@ -719,17 +732,23 @@ sub _dispatch {
     }
     $engine_callback{on_finish} = sub {
         my ($tx) = @_;
-        return if $op->is_terminal;
-        local $pool->{callback_depth} = ($pool->{callback_depth} || 0) + 1;
-        $op->{transaction} ||= $tx;
-        $op->{state} = $op->{timeout_error} ? 'error'
+        my $active_op = $weak_op or return;
+        return if $active_op->is_terminal;
+        my ($active_self, $active_pool, $active_conn) =
+            ($weak_self, $weak_pool, $weak_conn);
+        return unless $active_self && $active_pool && $active_conn;
+        local $active_pool->{callback_depth} =
+            ($active_pool->{callback_depth} || 0) + 1;
+        $active_op->{transaction} ||= $tx;
+        $active_op->{state} = $active_op->{timeout_error} ? 'error'
             : $tx->is_cancelled ? 'cancelled'
             : $tx->is_error ? 'error' : 'complete';
-        $op->{error} = $op->{timeout_error} || ($tx->is_error ? $tx->error : undef);
-        $op->_cancel_timer;
-        $conn->{active}--;
-        if ($op->{timeout_error} && $callbacks->{on_error}) {
-            eval { $callbacks->{on_error}->($tx, $op->{timeout_error}); 1 }
+        $active_op->{error} = $active_op->{timeout_error}
+            || ($tx->is_error ? $tx->error : undef);
+        $active_op->_cancel_timer;
+        $active_conn->{active}--;
+        if ($active_op->{timeout_error} && $callbacks->{on_error}) {
+            eval { $callbacks->{on_error}->($tx, $active_op->{timeout_error}); 1 }
                 or warn $@;
         }
         my $ok = eval {
@@ -737,14 +756,17 @@ sub _dispatch {
             1;
         };
         warn $@ unless $ok;
+        # Keep the strong active ownership through application callbacks.
+        # A caller-retained handle still owns the real engine Transaction.
+        delete $active_self->{active_operations}{$op_id};
         # A quiet, reusable connection needs no additional loop turn.
         # Preserve deferred H1 reentrancy, pending queues, idle timers
         # and immediate cleanup of closed/draining/stale connections.
-        $self->_schedule($pool)
-            if @{ $pool->{pending} }
-                || defined($self->{idle_timeout})
-                || $conn->{stale}
-                || _closed($conn) || _retired($conn);
+        $active_self->_schedule($active_pool)
+            if @{ $active_pool->{pending} }
+                || defined($active_self->{idle_timeout})
+                || $active_conn->{stale}
+                || _closed($active_conn) || _retired($active_conn);
     };
     my $no_credit = 0;
     my $ok = eval {
@@ -762,6 +784,7 @@ sub _dispatch {
         1;
     };
     if ($ok && $no_credit) {
+        delete $self->{active_operations}{$op_id};
         $conn->{active}--;
         $conn->{credit_blocked} = 1;
         $op->{state} = 'queued';
@@ -770,6 +793,7 @@ sub _dispatch {
         return 0;
     }
     unless ($ok) {
+        delete $self->{active_operations}{$op_id};
         if (!$op->is_terminal) {
             $conn->{active}--;
             $self->_fail_active($op, "$@");
