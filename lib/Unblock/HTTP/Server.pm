@@ -3,7 +3,7 @@ package Unblock::HTTP::Server;
 use strict;
 use warnings;
 use Carp qw(croak);
-use Scalar::Util qw(blessed);
+use Scalar::Util qw(blessed refaddr weaken);
 use Unblock::HTTP::_Policy;
 use Unblock::HTTP::_EngineFactory;
 
@@ -17,7 +17,7 @@ sub new {
     for my $name (qw(http1 http2 http3)) {
         $protocols{$name} = delete $options{$name} if exists $options{$name};
     }
-    for my $name (qw(on_headers on_request on_error)) {
+    for my $name (qw(on_headers on_request on_error on_websocket)) {
         next unless exists $options{$name};
         my $callback = delete $options{$name};
         croak "new(): $name must be a coderef" unless ref($callback) eq 'CODE';
@@ -25,8 +25,14 @@ sub new {
     }
     croak 'new(): unknown option: ' . join(', ', sort keys %options) if %options;
     croak 'new(): on_request callback is required' unless $callbacks{on_request};
+    my $policy = Unblock::HTTP::_Policy->new(%protocols, _websocket_role => 'server');
+    croak 'new(): on_websocket callback is required for HTTP1 WebSocket support'
+        if $policy->websocket_enabled('http/1.1') && !$callbacks{on_websocket};
+    croak 'new(): on_websocket requires http1 websocket => 1'
+        if !$policy->websocket_enabled('http/1.1') && $callbacks{on_websocket};
     return bless {
-        policy => Unblock::HTTP::_Policy->new(%protocols),
+        policy => $policy,
+        on_websocket => $callbacks{on_websocket},
         # Map once at definition time; no transaction or body wrapper.
         callbacks => {
             on_request => $callbacks{on_headers} || \&_ignore_headers,
@@ -37,6 +43,115 @@ sub new {
 }
 
 sub _ignore_headers { return }
+
+# Recognize even incomplete WebSocket attempts so a malformed upgrade is not
+# silently treated as an ordinary application request.
+sub _websocket_candidate {
+    my ($request) = @_;
+    for my $index (0 .. $request->header_count - 1) {
+        my $name = lc $request->header_name($index);
+        return 1 if $name =~ /\Asec-websocket-/;
+        next unless $name eq 'upgrade';
+        for my $token (split /,/, $request->header_value($index)) {
+            return 1 if $token =~ /\A[ \t]*websocket[ \t]*\z/i;
+        }
+    }
+    return 0;
+}
+
+# HTTP1 switches the complete byte stream, not an individual transaction.
+# Keep the lower engine and transport as the only byte owners. Only this
+# opted-in attachment gets a pair of per-connection transition callbacks.
+sub _attach_websocket_stream {
+    my ($self, $transport, $engine_options) = @_;
+    croak 'attach_stream(): HTTP1 WebSocket transport must implement unblock_upgrade()'
+        unless $transport->can('unblock_upgrade');
+
+    my $host = $transport;
+    weaken($host);
+    my $engine;
+    my $handler = $self->{on_websocket};
+    my $on_http_request = $self->{callbacks}{on_request_end};
+    my $pending;
+
+    my $on_request_end = sub {
+        my ($tx, $request) = @_;
+        return $on_http_request->(@_) unless _websocket_candidate($request);
+
+        my $selected = $handler->($tx, $request);
+        unless (defined $selected) {
+            $tx->respond(status => 403, body => 'WebSocket denied');
+            return;
+        }
+        croak 'on_websocket must return a hash reference or undef'
+            unless ref($selected) eq 'HASH';
+        my %option = %$selected;
+        my %handshake_option;
+        for my $name (qw(subprotocols permessage_deflate)) {
+            $handshake_option{$name} = $option{$name}
+                if exists $option{$name};
+        }
+        my $on_open = delete $option{on_open};
+        croak 'on_websocket on_open must be a coderef'
+            if defined($on_open) && ref($on_open) ne 'CODE';
+        croak 'on_websocket may not override the attached transport'
+            if exists $option{transport};
+
+        require Unblock::WebSocket::Handshake;
+        require Unblock::WebSocket::Server;
+        my $handshake;
+        my $valid = eval {
+            $handshake = Unblock::WebSocket::Handshake->server_accept(
+                $request, %handshake_option,
+            );
+            1;
+        };
+        unless ($valid) {
+            $tx->respond(status => 400, body => 'Invalid WebSocket handshake');
+            return;
+        }
+        my $ws = Unblock::WebSocket::Server->new(
+            %{ $handshake->connection_options },
+            %option,
+            transport => $host,
+        );
+        $pending = {
+            transaction => refaddr($tx),
+            websocket   => $ws,
+            on_open     => $on_open,
+            request     => $request,
+        };
+        $tx->respond($handshake->server_response);
+        return;
+    };
+
+    my $on_switch = sub {
+        my ($tx) = @_;
+        croak 'unexpected HTTP1 protocol switch without a WebSocket handshake'
+            unless $pending && $pending->{transaction} == refaddr($tx);
+        my $ready = $pending;
+        $pending = undef;
+        my $ws = $ready->{websocket};
+        croak 'WebSocket transport was destroyed during handshake' unless $host;
+        $host->unblock_upgrade($ws);
+        $ready->{on_open}->($ws, $tx, $ready->{request})
+            if $ready->{on_open};
+        my $tail = $engine->take_remainder;
+        $ws->input($tail) if length $tail;
+        return;
+    };
+
+    my %callbacks = %{ $self->{callbacks} };
+    $callbacks{on_request_end} = $on_request_end;
+    $callbacks{on_switch} = $on_switch;
+    my $attached = Unblock::HTTP::_EngineFactory->create(
+        'Server', 'http/1.1', %$engine_options,
+        %callbacks, transport => $transport,
+    );
+    $engine = $attached;
+    weaken($engine);
+    return $attached;
+}
 
 sub protocols { return $_[0]{policy}->protocols }
 sub alpn_protocols { return $_[0]{policy}->alpn_protocols }
@@ -64,6 +179,8 @@ sub attach_stream {
         croak "attach_stream(): transport must implement $method()"
             unless $transport->can($method);
     }
+    return $self->_attach_websocket_stream($transport, $engine_options)
+        if $protocol eq 'http/1.1' && $self->{policy}->websocket_enabled($protocol);
     return Unblock::HTTP::_EngineFactory->create(
         'Server', $protocol, %$engine_options,
         %{ $self->{callbacks} }, transport => $transport,
