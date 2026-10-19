@@ -237,7 +237,9 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
 This feature branch implements reusable attachment and ordinary buffered or
 streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
-WebSocket transitions remain planned. Initial Client factories and bounded
+HTTP/1.1 Server WebSocket Upgrade is available as an opt-in, using
+Unblock::WebSocket as an optional dependency. Client upgrades and H2/H3 Extended
+CONNECT WebSockets remain planned. Initial Client factories and bounded
 pooling are implemented separately in Unblock::HTTP::Client.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
@@ -294,9 +296,72 @@ before the transaction is terminal. Its exceptions do not undo cleanup.
 C<on_error> retains the engine's arguments: transaction, error, and an
 optional protocol error code. Cancellation alone is not an error.
 
-C<websocket =E<gt> 0> is accepted in each protocol hash. Enabling WebSocket
-currently fails explicitly. Extended CONNECT advertising is disabled in
-H2/H3 for this stage; conflicting engine tuning is rejected.
+C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket upgrades
+only when C<on_websocket> is also supplied. The default remains disabled.
+Client upgrades and H2/H3 WebSockets are not yet supported. Extended CONNECT
+advertising stays disabled in H2/H3.
+
+=head2 HTTP/1.1 WebSocket Upgrade
+
+The optional L<Unblock::WebSocket> distribution is loaded only for WebSocket
+handshakes. The existing HTTP1 engine handles the opening HTTP request and
+writes the 101 response. An established WebSocket uses the same framework
+transport and write queue. No HTTP transaction or byte-stream wrapper is
+introduced.
+
+    my $server = Unblock::HTTP::Server->new(
+        http1 => { websocket => 1 },
+        on_request => sub {
+            my ($tx) = @_;
+            $tx->respond(status => 200, body => 'ordinary HTTP');
+        },
+        on_websocket => sub {
+            my ($tx, $request) = @_;
+            return {
+                on_message => sub {
+                    my ($ws, $message, $type) = @_;
+                    $ws->send_text("echo:$message") if $type eq 'text';
+                },
+                on_open => sub {
+                    my ($ws, $tx, $request) = @_;
+                    # Invoked after the 101 response entered the host queue.
+                },
+            };
+        },
+    );
+
+When an HTTP/1.1 request includes WebSocket handshake indicators,
+C<on_websocket($tx, $request)> selects connection options. It must return a
+hash reference of L<Unblock::WebSocket::Server> constructor callbacks/options,
+or C<undef> to reject the upgrade with HTTP 403. C<subprotocols> and
+C<permessage_deflate> are passed through the WebSocket handshake negotiator
+and its negotiated options are applied to the established session. Invalid
+handshakes receive HTTP 400, without switching the connection. Incorrect
+application-provided options are application errors.
+
+An attached HTTP1 transport with this policy must implement the usual
+C<unblock_send>, C<unblock_finish> and C<unblock_abort> methods, plus:
+
+    sub unblock_upgrade {
+        my ($transport, $websocket) = @_;
+        $transport->{consumer} = $websocket;
+    }
+
+The hook switches subsequent input, EOF, errors and output-resume calls to
+the provided WebSocket engine; it must be synchronous. It runs once, only
+after the HTTP1 engine has accepted the complete 101 response into the host
+output queue. Unblock::HTTP transfers C<take_remainder()> from the HTTP1
+engine into the new WebSocket engine after the hook (and after C<on_open>),
+preserving frames received in the same input buffer as the HTTP request.
+The host must keep its existing ordered output queue and must not send the
+same remainder again. HTTP1 retains its own transaction identity.
+
+Normal HTTP requests continue to reach C<on_request>, even with WebSocket
+enabled. C<on_headers> continues to run for both HTTP and WebSocket requests.
+One definition may serve many separate attached transports. For a WebSocket
+Close handshake, the existing Unblock::WebSocket transport contract controls
+graceful shutdown and C<unblock_finish>. The framework still owns sockets,
+TLS, input dispatch and writable notifications.
 
 =head1 METHODS
 
