@@ -364,9 +364,16 @@ the provided WebSocket engine; it must be synchronous. It runs once, only
 after the HTTP1 engine has accepted the complete 101 response into the host
 output queue. Unblock::HTTP transfers C<take_remainder()> from the HTTP1
 engine into the new WebSocket engine after the hook (and after C<on_open>),
-preserving frames received in the same input buffer as the HTTP request.
-The host must keep its existing ordered output queue and must not send the
-same remainder again. HTTP1 retains its own transaction identity.
+preserving buffered frames received in the same input call as the HTTP
+request. The host must keep its existing ordered output queue and must
+not send the same remainder again. HTTP1 retains its own transaction identity.
+
+This first slice is regression-tested with the public C<input()> path.
+For native borrowed-input integration, the provider may retain an unconsumed
+window after C<INPUT_SWITCH>; that window is not in C<take_remainder()>.
+The provider must hand the unconsumed native bytes to its successor consumer
+as required by the HTTP1 NativeABI contract. This layer does not yet install
+a native successor consumer on behalf of a framework.
 
 Normal HTTP requests continue to reach C<on_request>, even with WebSocket
 enabled. C<on_headers> continues to run for both HTTP and WebSocket requests.
