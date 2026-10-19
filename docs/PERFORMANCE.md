@@ -1,3 +1,23 @@
+### Sweep launcher CI verification
+
+The launcher and its new schedule regression passed primary
+published-Net::QUIC-0.05 Linux::Event workflow
+[39190997695](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39190997695)
+and separate optional feature diagnostic
+[39190997771](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39190997771).
+Primary CI exercised a 24-request, one-paired-round real-QUIC
+single-scenario run, verified its versioned manifest, and retained all
+the existing 16/32-concurrent 2048-request memory guards. No
+dedicated-host 20-case, seven-round result was produced.
+
+**Source-provenance caution:** the launcher checks the loaded
+Net::QUIC version is 0.05, not the cryptographic origin of its installed
+source. An unreleased feature checkout may also expose version 0.05.
+Use the published CPAN Net-QUIC-0.05 distribution for the dedicated
+sweep, and record the installation source plus the exact upper/H3
+engine commit identifiers; do not substitute the optional feature
+diagnostic run for a published-dependency result.
+
 ## Automated controlled-host real-QUIC sweep (development)
 
 Use the feature-branch benchmark-only launcher to avoid accidentally

@@ -1,3 +1,43 @@
+## Controlled-host profile sweep launcher verified by real-QUIC CI (2026-10-18)
+
+Upper feature commit dc7adf1c9a04e865436f44ee63ffebaeda31396f
+PASSED both workflows:
+- Primary Linux::Event / published CPAN Net::QUIC 0.05 integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39190997695
+- Separate optional QUIC MAX_DATA feature diagnostics:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39190997771
+
+Primary CI passed new t/24-h3-profile-sweep.t; full distribution
+suite; live TCP/H3/Reader tests, including bounded 16/32-inflight
+2048-request memory guards; other benchmark smokes; and a real-QUIC
+one-case launcher run c08-b1024-unique, 24 measured/8 warmup/1 pair.
+The launcher generated sweep.json; the workflow decoded and
+validated completed state, one case, source-version field, one
+paired ratio and schema. A separate local synthetic-profiler
+orchestration smoke also verified persistent manifest creation
+and refusal to overwrite an existing result directory; that
+was NOT a real QUIC speed measurement.
+
+The launcher compares VERSION == 0.05 but that alone cannot
+prove installed code came from the published CPAN tarball, since an
+unreleased feature checkout can report the same version. The
+primary CI explicitly installs released Net::QUIC@0.05; a
+dedicated-host operator must do likewise and record exact installed
+distribution/engine source provenance. Optional Net::QUIC feature
+workflow is diagnostic only, NOT a substitute for published-source
+benchmarks.
+
+No quiet isolated 7-round 20-case suite was run here; this CI
+validation establishes behavior of the launcher and unchanged
+sustained memory/correctness regression guards, NOT stable client
+performance deltas. NEXT: run repeated controlled-host sweeps with
+different --rotate/--swap-url-order, compare per-case paired wall
+range/median, client CPU, synchronous request cost, p50/p95/p99,
+RSS/PSS/private separately. Only then prioritize a measured
+production bottleneck; no URL cache or speculative native changes.
+Net::QUIC main 0.05, HTTP3 0.13 feature, other protocol engines,
+all main branches, versions, tags, merges and releases untouched.
+
 ## Controlled-host H3 sweep launcher development (2026-10-18)
 
 Remote starting point 0c4076fee6eb06695854bd1a9dc96da6b5446038,
