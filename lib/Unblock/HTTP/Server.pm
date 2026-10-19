@@ -121,14 +121,26 @@ sub _attach_websocket_stream {
             on_open     => $on_open,
             request     => $request,
         };
-        $tx->respond($handshake->server_response);
+        # Even a failed host write must release the pending WebSocket state.
+        $tx->on_finish(sub {
+            $pending = undef
+                if $pending && $pending->{transaction} == refaddr($_[0]);
+        });
+        my $ok = eval { $tx->respond($handshake->server_response); 1 };
+        unless ($ok) {
+            $pending = undef;
+            die $@;
+        }
         return;
     };
 
     my $on_switch = sub {
         my ($tx) = @_;
-        croak 'unexpected HTTP1 protocol switch without a WebSocket handshake'
-            unless $pending && $pending->{transaction} == refaddr($tx);
+        # An ordinary CONNECT or unrelated protocol switch remains the
+        # lower HTTP1 engine's responsibility, not an implicit WebSocket.
+        return unless $pending;
+        croak 'WebSocket switch transaction does not match the handshake'
+            unless $pending->{transaction} == refaddr($tx);
         my $ready = $pending;
         $pending = undef;
         my $ws = $ready->{websocket};
