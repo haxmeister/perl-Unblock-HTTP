@@ -1,3 +1,35 @@
+## Full H3 sweep results retained + memory-attribution CI PASS (2026-10-19)
+
+Completed and archived all 20 scenario pairs and seven-round
+ranges from the successful full diagnostics in
+docs/PERFORMANCE-SWEEP-20261019.md. Original full workflow
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889496
+PASSED (raw GitHub artifact 12198069225, 30-day retention).
+The document retains all median paired wall ratios, full
+per-round ratio ranges, client CPU ratios, synchronous setup
+differences, pinned engines and measurement caveats, without
+misrepresenting hosted CI as a stable speed benchmark.
+
+Follow-up benchmark-only source 09396c3ead584f36d007278775a4ee9e4ca28e08
+corrected pooled private-memory results in the offline comparator
+to separate direct/unified RSS, PSS and private process deltas.
+Both COMPLETE full integration workflows PASSED:
+- Primary published CPAN Net::QUIC 0.05/Linux::Event:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39301507235
+- Separate optional Net::QUIC MAX_DATA feature diagnostic:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39301507178
+New t/25 mode-difference regression PASS; all distribution,
+real TCP/QUIC and existing 16/32 sustained bounded memory
+tests passed. No full 20-scenario performance workflow rerun
+was necessary for this benchmark-only comparator fix.
+
+NEXT: confirm the 4/16-KiB 5-6% hosted wall-time effect and
+70us-class synchronous setup delta on a quiet dedicated Linux
+host before any production hot-path optimization. No alternate
+Net::QUIC changes, no speculative URL cache; HTTP3 0.13 remains
+unreleased. All main refs unchanged; no version bump, tag,
+merge or release.
+
 ## Full HTTP3 real-QUIC profile PASS and memory comparison fix (2026-10-19)
 
 The previously running workflow completed SUCCESS:

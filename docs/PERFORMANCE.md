@@ -1,3 +1,7 @@
+### Archived hosted sweep results
+
+The complete 20-scenario x two-sweep summary, including every seven-round wall-ratio range and client CPU/setup comparisons, is retained in [PERFORMANCE-SWEEP-20261019.md](PERFORMANCE-SWEEP-20261019.md). It is descriptive hosted-CI evidence only; the raw original JSON artifact has 30-day retention.
+
 ## Separate-mode memory comparison (2026-10-19)
 
 The offline comparator previously pooled private memory changes from
