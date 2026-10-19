@@ -70,6 +70,7 @@ sub new {
         limit => \%limit,
         pending_count => 0,
         active_operations => {},
+        shutdown => 0,
         pools => {},
         alt_svc => $alt_svc,
         idle_timeout => $idle_timeout,
@@ -80,6 +81,7 @@ sub protocols { $_[0]{policy}->protocols }
 sub alpn_protocols { $_[0]{policy}->alpn_protocols }
 sub supports { $_[0]{policy}->enabled($_[1]) }
 sub pending_count { $_[0]{pending_count} }
+sub is_shutdown { $_[0]{shutdown} ? 1 : 0 }
 
 # A copied, observational-only snapshot. No transport or engine objects
 # escape, and taking a snapshot never runs scheduler or timer callbacks.
@@ -122,8 +124,39 @@ sub pool_stats {
 
 # A framework explicitly invokes this when its network identity changes.
 # No active transaction is replayed, cancelled or moved between engines.
+# Stop new admission, cancel unsent work, and retire live connections.
+# Accepted transactions finish normally; idle transports are released now.
+sub shutdown {
+    my ($self) = @_;
+    return $self if $self->{shutdown};
+    $self->{shutdown} = 1;
+    $self->{alt_svc}->clear;
+    for my $pool (values %{ $self->{pools} }) {
+        local $pool->{callback_depth} =
+            ($pool->{callback_depth} || 0) + 1;
+        for my $op (@{ [ @{ $pool->{pending} } ] }) {
+            $op->cancel unless $op->is_terminal;
+        }
+        my @live;
+        for my $conn (@{ $pool->{connections} }) {
+            next if $conn->{released};
+            $conn->{stale} = 1;
+            $self->_cancel_idle($conn) if $conn->{idle_cancel};
+            if ($conn->{active}) {
+                push @live, $conn;
+            } else {
+                $self->_release_connection($conn, 'shutdown');
+            }
+        }
+        $pool->{connections} = \@live;
+        $self->_delete_empty_pool($pool);
+    }
+    return $self;
+}
+
 sub network_changed {
     my ($self) = @_;
+    return if $self->{shutdown};
     $self->{alt_svc}->clear;
     for my $pool (values %{ $self->{pools} }) {
         # Suppress synchronous reentry from user-owned release hooks.
@@ -159,6 +192,7 @@ sub network_changed {
 
 sub request {
     my ($self, @args) = @_;
+    croak 'request(): Client is shut down' if $self->{shutdown};
     croak 'request(): expected named arguments' if @args % 2;
     my %field = @args;
     my $url = delete $field{url};
@@ -450,6 +484,7 @@ sub _sync_idle {
 
 sub _pump {
     my ($self, $pool) = @_;
+    return if $self->{shutdown};
     # Application on_finish can synchronously enqueue another request.
     # Wait for the engine terminal callback to unwind before reusing H1.
     return if $pool->{pumping} || $pool->{callback_depth};
@@ -791,6 +826,12 @@ sub _dispatch {
         # A quiet, reusable connection needs no additional loop turn.
         # Preserve deferred H1 reentrancy, pending queues, idle timers
         # and immediate cleanup of closed/draining/stale connections.
+        if ($active_self->{shutdown}) {
+            $active_self->_drop_connection(
+                $active_pool, $active_conn, 'shutdown',
+            ) if !$active_conn->{active} && !$active_conn->{released};
+            return;
+        }
         $active_self->_schedule($active_pool)
             if @{ $active_pool->{pending} }
                 || defined($active_self->{idle_timeout})
@@ -834,6 +875,7 @@ sub _dispatch {
 
 sub _schedule {
     my ($self, $pool) = @_;
+    return if $self->{shutdown};
     return if $pool->{scheduled}++;
     my $ok = eval {
         $self->{factory}{defer}->(sub {
@@ -1011,7 +1053,7 @@ cancels an active transaction.
 C<release_connection($host, $engine, $protocol, $reason)> is an optional
 framework hook for reclaiming the socket, QUIC resources, and attached
 engine exactly once. The reason is C<idle_timeout>, C<evicted>, C<closed>,
-C<draining>, or C<network_changed>. If the callback is omitted, the Client calls the engine's
+C<draining>, or C<network_changed>, or C<shutdown>. If the callback is omitted, the Client calls the engine's
 C<close()> when supported, otherwise the connection's C<close()>. Framework
 adapters that own transport lifecycle should provide the hook to clean up
 their actual socket/QUIC objects. Idle timeouts use one cancellable timer
@@ -1051,6 +1093,17 @@ Transaction, no automatic replay is permitted.
 Draining/GOAWAY connections are retired once idle.
 
 Connections are reused by origin and the requested protocol policy.
+
+C<shutdown()> permanently stops new requests, cancels queued and connecting
+operations (including their framework timers and cancellable factories),
+and releases idle transports with reason C<shutdown>. Accepted transactions
+are not cancelled or replayed: active HTTP1/2/3 connections retire after
+their last transaction finishes. The method is idempotent, returns the
+Client, and makes no new connections. Pending cancellations invoke
+on_finish(operation) but not on_error. Late factory readiness cannot
+reattach. C<is_shutdown()> reports whether admission has stopped.
+Applications may explicitly cancel active handles when immediate
+termination is needed. Network changes after shutdown do nothing.
 
 C<network_changed()> is an explicit notification from the framework when
 the underlying network identity has changed (for example, a VPN switch or

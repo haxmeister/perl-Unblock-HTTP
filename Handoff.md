@@ -1,3 +1,18 @@
+## Graceful Client shutdown implementation (2026-10-19)
+
+Resumed from 4bfb00ecc200001135abc01c625b6cbda344b0c3.
+Added new opt-in Client->shutdown / is_shutdown. Shutdown stops
+new request admission, cancels queued/connecting operations and
+their timers/factories, clears Alt-Svc and releases idle engines.
+Accepted HTTP1/2/3 transactions remain active; after the final
+finish, their transport is released once with reason shutdown.
+Late ready callbacks, deferred pumps, repeated shutdown and
+network_changed after shutdown cannot reopen connections.
+New test t/27-client-shutdown.t covers those lifecycle contracts.
+No protocol ABI or dependency change, no broad performance tests.
+NEXT verify primary and optional integration CI; do not merge,
+tag, release or modify main. HTTP3 0.13 remains unreleased.
+
 ## Canonical Client URL fast path PRODUCTION CHANGE VERIFIED (2026-10-19)
 
 Current tested code c305ba196df4d4d6f6d68dddf3fd8c4e48746482:
