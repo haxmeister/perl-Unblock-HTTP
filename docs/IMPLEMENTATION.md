@@ -20,9 +20,18 @@ No engine or Net::QUIC source changes. H2/H3 Extended CONNECT and unified
 Client WebSockets remain unsupported and their policy gates stay closed.
 No new broad performance campaigns or release actions.
 
-Next: validate `t/28` against actual pinned engines/WebSocket in both
-full integration workflows, repair concrete failures, confirm lifecycle
-cleanup, then record verified CI results. Keep existing feature branches.
+The full primary CI (39343711783) and optional QUIC-feature CI
+(39343711492) both PASS at production source d8c8c421974cf43b72d45c2358d38503b2a562de.
+The distribution suite passes 20 files / 890 checks including the 34
+new t/28 WebSocket checks; existing live TCP/QUIC, memory and benchmark
+smoke steps also pass.
+
+Native borrowed-input providers still own their unconsumed input window
+when HTTP1 returns INPUT_SWITCH. The public-input handoff test does not
+establish native successor-consumer support; frameworks using the raw
+native provider must transfer that window themselves. Native successor
+composition, Client connect_websocket, and H2/H3 streaming WebSockets
+are the next unfinished milestones. Keep existing feature branches.
 
 ## Verified graceful Client shutdown (2026-10-19)
 
