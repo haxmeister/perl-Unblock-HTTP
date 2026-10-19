@@ -1,3 +1,14 @@
+### Canonical Client URL benchmark invariant
+
+The CPU-only optional phase profiler fixed at
+https://localhost/profile previously asserted one URI constructor
+call per Client request. The optimized canonical ASCII path now
+deliberately calls none. The adjusted profiler checks zero
+URI::new calls, while retaining instrumentation so unexpected
+fallback is detected. Counts for all other constructors, dispatch
+and engine requests remain unchanged, as do pool quiescence and
+callback completion assertions. No performance threshold applies.
+
 ## Client canonical-URL parsing fast path (development)
 
 The unified Client now recognizes a narrow subset of ordinary

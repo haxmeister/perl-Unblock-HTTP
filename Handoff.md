@@ -1,3 +1,28 @@
+## Client URL fast-path profiler expectation corrected (2026-10-19)
+
+Upper production improvement 48465c35d3fcca0679cf41ae62452f82ed1f489d
+PASSED optional Net::QUIC-feature full CI 39303384936,
+including t/26 canonical-versus-URI parity tests and live
+TCP/QUIC integration. Primary published-Net::QUIC 0.05 CI
+39303384933 also passed distribution tests including t/26 and
+all live TCP/QUIC resource guards, but the optional CPU-only
+split benchmark stopped: its old invariant counted one URI::new
+per canonical request, whereas the new path deliberately avoids
+URI construction. No production protocol error was found.
+
+Updated bench/client-dispatch-profile.pl to assert exactly zero
+URI::new calls for its fixed canonical https://localhost/profile
+workload. All dispatch, engine request, Uniform request and
+operation constructor counts still require one per request,
+and active connection/completion checks remain. This preserves
+unexpected URI fallback detection. No speed threshold removed.
+
+NEXT: confirm full primary released-Net::QUIC-0.05 and optional
+transport-feature CI passes this adjustment; then examine
+existing CPU-only setup figures (not full 20-case sweep).
+HTTP1/2/3, Net::QUIC and main unchanged. No merge, release,
+tag or version bump. HTTP3 0.13 remains unreleased.
+
 ## Production Client canonical-URL parsing fast path (2026-10-19)
 
 From upper feature 939338c00e4adb64d6c240ae64f41c7c6e2cc6e3,

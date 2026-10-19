@@ -251,7 +251,10 @@ if ($split) {
             unless $request_count == $iterations
                 && $dispatch_count == $iterations
                 && $engine_count == $iterations
-                && $uri_count == $iterations
+                # The canonical URL parser intentionally avoids URI::new.
+                # This profiler uses https://localhost/profile; any URI
+                # constructor call now signals unexpected fallback.
+                && $uri_count == 0
                 && $uniform_count == $iterations
                 && $operation_count == $iterations;
         die "split: request pool was not quiescent\n"
