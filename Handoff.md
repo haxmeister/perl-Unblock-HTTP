@@ -1,30 +1,54 @@
-## HTTP1 Server WebSocket vertical slice pending full CI (2026-10-19)
+## HTTP1 Server WebSocket transition VERIFIED (2026-10-19)
 
 Resumed from 9f64ccf9e8ed8d645f5329ee7ef3065d0c4d83a7 on
-feature/high-level-client-server. Implemented first opt-in HTTP/1.1
-Server-to-Unblock::WebSocket transition: `http1 => { websocket => 1 }`
-requires an `on_websocket` callback that returns WebSocket constructor
-options or undef for HTTP 403. The H1 engine sends its own 101
-handshake response, then its on_switch calls the framework
-`unblock_upgrade($ws)` hook and transfers take_remainder() exactly
-once. Normal HTTP requests keep the direct callback path; the host
-retains its original write queue and byte transport, the engine its
-real transaction identity. Malformed attempts receive HTTP 400.
+feature/high-level-client-server. Latest production source/test
+commit d8c8c421974cf43b72d45c2358d38503b2a562de.
+Both existing FULL integration CI workflows PASSED on that code:
 
-Added t/28-server-websocket.t for real WebSocket framing, coalesced
-upgrade+frame input, later WebSocket messages, ordinary HTTP, rejection
-and disabled-policy paths. Pinned read-only Unblock::WebSocket main
-6f27677e176a3010355e1db5d135895baa3d8128 into the existing
-primary and optional full CI source-install steps. Updated the old
-t/13 policy expectation and Server POD. No lower engines, WebSocket
-source, Net::QUIC, Uniform::HTTP, main refs or versions touched.
-H2/H3 WebSocket and unified Client connect_websocket still reject.
-Do not claim CI passed until the final job status and new t/28
-assertions are inspected.
+- Published Net::QUIC 0.05 / Linux::Event:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39343711783
+- Optional separate Net::QUIC MAX_DATA branch:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39343711492
 
-NEXT: inspect full CI tests; fix concrete t/28 or integration errors,
-then record the verified results. Do not restart broad benchmarking,
-merge, tag, release, bump versions or edit main.
+Both installed pinned read-only Unblock::WebSocket main commit
+6f27677e176a3010355e1db5d135895baa3d8128 (0.02) plus
+the coordinated engine feature branches. Both passed 20 files /
+890 distribution checks, including all 34 checks in
+t/28-server-websocket.t, full existing live TCP/QUIC and sustained
+resource tests, and pre-existing smoke benchmarks. Initial CI
+exposed one test-only mismatch: the ordinary H1 Client was not in
+buffered receive mode while the assertion read its response body.
+Corrected that setup; no production workaround was needed.
+
+The first opt-in HTTP/1.1 Server WebSocket path now works:
+`http1 => { websocket => 1 }` and `on_websocket` choose WebSocket
+callbacks/options or reject the handshake with HTTP 403. Invalid
+handshakes get HTTP 400. The original H1 engine writes the HTTP 101
+response, and `on_switch` calls the framework's synchronous
+`unblock_upgrade($ws)` only after its outgoing bytes have been
+accepted into the existing ordered transport queue. The HTTP1
+`take_remainder()` tail is transferred once; subsequent bytes are
+handled by the same real Unblock::WebSocket Server. Ordinary HTTP
+requests stay on the direct handler; HTTP transaction identity is
+unchanged. Pending handshake state is released on terminal cleanup.
+
+SCOPE LIMIT: Regression covers the public H1 `input()` path.
+Native borrowed-input providers still must forward their own
+unconsumed window at INPUT_SWITCH; the unified API does not install
+a native successor consumer. Documented in Server POD. This is a
+remaining adapter milestone, not evidence of native-path parity.
+
+NEXT: complete the native borrowed-input successor transition,
+then Client HTTP/1.1 `connect_websocket()` with correct pool removal,
+cancellation and lifetime handling. Later implement H2 Extended
+CONNECT and H3 WebSocket streaming with isolated, protocol-specific
+tests. The Client and H2/H3 WebSocket policy gates are deliberately
+still closed. No broad performance sweeps; use focused correctness
+regressions. Read the current design documents and this handoff first.
+
+No lower HTTP engines, Unblock::WebSocket, Net::QUIC, Uniform::HTTP,
+main branches, tags, releases or versions changed. No release or merge
+authorized. Feature branch remains published. Do not modify main.
 
 ## Graceful Client shutdown verified with full CI (2026-10-19)
 
