@@ -1,3 +1,50 @@
+## Paired profiling + JSON smoke verified (2026-10-18)
+
+The completed upper benchmark/report changes are at 7a6e891
+and 9ba46d8. BOTH full workflows at final code head 9ba46d8
+PASSED: primary Linux::Event / published CPAN Net::QUIC 0.05
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39187454014
+and independent optional unreleased QUIC MAX_DATA feature diagnostic
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39187454090
+Earlier baseline-profile commit 7a6e891 also passed primary 39187178815
+and optional feature 39187178796.
+
+Primary 39187454014 includes t/23-h3-profile-summary.t PASS, full
+distribution tests, live TCP/QUIC integration, 12/16 Reader
+backpressure/credit tests and the guarded 2048-measured/128-warmup,
+two-round, 16- and 32-inflight bounded-memory regressions PASS.
+The real-QUIC 32-inflight smoke exported the opt-in versioned JSON,
+and CI successfully decoded/validated four trials, two pairs,
+schema/version, workload and mode order. It also passed the
+additional benchmark smokes without any throughput threshold.
+
+Illustrative paired median unified/direct wall ratios on this single
+hosted primary run (do NOT treat as stable performance estimates):
+- unique URLs, 384/48/3, 1 inflight x 1024 B: 1.0982
+  (paired range 1.0463..1.1027).
+- cycled URLs, 384/48/3, 16 inflight x 4/16 KiB: 1.0267
+  (range 1.0047..1.0762).
+- unique URLs with the SAME 16-inflight workload: 1.0608
+  (range 1.0566..1.0769).
+- unique URLs, 384/48/3, 8 inflight x 64 KiB: 0.9971
+  (range 0.9704..1.0196).
+The direction of the 16-inflight cycled-vs-unique difference
+REVERSED compared with primary 39187178815 (1.0771 vs 1.0496).
+This reinforces runner/order variability; neither result supports
+reinstating the failed URL cache or changing production code.
+No actual native payload allocation/copy counts have been obtained.
+
+NEXT: run the seven-round paired procedures from docs/PERFORMANCE.md
+on a dedicated, relatively quiet Linux host, preserving exact Perl,
+Linux kernel, CPU/governor, XS and published Net::QUIC 0.05 versions.
+Sweep concurrency 1/8/16/32, repeating/unique targets and small/large
+body sizes with JSON filenames per scenario. Examine round ranges,
+client CPU, synchronous request cost, p50/p95/p99 and RSS/PSS/private
+separately. Only inspect narrow native copy boundaries if stable
+real-workload measurements justify instrumentation. Nothing in
+HTTP3, Net::QUIC, HTTP1/HTTP2, production Client.pm or main changed.
+No release/merge/tag/version bump; HTTP3 0.13 remains unreleased.
+
 ## Profile JSON smoke and distribution manifest follow-up (2026-10-18)
 
 The benchmark-only paired summary/JSON change is at 7a6e891.

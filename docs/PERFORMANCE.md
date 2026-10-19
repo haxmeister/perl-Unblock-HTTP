@@ -1,3 +1,25 @@
+## Verified paired-profile reporting and JSON CI (2026-10-18)
+
+At upper feature source 9ba46d8, published-Net::QUIC-0.05 primary
+integration [39187454014](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39187454014)
+PASS and independent QUIC feature diagnostic
+[39187454090](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39187454090)
+PASS. New t/23 paired-statistics regressions and the two-round,
+32-inflight live-QUIC versioned-JSON smoke passed. Full 16/32
+2048-measured-request bounded-memory checks remained enabled and passed.
+No speed thresholds or production code changes.
+
+At identical 384-measured/48-warmup/3-round 16-inflight alternating
+4/16-KiB workloads on the primary hosted runner, paired median
+unified/direct wall ratios were 1.0267 (cycled URLs) and 1.0608
+(unique URLs). The preceding successful hosted primary run
+[39187178815](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39187178815)
+had produced the opposite ordering: 1.0771 cycled and 1.0496
+unique. This reversal between runs is a useful warning against
+interpreting small CI ratio differences as a URL-cache benefit.
+The new reporting format makes order/round variation visible; it
+does not eliminate shared QUIC, scheduler, TLS or CPU noise.
+
 ## Paired-round and JSON profile capture (development, 2026-10-18)
 
 The real-QUIC profiler now prints **paired round** comparisons in
