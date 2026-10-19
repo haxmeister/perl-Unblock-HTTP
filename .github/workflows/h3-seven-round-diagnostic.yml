@@ -1,0 +1,83 @@
+name: HTTP3 seven-round workload diagnostics
+
+on:
+  push:
+    branches:
+      - feature/high-level-client-server
+    paths:
+      - .github/workflows/h3-seven-round-diagnostic.yml
+  workflow_dispatch:
+
+# Hosted runner diagnostics, NOT quiet-host measurements or speed gates.
+jobs:
+  matched-full-sweeps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpanminus build-essential pkg-config libssl-dev openssl zlib1g-dev libnghttp2-dev
+      - name: Install fixed dependencies and current engine feature heads
+        run: |
+          trap 'sudo tail -n 100 /root/.cpanm/build.log' ERR
+          sudo cpanm --notest --quiet Linux::Event@0.117
+          sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
+          sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
+          sudo cpanm --notest --quiet Net::QUIC@0.05
+          perl -MNet::QUIC -e 'die "Expected CPAN Net::QUIC 0.05\n" unless $Net::QUIC::VERSION eq "0.05"'
+          mkdir -p /tmp/unblock-sources
+          for spec in \
+            perl-Unblock-HTTP1:bb8349efdc5cf55d7730b40d55eff665cc3a245c \
+            perl-Unblock-HTTP2:51fb1ad9ef97ff7a4451b10d14a505df4d55fae4 \
+            perl-Unblock-HTTP3:6687bcef0efd11991ac609f7dc7f7fa487153d28; do
+            project=$(printf '%s' "$spec" | cut -d: -f1)
+            revision=$(printf '%s' "$spec" | cut -d: -f2)
+            source_dir="/tmp/unblock-sources/$project"
+            git init --quiet "$source_dir"
+            git -C "$source_dir" remote add origin "https://github.com/haxmeister/$project.git"
+            git -C "$source_dir" fetch --quiet --depth=1 origin "$revision"
+            git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
+            test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
+            echo "$project $revision"
+          done
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP1
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP2
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP3
+      - name: Build and test unified Client
+        run: |
+          perl Makefile.PL
+          make
+          make test
+      - name: Record environment information
+        run: |
+          uname -a
+          perl -V:version -V:archname
+          perl -MNet::QUIC -e 'print "Net::QUIC $Net::QUIC::VERSION\n"'
+          git rev-parse HEAD
+          grep -m 1 'model name' /proc/cpuinfo || true
+          cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor || true
+          env | sort | grep '^UNBLOCK_H3' || true
+      - name: First full 20-case real-QUIC sweep
+        run: |
+          UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl bench/h3-profile-sweep.pl /tmp/h3-sweep-first
+      - name: Reverse URL pattern order and rotate five scenario pairs
+        run: |
+          UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl bench/h3-profile-sweep.pl --rotate=5 --swap-url-order /tmp/h3-sweep-second
+      - name: Validate and compare independent full sweeps
+        run: |
+          perl bench/h3-compare-sweeps.pl --json=/tmp/h3-sweep-comparison.json /tmp/h3-sweep-first /tmp/h3-sweep-second | tee /tmp/h3-sweep-comparison.txt
+          perl -MJSON::PP -e 'sub load { my ($p)=@_; open my $f, "<", $p or die $!; local $/; decode_json(<$f>) } my $a=load("/tmp/h3-sweep-first/sweep.json"); my $b=load("/tmp/h3-sweep-second/sweep.json"); my $c=load("/tmp/h3-sweep-comparison.json"); die "invalid full sweep" unless $a->{schema_version}==1 && $b->{schema_version}==1 && $a->{complete} && $b->{complete} && @{$a->{cases}}==20 && @{$b->{cases}}==20 && @{$c->{cases}}==20 && $a->{workload}{rounds}==7 && $b->{workload}{rounds}==7 && $a->{host}{net_quic_version} eq "0.05" && $b->{host}{net_quic_version} eq "0.05" && $a->{workload}{rotate}==0 && $b->{workload}{rotate}==5 && !$a->{workload}{swap_url_order} && $b->{workload}{swap_url_order};'
+      - name: Preserve raw profile JSON, logs and comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h3-seven-round-hosted-diagnostics
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            /tmp/h3-sweep-first/
+            /tmp/h3-sweep-second/
+            /tmp/h3-sweep-comparison.json
+            /tmp/h3-sweep-comparison.txt

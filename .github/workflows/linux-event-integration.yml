@@ -30,9 +30,9 @@ jobs:
           # Pin the coordinated receive/lifecycle engine commits. Publish these
           # feature commits before this upper branch; never silently test main.
           for spec in \
-            perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
-            perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
-            perl-Unblock-HTTP3:5e0d496bb52331670edc9850d6fa417d984d0e67; do
+            perl-Unblock-HTTP1:bb8349efdc5cf55d7730b40d55eff665cc3a245c \
+            perl-Unblock-HTTP2:51fb1ad9ef97ff7a4451b10d14a505df4d55fae4 \
+            perl-Unblock-HTTP3:6687bcef0efd11991ac609f7dc7f7fa487153d28; do
             project=${spec%%:*}
             revision=${spec#*:}
             source_dir="/tmp/unblock-sources/$project"

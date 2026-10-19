@@ -1,3 +1,22 @@
+## Full 20-scenario seven-round hosted real-QUIC diagnostic (2026-10-19)
+
+A separate .github/workflows/h3-seven-round-diagnostic.yml
+captures two complete workload sweeps on ONE hosted Ubuntu runner.
+Each sweep checks 20 cases, 2048 measured requests, 128 warmups
+and seven paired direct/unified rounds per case. The second
+reverses URL-pattern order and rotates five workload pairs.
+The fixed engine commits are HTTP1 bb8349e, HTTP2 51fb1ad,
+HTTP3 6687bce with published CPAN Net::QUIC 0.05.
+
+The job preserves per-trial profile JSON, raw per-case logs,
+comparison JSON and human-readable paired summary as a workflow
+artifact for additional examination. It is intentionally
+independent of mandatory integration tests, and a speed
+difference never fails CI. Hosted runner noise, scheduling,
+throttling and CPU performance variability prevent its ratios
+from being definitive. Confirmation still requires repeating
+the full sweep on a quiet dedicated host.
+
 ### Matched independent-sweep CI results (2026-10-19)
 
 The first independent-sweep benchmark smoke is fully CI-verified:

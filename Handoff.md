@@ -1,3 +1,39 @@
+## Full H3 seven-round real-QUIC diagnostics on hosted runner (2026-10-19)
+
+Resumed from 7a3deef89aaea75216c9762f154d0965ec560386, after
+primary 39239243745 PASS and separate QUIC-feature 39239243736 PASS.
+Current purpose is completing real-QUIC twenty-scenario profiling
+rather than more self-comparison or speculative production changes.
+
+Primary CI had pinned older HTTP1/HTTP2/HTTP3 feature commits.
+Compared against latest remote heads: H3 only new t/27 callback-queue
+weak-slot regression and docs (no production diff); H2 only docs;
+H1 one Server.pm backpressure/output distinction plus docs.
+Updated upper CI pins to current exact coordinated feature heads
+HTTP1 bb8349e, HTTP2 51fb1ad, HTTP3 6687bce, and left each
+lower repository unchanged.
+
+Added feature-branch .github/workflows/h3-seven-round-diagnostic.yml
+(one-off path-filtered push / opt-in workflow_dispatch). It runs two
+complete real-QUIC sweeps on the SAME hosted Ubuntu runner:
+20 matched scenarios; each 2048 measured/128 warmup/7 paired
+direct-vs-unified rounds; second pass --rotate=5 --swap-url-order.
+Pinned CPAN Net::QUIC 0.05, Linux::Event 0.117 and aligned
+engine feature heads. It compares outputs, validates shape
+only, and archives all raw JSON/logs and summary as an artifact.
+No speed/latency pass-fail threshold. Hosted GitHub runners have
+shared/noisy CPU and are not a substitute for a controlled, quiet
+dedicated host. No stable delta is claimed until confirmed there.
+
+NEXT: inspect both existing primary/optional integration CI and
+new seven-round diagnostic; preserve 16/32 sustained memory
+guards and fix concrete issues only. Evaluate paired ratios,
+ranges, client CPU, setup, p95/p99 and memory independently;
+any future optimization must be grounded in repeated evidence.
+All production code, Net::QUIC, HTTP engines, main refs and
+versions unchanged. No merge, release, tag or version bump;
+HTTP3 0.13 is still unreleased.
+
 ## Independent real-QUIC matched sweep CI verified (2026-10-19)
 
 Upper feature code 9f8b1dd7c0f878d4f04cdebb2f684690f96b2f68
