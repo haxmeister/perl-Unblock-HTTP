@@ -955,12 +955,14 @@ backpressure/load testing, and pool status/observability remain pending.
 Request deadlines, peer-aware H2 admission, H3 credit wakeup, and opt-in
 idle expiration are implemented and CI verified.
 
-WebSocket enablement is rejected. H2/H3 Extended CONNECT advertising is disabled.
-The raw H1 engine can still issue 101; a complete WebSocket permission gate and
-protocol handoff are pending. Needed engine work includes supported transaction
-construction extensions, H1 successor-consumer routing, H2/H3 safe stream
-composition, and bounded pause/resume. These are not part of this first receive
-milestone. No Net::QUIC modifications are authorized.
+The initial receive milestone left WebSocket enablement rejected. The
+subsequent opt-in HTTP1 Server Upgrade slice described at the top now
+implements a checked handshake, permission callback and host-consumer
+handoff using the existing H1 engine on_switch and remainder contracts.
+Unified Client WebSockets and H2/H3 Extended CONNECT remain unsupported
+and their policy gates stay closed. Later work includes Client pool removal
+on Upgrade, H2/H3 safe streaming transaction composition, and bounded
+pause/resume. No Net::QUIC modifications are authorized.
 
 Complete live stress tests, direct-engine benchmarks, and final application
 versus adapter documentation before considering a release. The original
