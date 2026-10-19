@@ -1,3 +1,29 @@
+## HTTP1 Server WebSocket transition slice (2026-10-19)
+
+On the upper feature branch only, opt-in `http1 => { websocket => 1 }`
+plus `on_websocket` uses the read-only Unblock::WebSocket handshake and
+framing engine. The HTTP1 Server remains the HTTP parser and original
+transaction owner. During the completed request callback, the WebSocket
+handshake is validated, negotiated connection options are applied, and the
+HTTP1 engine sends the 101 response. Its existing `on_switch` fires only
+after the transport has accepted the outgoing 101 bytes. That callback
+calls the framework's additional `unblock_upgrade($websocket)` hook and
+moves `take_remainder()` to the same established WebSocket engine once.
+A normal HTTP request still reaches ordinary `on_request` unchanged.
+
+The WebSocket callback returns constructor options including its message
+handlers and optional `on_open`, or undef to reject with 403. Malformed
+WebSocket handshakes receive 400 without switching. The optional WebSocket
+dependency loads only on a WebSocket attempt; the CI workflows pin the
+existing read-only WebSocket main revision for new `t/28-server-websocket.t`.
+No engine or Net::QUIC source changes. H2/H3 Extended CONNECT and unified
+Client WebSockets remain unsupported and their policy gates stay closed.
+No new broad performance campaigns or release actions.
+
+Next: validate `t/28` against actual pinned engines/WebSocket in both
+full integration workflows, repair concrete failures, confirm lifecycle
+cleanup, then record verified CI results. Keep existing feature branches.
+
 ## Verified graceful Client shutdown (2026-10-19)
 
 The upper Client now provides shutdown() and is_shutdown().
