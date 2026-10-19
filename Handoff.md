@@ -1,3 +1,36 @@
+## Controlled-host H3 sweep launcher development (2026-10-18)
+
+Remote starting point 0c4076fee6eb06695854bd1a9dc96da6b5446038,
+prior primary and optional QUIC integration workflows at code
+9ba46d8 both PASS (39187454014, 39187454090). No dedicated quiet
+benchmark host was available through this session, so no new
+production throughput measurement or native allocation/copy count
+is claimed. Next priority remains reproducible live-QUIC measurement.
+
+Added bench/h3-profile-sweep.pl to run seven-round existing real-QUIC
+profiles across 20 matched cases (1/8/16/32 inflight, cycled/unique
+URLs, 1 KiB or alternating 4/16 KiB, plus 64 KiB at 1/8 inflight).
+It rotates ten adjacent URL-pattern pairs and can swap URL order on
+subsequent sweeps. Exact released Net::QUIC 0.05, optional instrument
+guards, individual profile JSON, raw logs and checkpointed run
+metadata make environmental and sequencing mistakes more visible.
+Outputs are not speed thresholds; excluded high-inflight 64 KiB cases
+would conflate aggregate connection-credit pressure with API overhead.
+--only permits one-case real-QUIC CI integration smoke, while dry-run
+and t/24 verify the schedule without network/QUIC dependencies.
+docs/PERFORMANCE.md documents usage and limitations.
+
+NEXT: inspect primary published-Net::QUIC-0.05 CI and independent QUIC
+feature workflow. Verify t/24, real-QUIC launcher smoke, existing
+16/32 sustained bounded-memory gates, full TCP/QUIC integration and
+H3 benchmark cases. Fix any real regressions without weakening tests.
+Then perform two controlled-host full sweeps with rotated/reversed
+ordering, compare client CPU, synchronous request setup, tail
+latency and memory separately. Only after consistent findings consider
+narrow native copy instrumentation. No main branch, production Client,
+HTTP3 engine, Net::QUIC, HTTP1/HTTP2 or released versions modified;
+HTTP3 0.13 remains unreleased.
+
 ## Paired profiling + JSON smoke verified (2026-10-18)
 
 The completed upper benchmark/report changes are at 7a6e891

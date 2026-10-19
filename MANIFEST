@@ -40,3 +40,5 @@ bench/h3-workload-profile.pl
 bench/lib/H3Profile/Summary.pm
 docs/PERFORMANCE.md
 t/23-h3-profile-summary.t
+bench/h3-profile-sweep.pl
+t/24-h3-profile-sweep.t

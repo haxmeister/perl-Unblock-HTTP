@@ -1,3 +1,49 @@
+## Automated controlled-host real-QUIC sweep (development)
+
+Use the feature-branch benchmark-only launcher to avoid accidentally
+comparing different client/server workloads or copying profiler settings
+by hand. It invokes the existing isolated Linux::Event/QUIC profiler
+without touching production code or installing any new dependency:
+
+    perl Makefile.PL && make
+    perl bench/h3-profile-sweep.pl --dry-run /tmp/h3-plan-only
+    perl bench/h3-profile-sweep.pl /tmp/h3-sweep-01
+    perl bench/h3-profile-sweep.pl --rotate=5 --swap-url-order /tmp/h3-sweep-02
+
+Defaults are **2048 measured requests, 128 warmups, seven paired rounds**
+per scenario. There are 20 cases: both cycled and unique target patterns
+at concurrency 1, 8, 16, 32 with 1 KiB or alternating 4/16 KiB bodies;
+64 KiB responses at 1 and 8 concurrent requests only. The high
+inflight/64 KiB combinations are deliberately omitted to avoid
+confounding comparisons with the default approximately 1 MiB QUIC
+receive-credit window. Cycled/unique scenarios stay adjacent; rotating
+the ten scenario pairs and swapping URL order makes repeat-host passes
+less dependent on an arbitrary starting order. The seven internal
+direct-vs-unified rounds also alternate execution order.
+
+The launcher enforces **published Net::QUIC 0.05** and rejects optional
+checkpoint/registry/wire/heap instrumentation during timing runs.
+Each case gets its own raw text log and versioned profiler JSON file.
+An atomically updated sweep.json records the scenario order, Perl,
+kernel/architecture/CPU model, observed governor if readable, upper
+Git commit, Net::QUIC version, completed cases and their paired wall
+ratios. A failing trial stops the sweep with its log and incomplete
+manifest preserved; existing result directories are not overwritten.
+This captures provenance, not CPU isolation. Record external host load,
+governor changes, exact lower engine source pins, and repeat runs too.
+
+For a cheap REAL-QUIC launcher smoke on an already configured host:
+
+    perl bench/h3-profile-sweep.pl --only=c08-b1024-unique \
+      --samples=24 --warmup=8 --rounds=1 /tmp/h3-sweep-smoke
+
+The regression t/24-h3-profile-sweep.t checks all schedule combinations,
+pair adjacency, deterministic rotation, reverse ordering and option
+validation without requiring QUIC. The primary Linux::Event workflow
+also executes an opt-in one-case real-QUIC launcher smoke against CPAN
+Net::QUIC 0.05. This is not a benchmark performance gate or a substitute
+for quiet-host seven-round measurements.
+
 ## Verified paired-profile reporting and JSON CI (2026-10-18)
 
 At upper feature source 9ba46d8, published-Net::QUIC-0.05 primary

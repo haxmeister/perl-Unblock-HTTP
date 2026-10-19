@@ -86,6 +86,10 @@ jobs:
           UNBLOCK_H3_DISPATCH_SPLIT=1 perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 3000 3
           perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
+          # Exercise the host-side sweep launcher, manifest and real-QUIC report.
+          # A single small case; no throughput or latency thresholds.
+          perl bench/h3-profile-sweep.pl --only=c08-b1024-unique --samples=24 --warmup=8 --rounds=1 /tmp/unblock-h3-sweep-smoke
+          perl -MJSON::PP -e 'open my $fh, "<", "/tmp/unblock-h3-sweep-smoke/sweep.json" or die $!; local $/; my $v = decode_json(<$fh>); die "invalid sweep manifest" unless $v->{schema_version} == 1 && $v->{complete} && @{$v->{cases}} == 1 && $v->{cases}[0]{done} && $v->{host}{net_quic_version} eq "0.05" && $v->{cases}[0]{median_paired_wall_ratio} > 0;'
           # Distinct request targets remove the two-path-only workload
           # bias. Paired direct/unified, fresh isolated processes.
           # These are CPU/resource diagnostics, NEVER speed pass/fail gates.
