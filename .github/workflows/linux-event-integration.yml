@@ -88,6 +88,9 @@ jobs:
           # bias. Paired direct/unified, fresh isolated processes.
           # These are CPU/resource diagnostics, NEVER speed pass/fail gates.
           UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 1 1024
+          # Exactly matched old two-path control on the same runner.
+          # Keep adjacent to the unique 16-concurrency comparison.
+          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 16 4096,16384
           UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 16 4096,16384
           UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 8 65536
           # Sustained identical direct/unified workload WITHOUT optional

@@ -1,3 +1,36 @@
+## Verified unique-URL real-QUIC profiles
+
+Primary published-Net::QUIC-0.05 Linux::Event integration
+[39184272657](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39184272657)
+PASS. Separate QUIC feature diagnostic
+[39184272709](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39184272709)
+PASS. The primary job ran the same direct/unified protocol and
+callback checks under fresh QUIC/TLS client+server process pairs:
+384 measured requests after 48 warmups, three alternating-order
+rounds, one unique path+query per request.
+
+| Inflight / body sizes | Direct median | Unified median | Unified / direct wall |
+| --- | ---: | ---: | ---: |
+| 1 / 1024 bytes | 902.9 req/s | 827.2 req/s | 1.092 |
+| 16 / 4096,16384 bytes | 541.0 req/s | 525.3 req/s | 1.030 |
+| 8 / 65536 bytes | 135.7 req/s | 129.4 req/s | 1.049 |
+
+These are hosted-runner *descriptive* ratios, not portable speed
+claims. Request setup is proportionally more conspicuous at
+one in-flight small response, while larger payloads/concurrency
+have more shared engine/transport work. All three verified complete
+responses and successful terminal callbacks. Private/PSS/RSS client
+memory stayed near-flat over these relatively short trials; the
+existing separate 2048-request 16/32 memory guards remain the
+actual retention regression checks.
+
+A subsequent CI revision adds an **exactly matched cycled-URL
+control** (same requests, sizes, concurrency, warmup and rounds)
+immediately before the unique-URL 16-concurrent scenario on a
+single hosted runner, so URL pattern can be examined within-run
+rather than across runners. That control has no pass/fail
+performance threshold and must be read with host-noise caveats.
+
 ## Unique-URL workload characterization
 
 The real-QUIC workload profiler also supports

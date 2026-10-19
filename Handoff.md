@@ -1,3 +1,40 @@
+## Unique URL real-QUIC results and matched cycled control (2026-10-18)
+
+Upper feature dynamic-URL profiler cd06c07ca7f8c8e1ef7866b919fd7571ce505fe5
+primary published CPAN Net::QUIC 0.05 CI 39184272657 SUCCESS,
+with full distribution, live Linux::Event TCP/QUIC/Reader stress,
+existing 16/32 2048-request bounded-memory gates, and three
+uninstrumented 384-request/48-warmup/3-round unique-URL scenarios.
+Standalone unreleased Net::QUIC feature diagnostic 39184272709
+SUCCESS; HTTP3 0.13 does not require that unreleased QUIC fix.
+
+Median results for direct versus unified:
+- 1024 bytes, concurrency 1: 902.9 vs 827.2 req/s,
+  unified/direct wall ratio 1.092.
+- 4096/16384 alternating bytes, concurrency 16:
+  541.0 vs 525.3 req/s, wall ratio 1.030.
+- 65536 bytes, concurrency 8: 135.7 vs 129.4 req/s,
+  ratio 1.049.
+Real requests use a different deterministic ?req=N serial
+on EVERY request, including warmup; the server validates the
+query and response size and both clients receive identical
+payload. All trials passed. RSS/PSS/private memory remained
+near-flat in these short workloads. These hosted-CI numbers
+are descriptive, not stable throughput or native-copy metrics.
+
+This next commit adds an identical legacy cycled-URL 384/48/3/16
+4096,16384 control immediately before the matching unique-URL
+profile in primary CI, to isolate URL pattern without cross-run
+host variance. The control is not an overhead gate. Check CI
+before attributing any variance to client URL validation.
+docs/PERFORMANCE.md contains the confirmed three scenarios and
+the long quiet-Linux-host replication commands.
+
+This continues only benchmark, CI and documentation improvements
+in upper authorized feature branch. Client.pm, all protocol
+engines, Net::QUIC 0.05 and main branches untouched. No
+merge/tag/release/version bump; HTTP3 0.13 unreleased.
+
 ## Dynamic-URL HTTP3 workload sweep (2026-10-18)
 
 Context: prior 4-entry URL parse cache was reverted because its
