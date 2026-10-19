@@ -42,3 +42,5 @@ docs/PERFORMANCE.md
 t/23-h3-profile-summary.t
 bench/h3-profile-sweep.pl
 t/24-h3-profile-sweep.t
+bench/h3-compare-sweeps.pl
+t/25-h3-compare-sweeps.t

@@ -89,6 +89,7 @@ jobs:
           # Exercise the host-side sweep launcher, manifest and real-QUIC report.
           # A single small case; no throughput or latency thresholds.
           perl bench/h3-profile-sweep.pl --only=c08-b1024-unique --samples=24 --warmup=8 --rounds=1 /tmp/unblock-h3-sweep-smoke
+          perl bench/h3-compare-sweeps.pl /tmp/unblock-h3-sweep-smoke /tmp/unblock-h3-sweep-smoke
           perl -MJSON::PP -e 'open my $fh, "<", "/tmp/unblock-h3-sweep-smoke/sweep.json" or die $!; local $/; my $v = decode_json(<$fh>); die "invalid sweep manifest" unless $v->{schema_version} == 1 && $v->{complete} && @{$v->{cases}} == 1 && $v->{cases}[0]{done} && $v->{host}{net_quic_version} eq "0.05" && $v->{cases}[0]{median_paired_wall_ratio} > 0;'
           # Distinct request targets remove the two-path-only workload
           # bias. Paired direct/unified, fresh isolated processes.

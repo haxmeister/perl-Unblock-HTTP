@@ -1,3 +1,34 @@
+## Compare two controlled-host sweeps (2026-10-19)
+
+After two complete same-host sweep runs at matching sample counts and
+rounds, with rotated and reversed URL order:
+
+    perl bench/h3-compare-sweeps.pl --json=/tmp/h3-comparison.json \
+      /tmp/h3-sweep-01 /tmp/h3-sweep-02
+
+The analyzer recomputes per-round direct/unified statistics and checks
+saved medians, completed case sets, identical inputs, hardware/kernel,
+Perl, upper Git commit, Net::QUIC version and governor metadata.
+It refuses incomplete or incompatible reports. Rotation does not
+change the comparison pairing because scenario IDs are matched by name.
+
+The output shows both sweeps' median paired wall ratios and ranges,
+client CPU ratios, synchronous request-time differences, per-round
+p95/p99 differences and private-process memory changes. Direction
+reversals across repeated sweeps are exposed without using any
+arbitrary significance threshold. A median of per-round p95 differences
+is not a pooled p95, and RSS/private differences do not count native
+copies or allocations. These are descriptive benchmark comparisons,
+not CI performance pass/fail gates. Source provenance still requires
+separate recording of lower engine and native dependency build hashes.
+
+The synthetic regression t/25-h3-compare-sweeps.t rejects incomplete
+runs, host mismatches and inconsistent saved summaries. The existing
+published-Net::QUIC-0.05 CI smoke compares its completed one-scenario
+real-QUIC sweep against itself to exercise raw result validation.
+Such a self-comparison establishes plumbing correctness, not a
+second independent performance measurement.
+
 ### Sweep launcher CI verification
 
 The launcher and its new schedule regression passed primary

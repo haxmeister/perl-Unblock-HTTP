@@ -1,3 +1,30 @@
+## Controlled HTTP3 cross-sweep analysis tool (2026-10-19)
+
+Previous authorized upper branch 69683420342a4a8a07b65a0eca9acf79f8a60d0e
+had full published-Net::QUIC-0.05 Linux::Event CI 39190997695 PASS
+and separate unreleased transport-feature diagnostic CI 39190997771
+PASS. HTTP3 engine feature and released QUIC dependency unchanged.
+
+Added bench/h3-compare-sweeps.pl and synthetic t/25 regression.
+The comparator checks all completed sweeps against the raw per-trial
+JSON, recomputes paired wall medians, rejects incompatible workload,
+host/kernel/Perl/commit/QUIC versions and missing/incomplete cases.
+It reports both sweep ratio ranges, CPU ratios, synchronous request
+setup deltas, p95/p99 latency deltas and private-memory changes, and
+marks repeated-run wall-ratio direction changes. No speed gate or
+native allocation/copy count is inferred. The primary integration
+CI now validates comparator against its real-QUIC one-case JSON by
+comparing the same output directory with itself. This self-check is
+NOT a second real-QUIC performance experiment.
+
+NEXT: inspect full primary and optional integration workflows and
+t/25 results; fix failures without loosening correctness. A quiet
+dedicated host is still required for two full seven-round sweeps,
+with --rotate and --swap-url-order; no performance optimization is
+justified solely by hosted CI noise. All production code,
+HTTP1/HTTP2/HTTP3 engine branches, Net::QUIC and main refs untouched.
+HTTP3 0.13 unreleased, no merge/tag/bump/release.
+
 ## Controlled-host profile sweep launcher verified by real-QUIC CI (2026-10-18)
 
 Upper feature commit dc7adf1c9a04e865436f44ee63ffebaeda31396f
