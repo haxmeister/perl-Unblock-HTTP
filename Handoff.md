@@ -1,3 +1,38 @@
+## Latest engine-pinned full CI PASS; full diagnostic running (2026-10-19)
+
+Upper feature 115b0b685934a3879ee6d7c5aa24375f5e91969c
+PASSED both existing full integration workflows with refreshed
+current coordinated engine head pins:
+- Primary Linux::Event + published CPAN Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889137
+- Separate optional unreleased QUIC MAX_DATA feature diagnostic:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889206
+Primary CI passed all distribution t/23/24/25 tests, live H1/H2/H3
+TCP/QUIC/Reader integration, 2048-request 16- and 32-inflight
+bounded-memory guards, and all smoke benchmarks.
+Illustrative 96 measured / 24 warmup / 3-round independent sweep:
+- cycled 16-inflight 4/16 KiB, A wall ratio 1.0262
+  (0.9679..1.0605), B 1.0557 (1.0512..1.0739).
+- unique same workload A 1.0534 (1.0390..1.0624),
+  B 1.0495 (1.0478..1.0971).
+No stable improvement can be concluded from these shared-host
+samples. No production HTTP modules or Net::QUIC changed.
+
+Standalone full 20-scenario/7-paired-round/two-sweep hosted runner
+diagnostic is ACTIVE at last check, still running its first sweep:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889496
+Do NOT mark it PASS or characterize results until job completed.
+Its logs may be unavailable while the job is still running.
+When completed, inspect job status and raw artifact
+h3-seven-round-hosted-diagnostics (upload-artifact retention 30
+days). Compare scenario paired ratios, min/max, CPU, setup,
+latency and memory separately; require confirmation on a
+quiet dedicated host before production performance changes.
+
+NEXT: continue inspection of diagnostic workflow 39269889496.
+All main branches, releases, tags and versions untouched;
+HTTP3 0.13 remains unreleased. No release preparation yet.
+
 ## Full H3 seven-round real-QUIC diagnostics on hosted runner (2026-10-19)
 
 Resumed from 7a3deef89aaea75216c9762f154d0965ec560386, after

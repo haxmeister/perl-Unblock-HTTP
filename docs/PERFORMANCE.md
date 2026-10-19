@@ -1,3 +1,16 @@
+### Updated engine pins verified on published Net::QUIC (2026-10-19)
+
+The primary
+[39269889137](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889137)
+and optional transport-feature
+[39269889206](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889206)
+CI passed with feature heads HTTP1 bb8349e, HTTP2 51fb1ad and
+HTTP3 6687bce. The existing 16/32 sustained memory regression
+and TCP/QUIC tests remain green. An exploratory separate
+[full 20-case seven-round diagnostic](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889496)
+was still running at last check. Results were not yet available.
+No released dependency or production engine has been modified.
+
 ## Full 20-scenario seven-round hosted real-QUIC diagnostic (2026-10-19)
 
 A separate .github/workflows/h3-seven-round-diagnostic.yml
