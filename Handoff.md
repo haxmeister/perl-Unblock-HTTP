@@ -1,3 +1,39 @@
+## Independent real-QUIC matched sweep CI verified (2026-10-19)
+
+Upper feature code 9f8b1dd7c0f878d4f04cdebb2f684690f96b2f68
+PASSED both full integration workflows:
+- Primary Linux::Event / published CPAN Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39239243745
+- Separate optional unreleased QUIC MAX_DATA integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39239243736
+
+The primary run passed the distribution suite including t/24 and t/25;
+real TCP/QUIC/Reader integration; existing sustained 16- and
+32-inflight 2048-request bounded memory guards; and all benchmark
+smokes. The new workflow generated TWO independent real-QUIC outputs,
+each 96 measured/24 warmup/3 paired rounds at 16 inflight and 4/16 KiB,
+including both cycled and unique URLs in reverse ordering. Comparator
+loaded four raw reports and produced:
+- cycled paired unified/direct wall ratio: run A 1.0513
+  (round range 1.0447..1.0644), run B 1.0741
+  (round range 0.9099..1.0946).
+- unique paired unified/direct wall ratio: run A 1.0761
+  (round range 1.0291..1.1115), run B 1.0881
+  (round range 1.0800..1.1586).
+- 0/2 ratio direction reversals between the separate sweeps.
+Synchronous setup delta was ~51-57 us/request in these runs.
+The per-round p95/p99 deltas and wall ranges varied; this short,
+hosted-CI demonstration is NOT dedicated-host performance evidence.
+No native byte-copy or allocation counts were obtained.
+
+The previous self-comparison limitation is corrected and verified.
+NEXT: run the full 20-scenario seven-round experiment twice on
+a controlled quiet Linux host with rotating/reversed order. Examine
+per-case CPU, setup cost, latency and memory before considering
+production hot-path optimization. Do not revive the URL cache based
+on current hosted-CI results. No main, merge, tag, release or version
+bump; no downstream engine/Net::QUIC changes. HTTP3 0.13 unreleased.
+
 ## Two independent real-QUIC comparator smoke runs (2026-10-19)
 
 Starting upper feature e2c93d8fa0efeb81cd07ceaefdc152a4a0efdc44,

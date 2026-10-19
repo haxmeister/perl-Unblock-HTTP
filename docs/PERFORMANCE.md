@@ -1,3 +1,20 @@
+### Matched independent-sweep CI results (2026-10-19)
+
+The first independent-sweep benchmark smoke is fully CI-verified:
+[primary published Net::QUIC 0.05 integration 39239243745](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39239243745)
+PASS and
+[separate QUIC feature diagnostic 39239243736](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39239243736)
+PASS. The primary test ran two independent 96-measured/24-warmup,
+three-paired-round 16-inflight 4/16-KiB sweeps, each with both URL
+patterns and reverse ordering. Paired unified/direct median wall
+ratios from run A vs run B were 1.0513 vs 1.0741 for cycled URLs,
+and 1.0761 vs 1.0881 for unique URLs. Three-round ranges overlapped;
+the first cycled run B included a round as low as 0.9099. The
+synchronous request setup differential was roughly 51-57 us/request.
+These observations demonstrate working independent comparison, NOT
+a stable API-overhead ratio. All unchanged 16/32 sustained memory
+regressions passed. The full quiet-host seven-round sweep is pending.
+
 ## Independent real-QUIC cross-sweep validation (2026-10-19)
 
 The primary Linux::Event workflow now runs two independent real-QUIC
