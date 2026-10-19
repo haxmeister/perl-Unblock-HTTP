@@ -1,3 +1,37 @@
+## Matched repeated-vs-unique URL control results
+
+On the same Ubuntu GitHub runner, the published Net::QUIC 0.05
+primary workflow
+[39184885870](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39184885870)
+PASS ran identical two-body, 16-concurrent, 384-request,
+48-warmup, three-round workloads in immediate succession:
+
+| URL pattern | Direct median wall | Unified median wall | Unified/direct |
+| --- | ---: | ---: | ---: |
+| Repeating two paths (original) | 0.8121 s | 0.9021 s | 1.111 |
+| Unique `?req=N` per request | 0.8106 s | 0.8672 s | 1.070 |
+
+Every trial was a fresh client/server QUIC session using identical
+payloads, HTTP3 engine, callbacks, and validation, and none of the
+timing paths enabled smaps checkpoints. The surprising smaller
+unified/direct ratio on unique URLs does **not** establish that
+unique paths are inherently faster. In particular, these are
+sequential hosted-CI workloads, not a dedicated CPU-isolated
+experiment or an allocation/copy measurement. Variation in CPU
+scheduling and TLS/UDP/QUIC effects remains possible. This
+does not justify reinstating the speculative URL parse cache.
+
+The separate dynamic-URL three-size smoke on primary
+[39184272657](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39184272657)
+also PASS: direct/unified median throughput 902.9/827.2 req/s
+at 1 inflight, 1024 bytes; 541.0/525.3 req/s at 16 inflight,
+alternating 4096/16384 bytes; and 135.7/129.4 req/s at
+8 inflight, 65536 bytes. In every case response bodies,
+terminal callbacks and private memory stayed within the
+expected short-workload bounds. These numbers are
+descriptive single-run measurements, **not** stable
+library overhead percentages.
+
 ## Verified unique-URL real-QUIC profiles
 
 Primary published-Net::QUIC-0.05 Linux::Event integration
