@@ -1,3 +1,28 @@
+## Two independent real-QUIC comparator smoke runs (2026-10-19)
+
+Starting upper feature e2c93d8fa0efeb81cd07ceaefdc152a4a0efdc44,
+with both previous CI workflows green (39230363530 primary published
+Net::QUIC 0.05 and 39230363646 optional unreleased-feature diagnostic).
+The existing comparator smoke passed identical directories twice.
+That proved data decoding but was not independent measurement.
+
+This upper feature update adds --pair to select both URL modes at a
+fixed body size/concurrency, while rejecting --only + --pair.
+The comparator now rejects identical directories even through
+symlink aliases. New tests cover pair selection and self-rejection.
+Primary CI runs separate 96 measured / 24 warmup / 3-round real QUIC
+sweeps, cycling 4/16 KiB bodies at 16 inflight; each sweep includes
+cycled and unique URL patterns, in opposite order. The comparator
+checks matched independent inputs and emits comparison JSON.
+No performance gate or stable-speed claim. Existing distribution
+suite, TCP/QUIC and 16/32-inflight memory-regression tests unchanged.
+
+NEXT: check both workflows for this commit, especially real-QUIC
+matched-sweep result handling and retained bounded-memory gates.
+If green, update this handoff with CI references and any observed
+order variability. No lower repository or production changes,
+no main merge/tag/version bump/release. HTTP3 0.13 unreleased.
+
 ## Cross-sweep comparator integration verified (2026-10-19)
 
 Upper feature code commit ebf9a1b8368236295c87146312b65fb6d1937dc8

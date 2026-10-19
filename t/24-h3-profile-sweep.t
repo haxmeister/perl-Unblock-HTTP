@@ -52,6 +52,16 @@ like($rotated->[1], qr/^c08-b65536-cycled /,
     'URL order can reverse while pair stays together');
 like($rotated->[2], qr/^c01-b1024-unique /,
     'rotation wraps deterministically');
+my ($pair_status, $pair_cases) = dry_run('--pair=c16-b4096-16384');
+is($pair_status, 0, 'two-pattern workload pair accepted');
+is(scalar(@$pair_cases), 2, 'pair selects two URL patterns');
+like($pair_cases->[0], qr/^c16-b4096-16384-cycled /, 'cycled first');
+like($pair_cases->[1], qr/^c16-b4096-16384-unique /, 'unique second');
+my ($reverse_status, $reverse_cases) =
+    dry_run('--pair=c16-b4096-16384', '--swap-url-order');
+is($reverse_status, 0, 'reversed URL pattern pair accepted');
+like($reverse_cases->[0], qr/^c16-b4096-16384-unique /, 'unique first');
+like($reverse_cases->[1], qr/^c16-b4096-16384-cycled /, 'cycled second');
 my ($one_status, $one) = dry_run('--only=c08-b65536-unique');
 is($one_status, 0, 'one scenario can be selected for real-QUIC smoke');
 is(scalar(@$one), 1, 'only option runs one case');
@@ -59,7 +69,8 @@ like($one->[0], qr/^c08-b65536-unique /, 'only selects the exact ID');
 ok(!-e $unused, 'dry-run leaves no artifact directory');
 
 for my $bad (['--rotate=10'], ['--rounds=0'],
-    ['--samples=0'], ['--only=bogus']) {
+    ['--samples=0'], ['--only=bogus'], ['--pair=bogus'],
+    ['--only=c16-b4096-16384-unique', '--pair=c16-b4096-16384']) {
     my ($bad_status) = dry_run(@$bad);
     isnt($bad_status, 0, 'invalid sweep options rejected');
 }

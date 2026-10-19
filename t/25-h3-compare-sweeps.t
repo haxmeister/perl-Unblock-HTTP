@@ -73,6 +73,14 @@ sub run_compare {
     my $result = qx{$^X $script $a $b 2>&1};
     return ($?, $result);
 }
+my $self = qx{$^X $script $a $a 2>&1};
+isnt($?, 0, 'self comparison rejected');
+like($self, qr/two independent sweep directories/, 'self comparison error');
+my $alias = "$base/a-alias";
+symlink('a', $alias) or die "symlink creation failed: $!";
+my $via_alias = qx{$^X $script $a $alias 2>&1};
+isnt($?, 0, 'symlink alias comparison rejected');
+like($via_alias, qr/two independent sweep directories/, 'alias error');
 my ($exit, $out) = run_compare();
 is($exit, 0, 'comparison succeeds for matching completed sweeps');
 like($out, qr/reversed=yes/, 'direction change visible');

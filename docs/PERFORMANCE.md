@@ -1,3 +1,31 @@
+## Independent real-QUIC cross-sweep validation (2026-10-19)
+
+The primary Linux::Event workflow now runs two independent real-QUIC
+benchmark sweeps with identical 96 measured requests, 24 warmup,
+3 direct/unified rounds, concurrency 16 and alternating 4/16 KiB
+responses for each cycled and unique URL pattern. In the second
+sweep, cycled and unique URL order is reversed. The offline
+comparator reads four separate real-QUIC trial reports, checks
+metadata and writes a comparison JSON without enforcing a
+performance threshold. Hosted CI is not a dedicated quiet host.
+
+For focused local repeats:
+
+    perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 \
+      --samples=96 --warmup=24 --rounds=3 /tmp/h3-pair-a
+    perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 \
+      --samples=96 --warmup=24 --rounds=3 \
+      --swap-url-order /tmp/h3-pair-b
+    perl bench/h3-compare-sweeps.pl /tmp/h3-pair-a /tmp/h3-pair-b
+
+The new --pair filter selects both URL patterns for one
+concurrency/payload combination. It cannot be combined with --only.
+The comparator rejects identical directories, including symlink
+aliases, so its output cannot mistake a self-comparison for two
+independent measurements. Synthetic regressions cover both features.
+The full seven-round, twenty-case quiet-host experiment is still
+required before production optimization.
+
 ### Verified cross-sweep comparator
 
 The feature-branch comparison tool at source ebf9a1b passed complete

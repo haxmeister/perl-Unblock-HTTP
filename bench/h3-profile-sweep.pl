@@ -11,16 +11,16 @@ use POSIX qw(strftime uname);
 
 # A dedicated-Linux-host driver for the isolated real-QUIC profiler.
 # All measurements, logs and a checkpointed manifest remain on that host.
-my ($samples, $warmup, $rounds, $rotate, $swap, $dry_run, $only) =
+my ($samples, $warmup, $rounds, $rotate, $swap, $dry_run, $only, $pair) =
     (2048, 128, 7, 0, 0, 0);
 GetOptions(
     'samples=i' => \$samples, 'warmup=i' => \$warmup,
     'rounds=i' => \$rounds, 'rotate=i' => \$rotate,
     'swap-url-order!' => \$swap, 'dry-run!' => \$dry_run,
-    'only=s' => \$only,
+    'only=s' => \$only, 'pair=s' => \$pair,
 ) or die "invalid sweep options\n";
 my ($output_dir) = @ARGV;
-die "usage: perl bench/h3-profile-sweep.pl [--samples=N --warmup=N --rounds=N --rotate=0..9 --swap-url-order --only=CASE_ID --dry-run] OUTPUT_DIR\n"
+die "usage: perl bench/h3-profile-sweep.pl [--samples=N --warmup=N --rounds=N --rotate=0..9 --swap-url-order --only=CASE_ID --pair=PAIR_ID --dry-run] OUTPUT_DIR\n"
     unless @ARGV == 1 && defined($output_dir) && length($output_dir);
 die "samples must be 1..20000\n"
     unless $samples >= 1 && $samples <= 20000;
@@ -89,9 +89,15 @@ for my $pair (@pairs) {
         };
     }
 }
+die "--only and --pair are mutually exclusive\n"
+    if defined($only) && defined($pair);
 if (defined $only) {
     @cases = grep { $_->{id} eq $only } @cases;
     die "unknown scenario $only\n" unless @cases;
+}
+if (defined $pair) {
+    @cases = grep { $_->{id} =~ /\A\Q$pair\E-(?:cycled|unique)\z/ } @cases;
+    die "unknown workload pair $pair\n" unless @cases == 2;
 }
 if ($dry_run) {
     print "# dry-run; no QUIC, directories, or measurements created\n";

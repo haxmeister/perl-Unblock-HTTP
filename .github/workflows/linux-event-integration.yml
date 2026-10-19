@@ -86,11 +86,12 @@ jobs:
           UNBLOCK_H3_DISPATCH_SPLIT=1 perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 3000 3
           perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
-          # Exercise the host-side sweep launcher, manifest and real-QUIC report.
-          # A single small case; no throughput or latency thresholds.
-          perl bench/h3-profile-sweep.pl --only=c08-b1024-unique --samples=24 --warmup=8 --rounds=1 /tmp/unblock-h3-sweep-smoke
-          perl bench/h3-compare-sweeps.pl /tmp/unblock-h3-sweep-smoke /tmp/unblock-h3-sweep-smoke
-          perl -MJSON::PP -e 'open my $fh, "<", "/tmp/unblock-h3-sweep-smoke/sweep.json" or die $!; local $/; my $v = decode_json(<$fh>); die "invalid sweep manifest" unless $v->{schema_version} == 1 && $v->{complete} && @{$v->{cases}} == 1 && $v->{cases}[0]{done} && $v->{host}{net_quic_version} eq "0.05" && $v->{cases}[0]{median_paired_wall_ratio} > 0;'
+          # Independent, matched QUIC measurements with reversed URL
+          # pattern order. CI validates report integrity, NOT speed.
+          perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 --samples=96 --warmup=24 --rounds=3 /tmp/unblock-h3-sweep-a
+          perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 --samples=96 --warmup=24 --rounds=3 --swap-url-order /tmp/unblock-h3-sweep-b
+          perl bench/h3-compare-sweeps.pl --json=/tmp/unblock-h3-sweep-comparison.json /tmp/unblock-h3-sweep-a /tmp/unblock-h3-sweep-b
+          perl -MJSON::PP -e 'sub read_json { my ($p) = @_; open my $fh, "<", $p or die $!; local $/; return decode_json(<$fh>); } my $a=read_json("/tmp/unblock-h3-sweep-a/sweep.json"); my $b=read_json("/tmp/unblock-h3-sweep-b/sweep.json"); my $c=read_json("/tmp/unblock-h3-sweep-comparison.json"); die "invalid independent sweep reports" unless $a->{complete} && $b->{complete} && @{$a->{cases}} == 2 && @{$b->{cases}} == 2 && @{$c->{cases}} == 2 && $a->{host}{net_quic_version} eq "0.05" && $b->{host}{net_quic_version} eq "0.05" && $c->{first_dir} ne $c->{second_dir} && $a->{cases}[0]{id} eq "c16-b4096-16384-cycled" && $a->{cases}[1]{id} eq "c16-b4096-16384-unique" && $b->{cases}[0]{id} eq "c16-b4096-16384-unique" && $b->{cases}[1]{id} eq "c16-b4096-16384-cycled";'
           # Distinct request targets remove the two-path-only workload
           # bias. Paired direct/unified, fresh isolated processes.
           # These are CPU/resource diagnostics, NEVER speed pass/fail gates.

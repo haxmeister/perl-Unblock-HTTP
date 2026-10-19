@@ -2,6 +2,7 @@ use v5.36;
 use strict;
 use warnings;
 use FindBin;
+use Cwd qw(abs_path);
 use lib "$FindBin::Bin/lib";
 use H3Profile::Summary qw(summarize_trials);
 use File::Spec;
@@ -102,6 +103,12 @@ sub load_sweep ($directory) {
 }
 
 my ($first_dir, $second_dir) = @ARGV;
+my $first_real = abs_path($first_dir)
+    or die "first sweep directory not found: $first_dir\n";
+my $second_real = abs_path($second_dir)
+    or die "second sweep directory not found: $second_dir\n";
+die "two independent sweep directories are required\n"
+    if $first_real eq $second_real;
 my $first = load_sweep($first_dir);
 my $second = load_sweep($second_dir);
 my $host_a = $first->{manifest}{host};
