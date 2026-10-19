@@ -88,7 +88,7 @@ sub _attach_websocket_stream {
         my %option = %$selected;
         my %handshake_option;
         for my $name (qw(subprotocols permessage_deflate)) {
-            $handshake_option{$name} = $option{$name}
+            $handshake_option{$name} = delete $option{$name}
                 if exists $option{$name};
         }
         my $on_open = delete $option{on_open};
