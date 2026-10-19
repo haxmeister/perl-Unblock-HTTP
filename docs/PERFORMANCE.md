@@ -1,3 +1,20 @@
+## Client canonical-URL parsing fast path (development)
+
+The unified Client now recognizes a narrow subset of ordinary
+lowercase, ASCII http/https URLs directly without allocating a
+URI object. It preserves the same scheme, host, default or explicit
+port, authority and request target as URI for this subset. Other
+URLs, including IPv6, percent escapes, uppercase host/scheme,
+unusual ports and fragments, take the unchanged URI parsing
+and validation route. The existing Uniform::HTTP::Request is
+still constructed in every case. The optimization does not cache
+URLs, modify engine ABIs or bypass validation for noncanonical
+inputs. t/26 compares fast and fallback behavior against URI.
+
+Use the existing CPU-only Client request setup benchmark plus
+mandatory real-QUIC integration tests for verification; no new
+full 20-scenario suite or noisy CI speed threshold is required.
+
 ### Archived hosted sweep results
 
 The complete 20-scenario x two-sweep summary, including every seven-round wall-ratio range and client CPU/setup comparisons, is retained in [PERFORMANCE-SWEEP-20261019.md](PERFORMANCE-SWEEP-20261019.md). It is descriptive hosted-CI evidence only; the raw original JSON artifact has 30-day retention.

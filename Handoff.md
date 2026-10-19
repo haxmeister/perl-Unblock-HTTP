@@ -1,3 +1,33 @@
+## Production Client canonical-URL parsing fast path (2026-10-19)
+
+From upper feature 939338c00e4adb64d6c240ae64f41c7c6e2cc6e3,
+following fully verified independent two-sweep HTTP3 profiles
+and revised mode-specific RSS/PSS/private reporting.
+
+The approved priority moved from more benchmarks to concrete code
+improvement. Added conservative, noncaching canonical ASCII URL
+fast path inside Unblock::HTTP::Client::request. Ordinary lower-case
+http(s) DNS/IPv4 hosts, optional canonical decimal ports and
+ASCII-safe path/queries avoid constructing a URI object. Anything
+else uses the unchanged URI parser plus original validation.
+No public API, protocol selection, request object type, pool key,
+connection lifecycle, callbacks or allocation ownership changes.
+
+New t/26-client-url-fastpath.t uses a fake HTTP1 transport and
+engine to check URL components and pool keys against URI itself.
+It asserts canonical cases bypass URI and IPv6/encoded/case/
+unusual-port cases call fallback. Invalid URLs retain rejection
+semantics. No URL cache; no guessing at exotic parsing.
+
+NEXT: inspect full primary published Net::QUIC 0.05 and optional
+Net::QUIC MAX_DATA feature CI. Fix correctness failures, especially
+new unit test, then compare existing CPU-only benchmark smoke output
+with previous run WITHOUT starting another full 20-scenario suite.
+If evidence supports improvement, keep it; otherwise revert the
+fast path. Update Handoff with confirmed CI and measured deltas.
+Engine branches, Net::QUIC 0.05, all main refs untouched.
+No merge/tag/release/version bump, HTTP3 0.13 unreleased.
+
 ## Full H3 sweep results retained + memory-attribution CI PASS (2026-10-19)
 
 Completed and archived all 20 scenario pairs and seven-round

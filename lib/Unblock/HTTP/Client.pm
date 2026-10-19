@@ -163,23 +163,46 @@ sub request {
     my %field = @args;
     my $url = delete $field{url};
     croak 'request(): url is required' unless defined($url) && !ref($url) && length($url);
-    my $uri = URI->new($url);
-    my $scheme = lc($uri->scheme || '');
-    croak 'request(): URL scheme must be http or https'
-        unless $scheme eq 'http' || $scheme eq 'https';
-    croak 'request(): URL must not contain userinfo or a fragment'
-        if defined($uri->userinfo) || defined($uri->fragment);
-    my $host = $uri->host;
-    croak 'request(): URL must include a host'
-        unless defined($host) && length($host);
-    my $port = $uri->port;
-    croak 'request(): invalid URL port'
-        unless defined($port) && $port =~ /\A[0-9]+\z/
-            && $port > 0 && $port <= 65535;
-    my $authority = $uri->authority;
-    my $target = $uri->path_query;
-    $target = '/' unless defined($target) && length($target);
-    $target = '/' . $target if substr($target, 0, 1) eq '?';
+    my ($scheme, $host, $port, $authority, $target);
+    # Common canonical ASCII URLs need no URI object. Keep this match
+    # intentionally restrictive: noncanonical schemes/hosts, IPv6,
+    # escaping, fragments and exotic targets still use URI below.
+    # No URL cache, shared parser state or persistent allocation.
+    if ($url =~ m{
+        \A (https?)://
+        ([a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?
+            (?:\.[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?)*)
+        (?::([1-9][0-9]{0,4}))?
+        ([/?][A-Za-z0-9._~/?&=+\-]*)?
+        \z
+    }x && (!defined($3) || $3 <= 65535)) {
+        my $given_port = $3;
+        ($scheme, $host) = ($1, $2);
+        $port = defined($given_port) ? $given_port
+            : $scheme eq 'https' ? 443 : 80;
+        $authority = $host;
+        $authority .= ":$given_port" if defined $given_port;
+        $target = defined($4) ? $4 : '/';
+        $target = '/' . $target if substr($target, 0, 1) eq '?';
+    } else {
+        my $uri = URI->new($url);
+        $scheme = lc($uri->scheme || '');
+        croak 'request(): URL scheme must be http or https'
+            unless $scheme eq 'http' || $scheme eq 'https';
+        croak 'request(): URL must not contain userinfo or a fragment'
+            if defined($uri->userinfo) || defined($uri->fragment);
+        $host = $uri->host;
+        croak 'request(): URL must include a host'
+            unless defined($host) && length($host);
+        $port = $uri->port;
+        croak 'request(): invalid URL port'
+            unless defined($port) && $port =~ /\A[0-9]+\z/
+                && $port > 0 && $port <= 65535;
+        $authority = $uri->authority;
+        $target = $uri->path_query;
+        $target = '/' unless defined($target) && length($target);
+        $target = '/' . $target if substr($target, 0, 1) eq '?';
+    }
 
     my $version = delete $field{http_version};
     my $strict_version = defined($version) ? 1 : 0;
