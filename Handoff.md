@@ -1,3 +1,17 @@
+## Profile JSON smoke and distribution manifest follow-up (2026-10-18)
+
+The benchmark-only paired summary/JSON change is at 7a6e891.
+Follow-up on the same upper feature branch updates MANIFEST for the
+new summary helper, regression, profile script and performance document.
+Primary published Net::QUIC 0.05 Linux::Event workflow now exports a
+two-round, 32-inflight real-QUIC JSON report and validates schema,
+round pairing, mode order and report shape. It retains its original
+response checks, 16/32-inflight 2048-request bounded-memory guards
+and all other workload/protocol tests unchanged. The workflow makes
+no throughput assertion; optional QUIC-feature diagnostic remains
+separate. Record CI outcomes after the workflows complete.
+No release audit, main update or lower-layer code modifications.
+
 ## Paired real-QUIC performance capture (development, 2026-10-18)
 
 Resumed from upper feature 4325ec64278e9fa2fb539d85c43ed4399f747470;

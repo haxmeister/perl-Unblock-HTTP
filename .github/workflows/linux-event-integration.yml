@@ -61,7 +61,9 @@ jobs:
           UNBLOCK_H3_CREDIT_STREAMS=16 UNBLOCK_H3_CREDIT_HOLD_SECONDS=3 UNBLOCK_H3_CREDIT_WIDE_CONN_WINDOW=1 prove -v -b xt/linux-event-quic-six-credit.t
           # Separate response-buffering smoke at 32 concurrent streams.
           # This is correctness/resource telemetry, not a performance gate.
-          perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
+          UNBLOCK_H3_PROFILE_JSON_FILE=/tmp/unblock-h3-profile-smoke.json perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 64 16 2 32 16384
+          # Validate the real-QUIC report schema and pairing (no speed gate).
+          perl -MJSON::PP -e 'open my $fh, "<", "/tmp/unblock-h3-profile-smoke.json" or die $!; local $/; my $v = decode_json(<$fh>); die "invalid benchmark JSON" unless $v->{schema_version} == 1 && $v->{workload}{inflight} == 32 && $v->{workload}{rounds} == 2 && @{$v->{trials}} == 4 && @{$v->{summary}{paired}} == 2 && $v->{summary}{median_paired_wall_ratio} > 0 && $v->{trials}[0]{mode} eq "direct" && $v->{trials}[1]{mode} eq "unified";'
           # Sustained same-connection buffered H3 requests. Optional client
           # RSS/PSS/private checkpoints; no performance threshold asserted.
           UNBLOCK_H3_PROFILE_ASSERT_BOUNDED=1 UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY=256 UNBLOCK_H3_PROFILE_REGISTRY=1 UNBLOCK_H3_PROFILE_WATCHDOG_SECONDS=180 perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 2048 128 2 16 4096,16384

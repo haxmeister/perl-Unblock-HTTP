@@ -36,3 +36,7 @@ t/19-client-admission.t
 t/20-client-idle.t
 t/21-client-network.t
 t/22-client-operation-lifetime.t
+bench/h3-workload-profile.pl
+bench/lib/H3Profile/Summary.pm
+docs/PERFORMANCE.md
+t/23-h3-profile-summary.t

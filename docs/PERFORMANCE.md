@@ -35,6 +35,12 @@ eliminate, time/order effects. Compare within host, record median paired
 ratios AND their range along with CPU and p95/p99, and make no
 production changes from hosted-CI speed ratios alone.
 
+The primary Linux::Event integration CI also exercises the JSON writer
+on its existing two-round 32-inflight real-QUIC smoke. It checks the
+decoded schema, paired rounds, trials and expected order, without a
+performance threshold; the 16/32 sustained retention guards remain
+separate and unchanged.
+
 The pure-Perl paired-statistics validator has a synthetic test
 (t/23-h3-profile-summary.t), including malformed/missing trials and the
 difference between paired-ratio median and ratio-of-medians. No change
