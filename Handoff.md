@@ -1,3 +1,35 @@
+## Cross-sweep comparator integration verified (2026-10-19)
+
+Upper feature code commit ebf9a1b8368236295c87146312b65fb6d1937dc8
+PASSED both full workflows:
+- primary published CPAN Net::QUIC 0.05 + Linux::Event:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39230363530
+- separate diagnostic Net::QUIC unreleased feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39230363646
+
+Primary CI proves t/25-h3-compare-sweeps.t PASS, t/24 sweep launcher PASS,
+full distribution and live TCP/QUIC/Reader tests PASS, the unchanged
+16/32-inflight sustained 2048-request bounded-memory gates PASS,
+and all benchmark smokes PASS. Existing one-case real-QUIC sweep
+c08-b1024-unique generated JSON, and the comparator successfully
+validated it against itself. That self-comparison found zero ratio
+change and no direction reversal by construction; it is a pipeline
+smoke, NOT evidence of benchmark repeatability.
+
+This completes the new offline comparator and its validation; no
+dedicated-host seven-round, 20-scenario pair has been executed.
+Relative throughput from hosted CI may vary drastically by runner,
+even when production code is unchanged. Do not optimize based on
+cross-run hosted CI timing differences. Next meaningful task is
+collecting at least two complete controlled-host sweeps using
+rotated and reversed URL case order, analyzing actual client CPU,
+setup, p95/p99 and memory trends before any narrow source change.
+
+Only upper-branch benchmark/test/docs/CI were modified. Net::QUIC
+main 0.05, HTTP3 0.13 feature, HTTP1/HTTP2 engine feature branches,
+all production APIs and main branches remain unchanged.
+No merge, release, tag or version bump.
+
 ## Controlled HTTP3 cross-sweep analysis tool (2026-10-19)
 
 Previous authorized upper branch 69683420342a4a8a07b65a0eca9acf79f8a60d0e

@@ -1,3 +1,16 @@
+### Verified cross-sweep comparator
+
+The feature-branch comparison tool at source ebf9a1b passed complete
+published-Net::QUIC-0.05 primary integration
+[39230363530](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39230363530)
+and optional QUIC-feature diagnostics
+[39230363646](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39230363646).
+This includes the new synthetic rejection tests, the existing
+bounded-memory 16/32 stress, and the real-QUIC one-case self-comparison
+that exercises saved-report decoding. The self-comparison always
+reports no change; it does not estimate performance variability.
+A dedicated-host paired 20-case sweep remains outstanding.
+
 ## Compare two controlled-host sweeps (2026-10-19)
 
 After two complete same-host sweep runs at matching sample counts and
