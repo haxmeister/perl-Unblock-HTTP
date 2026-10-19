@@ -1,85 +1,65 @@
-## URL cache miss-path A/B control (2026-10-18)
+## Discarded URL parse cache after paired profiling (2026-10-18)
 
-To avoid only measuring the ideal repeated-two-URL pattern,
-bench/client-dispatch-profile.pl gained opt-in
-UNBLOCK_H3_DISPATCH_MISS_AB=1. It creates 16 URL strings before the
-timer, then compares cached/uncached request+callback cycles on
-the same already-warm Client and engine while rotating across the
-16 paths. Four-entry FIFO cannot hold all 16, so the cached run
-still uses the canonical URI parser on every request. This
-diagnoses possible cache-miss overhead (extra hash/queue work).
-The test asserts response and finish counts, no leaked active
-operations or pending requests; it does not claim native copies.
-Primary integration CI enables it alongside the existing
-constructor phase profile and the real-QUIC three-mode A/B.
+**Decision:** revert the speculative four-entry exact-URL parsing
+cache in the unified Client. The original, validated URI->new URL
+parser remains canonical for every request. No new public API,
+request wrapper, or transport layer is introduced. This is a
+conservative performance/complexity decision, not a correctness
+failure after the port-regex transcription typo was fixed.
 
-Do not retain the cache on the strength of the repeated-URL mock
-alone. Await the real-QUIC A/B and miss-path measurements, then
-keep or revert the production optimization based on paired evidence
-and correctness. No main/merge/release/version changes.
+Experiment history:
+- Upper 199e3b3b introduced a 4-entry FIFO of exact validated
+  URL tuples with admission length <=2048, plus mock tests.
+- Upper 28b8357 fixed an accidental extra backslash in the
+  numeric port regex. All distribution and real socket integration
+  tests then passed, including primary CPAN Net::QUIC 0.05
+  39178289763 and diagnostic feature 39178289739.
+- Upper 85cbe91 added real-QUIC A/B (direct, cached unified,
+  uncached unified), tested on 16 concurrent requests, 1024
+  measured +64 warmup, three rotating rounds, alternating
+  4/16 KiB responses. Primary published-0.05 CI 39178500583
+  PASS: direct median 0.8676s /1180.3 req/s, cached unified
+  0.9308s /1100.1 req/s, uncached unified 0.9683s /
+  1057.6 req/s. That one trial showed ~4.0% cached benefit.
+- Upper 13d0a1f added a complementary CPU-only 16-URL
+  cache-miss microbenchmark. Primary published Net::QUIC 0.05
+  CI 39178731269 PASS: cache disabled median 81.967
+  us/request, cache enabled but all 16 URLs miss the 4-entry
+  cache median 84.151 us/request, a 1.027 ratio (~2.7%
+  extra CPU) on that CI runner.
+- In the SAME later primary real-QUIC run 39178731269,
+  the three-mode uncached/cached median wall ratio was only
+  1.004 (~0.4% difference), versus 1.040 in 39178500583.
+  Results are sensitive to CI host conditions; neither
+  represents reliable general end-to-end speedup.
+- The earlier CPU-only warm-URL mock benchmark reported
+  uncached 57.478 versus cached 39.721 us/request
+  (39178289739), as expected; it excludes QUIC, TLS,
+  UDP and server processing and therefore overstates
+  end-to-end significance.
 
-## Paired real-QUIC URL cache A/B profile (2026-10-18)
+The cache improved a narrow repeated-URL workload but imposed a
+consistent miss-path tax, bounded memory retention of up to
+four URLs, and added state and branches for every request.
+Without a repeatable dedicated-host end-to-end benefit,
+it should NOT remain in the upper production Client just to
+win a benchmark that alternates two paths. The original code
+and t/15, both mock/real-QUIC profiler files and primary
+CI workflow have been restored exactly from upper feature
+0fa088d55221ceeffb5924a9bd0418c6918678a7; the
+historical experimental commits remain in git ancestry
+for later controlled investigation. Existing full 16/32
+concurrent memory regression gates and live Reader stress
+remain enabled, unchanged.
 
-Upper URL cache feature first commit 199e3b3b804f0acfdacd41d63cd4b444ccce2cdf
-failed distribution tests because the newly transcribed port regex
-had an extra backslash, making valid ports fail. Corrected in
-28b835719af69ad755c4f3c72442f752b9b97c9e (single-backslash
-Perl \A / \z anchors); tests now advance to full real-socket CI.
-This is an implementation typo, NOT a weakened numeric port policy.
-Check full primary published Net::QUIC 0.05 CI 39178289763 and
-optional diagnostic CI 39178289739.
-
-Added opt-in UNBLOCK_H3_PROFILE_CACHE_AB=1 support in the existing
-real-QUIC bench/h3-workload-profile.pl, and one primary CI paired
-three-mode run 1024 measured, 64 warmup, 3 rounds, 16 inflight,
-alternating 4096/16384-byte responses. Modes: direct, unified
-with default four-entry validated exact-URL parse cache, and unified
-with private URL parse cache disabled (diagnostic only). Every trial
-uses the SAME Net::QUIC driver, HTTP3 engine, response server,
-callbacks and loopback, with fresh isolated client/server child
-processes and rotating order. This is the proper within-run
-evidence for a URL cache benefit, NOT a hosted-runner timing gate.
-The default two-mode profiler, 16/32 concurrency memory guards,
-and held-Reader stress are unchanged.
-
-If the cache adds net cost or correctness risk, revert the
-production feature. Neither native allocs nor payload copy counts
-were measured. No main/merge/tag/release/version bump, and no
-Net::QUIC or HTTP engine changes. HTTP3 0.13 remains unreleased.
-
-## Bounded repeated-URL parse cache experiment (2026-10-18)
-
-Recent 16/32-concurrent HTTP3 guarded memory benchmarks (published
-Net::QUIC 0.05 CI 39176739238) PASS. The profiler alternates two exact
-URL strings. Since URI->new plus host/port/authority/target extraction
-is expensive in the synchronous request path, the upper Client
-feature now caches only the LAST FOUR successfully validated exact URL
-strings (FIFO; skip URL strings over 2048 Perl characters). This uses
-the existing URI parser on every miss, does not cache negative results,
-and never caches per-request method, headers, callbacks, timeout or
-protocol policy. This is a targeted candidate: no public API changes,
-no URI semantics replaced, no native/memory copy claims.
-
-Changed upper lib/Unblock/HTTP/Client.pm and added t/15 tests for
-alternating URL cache hits, method independence, exact-string misses,
-eviction after 4, protocol-option rejection even on hit, malformed
-URLs, and oversized URL non-caching. This bounded cache is 4 tuples,
-never grows per completed transaction, and doesn't own pools/engines.
-bench/client-dispatch-profile.pl now measures direct_mock,
-unified_uncached, and unified_mock (cached), using the SAME warm
-Client/engine for both unified cases. The private
-url_parse_limit=0 toggle is BENCHMARK-ONLY, not a supported API.
-Split profiling's URI->new count must be zero on cached hits.
-Compare the within-run uncached/cached results; don't compare
-different GitHub runner times as speedup evidence.
-The real-QUIC sustained 2048-request alternating two-URL workload
-will test end-to-end impact and memory guards in ordinary CI.
-
-If CI fails, identify correctness or provenance and fix/revert
-instead of relaxing tests. The baseline before this change is
-0fa088d55221ceeffb5924a9bd0418c6918678a7.
-No main/merge/release/tag/version bump and NO Net::QUIC/engine changes.
-HTTP3 0.13 remains unreleased.
+NEXT: continue at more representative workloads and/or native
+copy-site measurement only if a controlled dedicated-host
+profile shows actionable overhead. In particular, 16-URL
+miss overhead makes an always-on general cache unattractive.
+No changes to main, Net::QUIC, HTTP1/2/3 engine feature
+branches, tags, versions, merges or releases. HTTP3 0.13
+remains unreleased. Run the restored feature's full CI
+against published Net::QUIC 0.05, then mark verified.
 
 ## Verified automatic 16/32 concurrent H3 memory guards (2026-10-18)
 

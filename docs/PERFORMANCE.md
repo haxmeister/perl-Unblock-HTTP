@@ -1,3 +1,40 @@
+## URL cache experiment: rejected (October 18, 2026)
+
+A bounded four-entry exact-URL parse cache was tested on the upper
+feature branch and subsequently removed. The canonical `URI->new`
+parser and normal per-request validation remain unchanged.
+
+Paired benchmark evidence:
+- Published-Net::QUIC-0.05 real-QUIC run
+  [39178500583](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39178500583)
+  compared 1024 measured requests after 64 warmup, three rotated
+  fresh-process rounds, 16 in flight, alternating 4/16 KiB response
+  bodies. Median unified uncached 0.9683s versus cached 0.9308s
+  (4.0% less wall time on this single runner).
+- A second matched full real-QUIC run
+  [39178731269](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39178731269)
+  reported only a 1.004 uncached/cached wall ratio (about 0.4%).
+- That later run also compared 16 distinct rotating URLs in the
+  CPU-only mock benchmark. Cache disabled: 81.967 us/request;
+  four-entry cache enabled but every URL missing:
+  84.151 us/request (2.7% slower). This isolates miss overhead
+  but excludes QUIC, TLS, UDP and server work.
+- The repeated single-URL mock was much more favorable:
+  57.478 us/request uncached versus 39.721 cached
+  [39178289739](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39178289739).
+  Its request/finish path does not include the actual
+  network/HTTP3 stack.
+
+This was too workload-dependent for an always-on optimization.
+The cache introduced state and a miss penalty, while its real-QUIC
+benefit varied on hosted CI. The change was reverted without
+touching the established 16/32-concurrent memory regressions
+or HTTP3 engine lifecycle fixes. The diagnostic source and output
+remain available in the experimental feature commit history
+(`199e3b3` through `13d0a1f`), but are not part of the
+current benchmark/production tree. No native allocation or
+payload-copy counts were measured.
+
 # HTTP/3 performance experiments
 
 The high-level Client and direct HTTP/3 engine need to be compared on the
@@ -96,57 +133,6 @@ error before the next trial starts. This prevents one trial's native state
 from accumulating in later trials. Both modes validate every buffered
 response body and status. A request that does not finish, a wrong payload,
 or an unexpected transport error aborts the experiment.
-
-## Bounded exact-URL parsing reuse (feature-branch experiment)
-
-The upper Client now has a fixed four-entry FIFO of **successful exact
-URL parses**, with a 2048-character per-URL admission limit. Repeated
-identical URLs reuse the URI-derived scheme, host, port, authority
-and target. The canonical URI parser remains the sole authority on
-a miss; bad URLs are never cached. Each new request still validates
-its protocol choice, callbacks, timeout, method and queue capacity,
-and creates a fresh canonical Uniform::HTTP::Request. This bounds
-the cache's retention and avoids retaining Transactions or pools.
-No public configuration option or URL grammar has changed.
-
-The CPU-only `bench/client-dispatch-profile.pl` runs both
-`unified_uncached` and `unified_mock` (cached) on the SAME warm
-Client and fake engine. The private cache-limit switch is only
-for diagnosing the optimization, not a supported API. Both variants
-create the same Uniform request and follow identical completion
-callbacks. The opt-in phase split now measures the cached hot path;
-zero URI constructor calls there are expected.
-
-The real-QUIC profiler alternates two URLs for the 4/16 KiB workload,
-so it gives a workload-specific end-to-end check. Improvement on
-those two URLs does **not** establish an improvement for dynamic
-always-unique URL paths. This remains an experiment pending
-correctness, CI, and paired results; CI performance is not a gate.
-
-To compare the actual QUIC path fairly on one runner (rather than
-against another runner's baseline), the profiler now accepts:
-```sh
-UNBLOCK_H3_PROFILE_CACHE_AB=1 \
-  perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 1024 64 3 16 4096,16384
-```
-This adds a third `unified_uncached` mode using the SAME unified
-Client code, canonical URI validation, engine and QUIC transport, with
-only the private URL-cache limit set to zero. It measures direct,
-cached unified and uncached unified in rotating order in freshly
-isolated client/server processes, with identical response bodies and
-completion assertions. The output reports each mode's median wall
-time and an uncached/cached ratio. No CI timing threshold is imposed.
-The `UNBLOCK_H3_PROFILE_CACHE_AB` mode is diagnostic, not a public API;
-uncached experiments do not alter the normal application behavior.
-
-For the opposite workload, set
-`UNBLOCK_H3_DISPATCH_MISS_AB=1` with the CPU-only
-`bench/client-dispatch-profile.pl`. It runs an A/B using 16
-preconstructed URL strings on the same Client, exceeding the cache's
-four slots so each request misses. This measures cache-miss overhead
-without mixing in URL-string construction or fake network work. A
-meaningful slowdown there would be a reason to reconsider keeping
-the parse cache; it is not an end-to-end HTTP3 latency measurement.
 
 ## CPU-only request-dispatch control
 

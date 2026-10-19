@@ -44,9 +44,6 @@ my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
 my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
 my $profile_registry = $ENV{UNBLOCK_H3_PROFILE_REGISTRY} // 0;
-my $compare_url_cache = $ENV{UNBLOCK_H3_PROFILE_CACHE_AB} // 0;
-die "UNBLOCK_H3_PROFILE_CACHE_AB must be 0 or 1\n"
-    unless $compare_url_cache =~ /\A[01]\z/;
 my $assert_bounded = $ENV{UNBLOCK_H3_PROFILE_ASSERT_BOUNDED} // 0;
 die "UNBLOCK_H3_PROFILE_ASSERT_BOUNDED must be 0 or 1\n"
     unless $assert_bounded =~ /\A[01]\z/;
@@ -155,7 +152,7 @@ sub run_client_trial ($mode, $server_port, $round) {
     my $snapshot_registries = sub {
         return {} unless $profile_registry;
         my $engine = $direct;
-        if ($mode ne 'direct' && $unified) {
+        if ($mode eq 'unified' && $unified) {
             # Diagnostic-only introspection. The unified pool owns the
             # actual same HTTP3 engine; do not alter application APIs.
             for my $pool (values %{ $unified->{pools} // {} }) {
@@ -344,7 +341,7 @@ sub run_client_trial ($mode, $server_port, $round) {
 
     $check_ready = sub {
         return if $attached || !$quic || !$quic->ready;
-        return if $mode ne 'direct' && !$factory_ready;
+        return if $mode eq 'unified' && !$factory_ready;
         $attached = 1;
         if ($mode eq 'direct') {
             $direct = Unblock::HTTP3::Client->new(
@@ -363,7 +360,7 @@ sub run_client_trial ($mode, $server_port, $round) {
         loop => $loop, host => '127.0.0.1',
         port => $server_port,
         on_ready => sub ($socket) {
-            if ($mode ne 'direct') {
+            if ($mode eq 'unified') {
                 $unified = Unblock::HTTP::Client->new(
                     http3 => {},
                     max_connections_per_origin => 1,
@@ -379,11 +376,6 @@ sub run_client_trial ($mode, $server_port, $round) {
                         $loop->defer($callback);
                     },
                 );
-                # Private measurement-only toggle: identical Client,
-                # protocol configuration and QUIC stack, but URI parsing
-                # on every request instead of bounded exact-URL reuse.
-                $unified->{url_parse_limit} = 0
-                    if $mode eq 'unified_uncached';
                 # Requests may queue until the authenticated QUIC is ready.
                 $schedule->();
             }
@@ -739,21 +731,9 @@ print "# Timeout watchdog=$watchdog_seconds seconds per trial.\n"
     if $watchdog_seconds != 60;
 print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
     if defined $heap_dir;
-print "# Optional three-mode URL parse A/B: direct, unified cached, unified uncached; same payload and QUIC.\n"
-    if $compare_url_cache;
-my @modes = $compare_url_cache
-    ? qw(direct unified unified_uncached) : qw(direct unified);
 my %times;
 for my $round (1 .. $rounds) {
-    my @order;
-    if ($compare_url_cache) {
-        # Each mode gets the first/last slot in rotation across rounds.
-        my $offset = ($round - 1) % @modes;
-        @order = (@modes[$offset .. $#modes], @modes[0 .. $offset - 1]);
-    } else {
-        @order = $round % 2 ? ('direct', 'unified') : ('unified', 'direct');
-    }
-    for my $mode (@order) {
+    for my $mode ($round % 2 ? ('direct', 'unified') : ('unified', 'direct')) {
         my $v = run_isolated_trial($mode, $round);
         push @{ $times{$mode} }, $v->{elapsed};
         printf "%-7s round=%d req/s=%.1f wall=%.4fs client_cpu=%.4fs"
@@ -817,13 +797,10 @@ for my $round (1 .. $rounds) {
     }
 }
 my %median;
-for my $mode (@modes) {
+for my $mode (qw(direct unified)) {
     $median{$mode} = median($times{$mode});
     printf "# %s median wall %.4fs (%.1f req/s)\n",
         $mode, $median{$mode}, $samples / $median{$mode};
 }
 printf "# median unified/direct wall ratio %.3f (descriptive only)\n",
     $median{unified} / $median{direct};
-printf "# median unified_uncached/unified_cached wall ratio %.3f (descriptive only)\n",
-    $median{unified_uncached} / $median{unified}
-    if $compare_url_cache;
