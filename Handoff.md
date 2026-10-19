@@ -1,3 +1,48 @@
+## Canonical Client URL fast path PRODUCTION CHANGE VERIFIED (2026-10-19)
+
+Current tested code c305ba196df4d4d6f6d68dddf3fd8c4e48746482:
+- primary Linux::Event / PUBLISHED CPAN Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39304048428
+  full integration PASS
+- optional unreleased Net::QUIC MAX_DATA feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39304048477
+  full integration PASS
+
+Production Client change from 48465c3 eliminates URI object
+construction for strictly canonical lower-case ASCII http(s)
+URLs with DNS/IPv4 hostname, optional standard decimal port,
+simple ASCII path and query. The path returns the same scheme,
+host, port, authority, and target as URI. Other URLs retain
+the complete existing URI parsing and validation logic.
+No URL cache, no parser state, no API or ABI change.
+t/26-client-url-fastpath.t validates canonical parity, pool-key
+parity, fallback for noncanonical/IPv6/escaped URLs, and
+rejecting invalid URLs. Passed on both workflows.
+
+The initial primary CI 39303384933 failed only because its
+optional CPU-only benchmark asserted one URI constructor
+per canonical request. Fixed that invariant in c305ba1,
+requiring URI count exactly zero while keeping all other
+counts and completion/pool checks intact. Final primary run
+39304048428 confirmed uri_us=0.000 in all three split rounds
+while full distribution, live HTTP1/2/3 TCP/QUIC, sustained
+16/32-inflight bounded-memory tests and benchmark smokes passed.
+
+The instrumented per-request totals varied substantially across
+different GitHub hosts (old and new); do NOT claim a precise net
+speedup from those snapshots. This is a concrete reduction in
+temporary URI allocations for the canonical hot path. Keep this
+small optimization and move to another narrow correctness or
+implementation issue; no new broad performance sweep requested.
+All lower engines, Net::QUIC main, Uniform::HTTP, main refs,
+versions, tags, releases and merges untouched. HTTP3 0.13
+remains unreleased.
+
+NEXT: user priority is useful implementation, not more
+profiling infrastructure. Continue application-facing Client/
+Server integration or other concrete correctness gaps using
+feature branches and full tests, not speculative URL caching.
+
 ## Client URL fast-path profiler expectation corrected (2026-10-19)
 
 Upper production improvement 48465c35d3fcca0679cf41ae62452f82ed1f489d

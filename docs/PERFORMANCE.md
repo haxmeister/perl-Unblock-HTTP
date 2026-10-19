@@ -1,3 +1,18 @@
+### Canonical Client URL optimization verified
+
+The conservative production change in 48465c3, followed by
+the profiler invariant correction in c305ba1, passed both
+[primary published-Net::QUIC-0.05 CI](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39304048428)
+and
+[optional QUIC feature CI](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39304048477).
+The new URL behavior regression t/26 passed, and the CPU-only
+split profiler verified no URI constructor calls for its
+canonical URL. All existing live TCP/QUIC and sustained
+16/32-inflight memory tests passed. Separate CI hosts and
+clock instrumentation prevent claiming a reliable net
+microsecond speedup from the observed totals. No further
+full benchmark sweep was run for this change.
+
 ### Canonical Client URL benchmark invariant
 
 The CPU-only optional phase profiler fixed at
