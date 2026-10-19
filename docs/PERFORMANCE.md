@@ -1,3 +1,56 @@
+## Unique-URL workload characterization
+
+The real-QUIC workload profiler also supports
+`UNBLOCK_H3_PROFILE_URL_MODE=unique`. Each GET receives a distinct
+`?req=N` query component, with request numbers unique across warmup
+and measurement for each trial. The server verifies the query and
+continues to choose the same response body by the path index.
+Both direct and unified clients therefore send **identical**
+deterministic targets. The default `cycled` mode is unchanged,
+preserving all historical comparisons and the long-running 16/32
+memory regression guards. This option does not require a new
+request/response type or production code change.
+
+A reproducible, non-gating workload sweep on a reasonably quiet Linux
+machine with fixed Perl, XS modules and Net::QUIC 0.05 can run:
+
+```sh
+# First capture the exact Perl, CPU, kernel and module versions.
+perl -V:version
+uname -sr
+perl -MNet::QUIC -e 'print "$Net::QUIC::VERSION\n"'
+
+# Avoid checkpoint smaps sampling for timing comparisons.
+# Repeat full sets and compare within each set, not across hosts.
+UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch \
+  bench/h3-workload-profile.pl 2048 128 7 1 1024
+UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch \
+  bench/h3-workload-profile.pl 2048 128 7 16 4096,16384
+UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch \
+  bench/h3-workload-profile.pl 2048 128 7 8 65536
+UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch \
+  bench/h3-workload-profile.pl 2048 128 7 32 4096,16384
+```
+
+Use the per-round client-only wall time, CPU, synchronous
+`request_us`, and p50/p95/p99 completion latency together.
+The profiler rotates direct-first/unified-first order, forks fresh
+client/server processes, verifies response status and body, and
+excludes TLS connection setup through its warmup. Each scenario
+still has only one QUIC connection: it does not simulate multiple
+upstream origins or Internet latency. Inflight count and body size
+jointly affect connection-level credit; avoid drawing conclusions
+from a setting that stalls for flow-control reasons.
+
+Do not compare uninstrumented timings with memory-checkpoint
+runs, wire-counter runs or constructor-hook runs. Hosted CI
+automatically smokes three of these unique workloads, but speed
+thresholds are not asserted. No actual native copy or allocation
+events are counted here. If a consistent end-to-end difference
+persists on a quiet host, then instrument the specific native
+copy boundary identified in `docs/PERFORMANCE-COPY-BOUNDARIES.md`
+in the HTTP3 engine repository rather than estimating from RSS.
+
 ## URL cache experiment: rejected (October 18, 2026)
 
 A bounded four-entry exact-URL parse cache was tested on the upper

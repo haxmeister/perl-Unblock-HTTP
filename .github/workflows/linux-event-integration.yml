@@ -84,6 +84,12 @@ jobs:
           UNBLOCK_H3_DISPATCH_SPLIT=1 perl -Iblib/lib -Iblib/arch bench/client-dispatch-profile.pl 3000 3
           perl -Iblib/lib -Iblib/arch bench/h3-client-vs-direct.pl 30 8 1
           perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 100 20 3 4 16384
+          # Distinct request targets remove the two-path-only workload
+          # bias. Paired direct/unified, fresh isolated processes.
+          # These are CPU/resource diagnostics, NEVER speed pass/fail gates.
+          UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 1 1024
+          UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 16 4096,16384
+          UNBLOCK_H3_PROFILE_URL_MODE=unique perl -Iblib/lib -Iblib/arch bench/h3-workload-profile.pl 384 48 3 8 65536
           # Sustained identical direct/unified workload WITHOUT optional
           # checkpoint, registry or wire instrumentation. Descriptive
           # three-round throughput/latency comparison on hosted CI only.

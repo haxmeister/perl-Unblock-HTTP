@@ -40,6 +40,9 @@ my @sizes = split /,/, $body_bytes;
 die "specify at most eight response sizes, each no larger than 1048576\n"
     if @sizes > 8 || grep { $_ > 1048576 } @sizes;
 my @bodies = map { 'B' x $_ } @sizes;
+my $url_mode = $ENV{UNBLOCK_H3_PROFILE_URL_MODE} // 'cycled';
+die "UNBLOCK_H3_PROFILE_URL_MODE must be cycled or unique\n"
+    unless $url_mode eq 'cycled' || $url_mode eq 'unique';
 my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
 my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
@@ -201,6 +204,13 @@ sub run_client_trial ($mode, $server_port, $round) {
             my $body_index = ($sent - 1) % @sizes;
             my $expected_body = $bodies[$body_index];
             my $target = @sizes == 1 ? '/profile' : "/profile/$body_index";
+            # A unique URL per request, including across warmup and
+            # measurement. Do not alter response-size selection or
+            # permit callback completion order to affect the target.
+            if ($url_mode eq 'unique') {
+                my $serial = $sent + ($phase eq 'measure' ? $warmup : 0);
+                $target .= "?req=$serial";
+            }
             my $measured = $phase eq 'measure' ? 1 : 0;
             my $saw_response = 0;
             my $on_response = sub ($tx, $response) {
@@ -545,13 +555,24 @@ sub run_server ($ready_fh, $done_fh) {
             http3 => {},
             on_request => sub ($tx, $request) {
                 my $target = $request->target;
+                # Validate query serial for the unique-target workload.
+                # The authoritative response index remains in the path.
+                my ($path, $serial) = $target
+                    =~ m{\A(/profile(?:/[0-9]+)?)(?:\?req=([1-9][0-9]*))?\z};
+                my $valid_serial = $url_mode eq 'unique'
+                    ? defined($serial) && $serial <= $warmup + $samples
+                    : !defined($serial);
                 my $body_index;
-                if (@sizes == 1 && $target eq '/profile') {
-                    $body_index = 0;
-                } elsif (@sizes > 1
-                    && $target =~ m{\A/profile/([0-9]+)\z} && $1 < @sizes) {
-                    $body_index = $1;
-                } else {
+                if (defined($path) && $valid_serial) {
+                    if (@sizes == 1 && $path eq '/profile') {
+                        $body_index = 0;
+                    } elsif (@sizes > 1
+                        && $path =~ m{\A/profile/([0-9]+)\z}
+                        && $1 < @sizes) {
+                        $body_index = $1;
+                    }
+                }
+                if (!defined $body_index) {
                     $error = "unexpected benchmark target $target";
                     $loop->stop;
                     return;
@@ -715,6 +736,7 @@ sub run_isolated_trial ($mode, $round) {
 print "# HTTP3 loopback: direct engine vs pooled unified Client.\n";
 print "# same QUIC Driver, server, body and concurrency; TLS handshake excluded.\n";
 print "# requested samples=$samples warmup=$warmup rounds=$rounds inflight=$concurrency response_bytes=$body_bytes\n";
+print "# URL mode=$url_mode; unique appends deterministic per-request query serial; default cycled uses original target.\n";
 print "# sizes cycle deterministically by request index in both modes.\n" if @sizes > 1;
 print "# CPU uses client-only process CPU clock (user+system); RSS is sampled client VmRSS.\n";
 print "# Every trial uses fresh client and server processes; samples exclude the server process.\n";

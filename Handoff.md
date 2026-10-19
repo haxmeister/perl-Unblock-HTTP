@@ -1,3 +1,40 @@
+## Dynamic-URL HTTP3 workload sweep (2026-10-18)
+
+Context: prior 4-entry URL parse cache was reverted because its
+real-QUIC benefit varied (4% vs 0.4% on two CI runners), while
+rotating 16 URLs penalized misses. Upper feature current verified
+head at start 9c2859ee5ba211c11c2a155b1ab319e170b4e439,
+primary published Net::QUIC 0.05 CI 39179316288 PASS,
+diagnostic QUIC feature CI 39179316250 PASS.
+
+To get more representative profiles without touching production
+APIs, the existing real-QUIC bench/h3-workload-profile.pl gained
+opt-in UNBLOCK_H3_PROFILE_URL_MODE=unique. Default 'cycled'
+mode remains bit-for-bit equivalent in request targets.
+Unique mode appends deterministic ?req=N query to every GET,
+including warmup, using a unique serial per request. The server
+checks query presence, range and body-size routing, still responds
+using the expected index; both direct and unified clients use
+the same target, payload, QUIC stack, TLS and isolated processes.
+No URI caching, HTTP3 engine changes or new native-copy claims.
+
+Primary Linux::Event workflow now exercises three small,
+uninstrumented (no smaps checkpoint) unique-URL profiles:
+384 measured/48 warmup, 3 rounds each, concurrency 1/body 1024,
+16/bodies 4096,16384 and 8/body 65536 bytes. This is diagnostic
+not a throughput gate. Existing full 16/32 concurrent 2048-request
+bounded-memory assertion tests are untouched and still run
+in their default cycled URL mode.
+
+Read docs/PERFORMANCE.md for a seven-round 2048-request
+dedicated Linux host recipe and interpretation cautions.
+NEXT: check primary published Net::QUIC 0.05 integration CI
+and record dynamic URL timing, PSS/private and p95/p99 alongside
+historical cycling-pattern results. Do not promote isolated
+hosted-CI ratios into product-level performance claims.
+No changes to main, Net::QUIC, HTTP1/2/3 engine branches,
+versions, tags, merges or releases. HTTP3 0.13 unreleased.
+
 ## URL cache experiment reverted and verified green (2026-10-18)
 
 Upper feature 1ac97036c0c26aeb33e9a0fbb170f992f519057b
