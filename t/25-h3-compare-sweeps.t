@@ -32,7 +32,12 @@ sub fixture {
                 call_us => $mode eq 'direct' ? 100 : 130,
                 p50 => 100, p95 => $mode eq 'direct' ? 900 : 1000,
                 p99 => $mode eq 'direct' ? 1900 : 2000,
-                private_start => 1000, private_end => 1020,
+                rss_start => 1000,
+                rss_end => $mode eq 'direct' ? 1050 : 1110,
+                pss_start => 1000,
+                pss_end => $mode eq 'direct' ? 1030 : 1070,
+                private_start => 1000,
+                private_end => $mode eq 'direct' ? 1020 : 1090,
             };
         }
     }
@@ -88,8 +93,26 @@ like($out, qr/setup_delta_us=30\.00\/30\.00/,
     'separate synchronous request delta reported');
 like($out, qr/p95_delta_us=100\.0\/100\.0/,
     'per-round tail latency differences compared');
-like($out, qr/private_delta_kib=20\/20/,
-    'within-process private-memory delta compared');
+like($out, qr/rss_u_minus_d_kib=\+60\/\+60/,
+    'sampled RSS change differs by mode');
+like($out, qr/pss_u_minus_d_kib=\+40\/\+40/,
+    'sampled PSS change differs by mode');
+like($out, qr/private_u_minus_d_kib=\+70\/\+70/,
+    'private-memory change differs by mode');
+like($out, qr/private_direct_unified_kib=\+20,\+90\/\+20,\+90/,
+    'direct and unified process changes are not pooled');
+my $json_path = "$base/comparison.json";
+my $saved = qx{$^X $script --json=$json_path $a $b 2>&1};
+is($?, 0, 'machine-readable comparison succeeds');
+open my $json_fh, '<', $json_path or die $!;
+my $json_comparison = JSON::PP->new->decode(do { local $/; <$json_fh> });
+close $json_fh;
+is($json_comparison->{cases}[0]{first}{private_direct_delta_kib},
+    20, 'JSON preserves direct process private delta');
+is($json_comparison->{cases}[0]{first}{private_unified_delta_kib},
+    90, 'JSON preserves unified process private delta');
+is($json_comparison->{cases}[0]{first}{private_unified_minus_direct_kib},
+    70, 'JSON exposes mode difference rather than pooled average');
 fixture($b, 1.05, cpu_model => 'different');
 ($exit, $out) = run_compare();
 isnt($exit, 0, 'mismatched host rejected');

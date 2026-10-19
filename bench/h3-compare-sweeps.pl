@@ -36,6 +36,9 @@ sub median (@numbers) {
     return @numbers % 2 ? $numbers[$middle]
         : ($numbers[$middle - 1] + $numbers[$middle]) / 2;
 }
+sub display_delta ($value) {
+    return defined($value) ? sprintf('%+.0f', $value) : 'NA';
+}
 sub load_sweep ($directory) {
     my $manifest = load_json(File::Spec->catfile($directory, 'sweep.json'));
     die "incomplete sweep $directory\n"
@@ -79,12 +82,35 @@ sub load_sweep ($directory) {
                     =~ /\A[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/
                 && abs($summary->{median_paired_wall_ratio}
                     - $report->{summary}{median_paired_wall_ratio}) < 0.000001;
-        my @private_deltas = map {
-            $_->{private_end} - $_->{private_start}
-        } grep {
-            defined($_->{private_start}) && defined($_->{private_end})
-                && !ref($_->{private_start}) && !ref($_->{private_end})
-        } @{$report->{trials}};
+        # Never pool direct and unified memory observations from
+        # independently forked trial processes. No allocation counts.
+        my %memory_deltas;
+        for my $trial (@{$report->{trials}}) {
+            for my $metric (qw(rss pss private)) {
+                my ($start, $end) =
+                    @{$trial}{$metric . '_start', $metric . '_end'};
+                next unless defined($start) && defined($end)
+                    && !ref($start) && !ref($end)
+                    && $start =~ /\A[0-9]+(?:\.[0-9]+)?\z/
+                    && $end =~ /\A[0-9]+(?:\.[0-9]+)?\z/;
+                push @{$memory_deltas{$metric}{$trial->{mode}}},
+                    $end - $start;
+            }
+        }
+        my %memory_summary;
+        for my $metric (qw(rss pss private)) {
+            for my $mode (qw(direct unified)) {
+                my $observations = $memory_deltas{$metric}{$mode};
+                $memory_summary{$metric . '_' . $mode . '_delta_kib'} =
+                    $observations && @$observations
+                    ? median(@$observations) : undef;
+            }
+            my $direct = $memory_summary{$metric . '_direct_delta_kib'};
+            my $unified = $memory_summary{$metric . '_unified_delta_kib'};
+            $memory_summary{$metric . '_unified_minus_direct_kib'} =
+                defined($direct) && defined($unified)
+                ? $unified - $direct : undef;
+        }
         $cases{$case->{id}} = {
             ratio => $summary->{median_paired_wall_ratio},
             minimum => $summary->{min_paired_wall_ratio},
@@ -95,8 +121,7 @@ sub load_sweep ($directory) {
                 map { $_->{p95_delta_us} } @{$summary->{paired}}),
             p99_delta_us => median(
                 map { $_->{p99_delta_us} } @{$summary->{paired}}),
-            private_delta_kib => @private_deltas
-                ? median(@private_deltas) : undef,
+            %memory_summary,
         };
     }
     return { manifest => $manifest, cases => \%cases };
@@ -146,7 +171,10 @@ for my $id (@ids) {
         . " change=%+.4f reversed=%s"
         . " cpu_ratio=%s/%s setup_delta_us=%.2f/%.2f"
         . " p95_delta_us=%.1f/%.1f p99_delta_us=%.1f/%.1f"
-        . " private_delta_kib=%s/%s\n",
+        . " rss_u_minus_d_kib=%s/%s"
+        . " pss_u_minus_d_kib=%s/%s"
+        . " private_u_minus_d_kib=%s/%s"
+        . " private_direct_unified_kib=%s,%s/%s,%s\n",
         $id, $a->{ratio}, $a->{minimum}, $a->{maximum},
         $b->{ratio}, $b->{minimum}, $b->{maximum},
         $b->{ratio} - $a->{ratio}, $changed_direction ? 'yes' : 'no',
@@ -155,8 +183,16 @@ for my $id (@ids) {
         $a->{setup_delta_us}, $b->{setup_delta_us},
         $a->{p95_delta_us}, $b->{p95_delta_us},
         $a->{p99_delta_us}, $b->{p99_delta_us},
-        (defined($a->{private_delta_kib}) ? $a->{private_delta_kib} : 'NA'),
-        (defined($b->{private_delta_kib}) ? $b->{private_delta_kib} : 'NA');
+        display_delta($a->{rss_unified_minus_direct_kib}),
+        display_delta($b->{rss_unified_minus_direct_kib}),
+        display_delta($a->{pss_unified_minus_direct_kib}),
+        display_delta($b->{pss_unified_minus_direct_kib}),
+        display_delta($a->{private_unified_minus_direct_kib}),
+        display_delta($b->{private_unified_minus_direct_kib}),
+        display_delta($a->{private_direct_delta_kib}),
+        display_delta($a->{private_unified_delta_kib}),
+        display_delta($b->{private_direct_delta_kib}),
+        display_delta($b->{private_unified_delta_kib});
 }
 my $reversals = grep { $_->{direction_change} } @rows;
 print "# ratio direction reversals: $reversals/" . scalar(@rows) . "\n";

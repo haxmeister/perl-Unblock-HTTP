@@ -1,3 +1,14 @@
+## Separate-mode memory comparison (2026-10-19)
+
+The offline comparator previously pooled private memory changes from
+direct and unified request processes into one median. This was not
+a meaningful comparison. The corrected output reports independent
+median start/end changes for each mode in RSS, PSS and private memory
+(KiB), plus unified-minus-direct differences between mode medians.
+Unavailable /proc observations are null in JSON / NA in text.
+These measure process size, NOT native copies or allocations. The
+new t/25 fixture has distinct direct/unified memory changes.
+
 ### Updated engine pins verified on published Net::QUIC (2026-10-19)
 
 The primary

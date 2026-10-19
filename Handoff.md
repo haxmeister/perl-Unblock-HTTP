@@ -1,3 +1,34 @@
+## Full HTTP3 real-QUIC profile PASS and memory comparison fix (2026-10-19)
+
+The previously running workflow completed SUCCESS:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39269889496
+Tested upper source 115b0b685934a3879ee6d7c5aa24375f5e91969c,
+published Net::QUIC 0.05 and pinned coordinated engine heads.
+Both independent complete 20-scenario x 2048 measured/128 warmup x
+7 paired-round real-QUIC sweeps finished; second rotated five
+workload pairs and reversed URL order. Raw JSON/logs and comparison
+archived as artifact h3-seven-round-hosted-diagnostics
+(id 12198069225, retention 30 days).
+
+20 workloads had 2 wall-ratio direction reversals:
+c08-b1024-cycled and c08-b65536-unique. Mean matched wall
+ratios: 1KiB 1.0052 (CPU 1.0417); alternating 4/16KiB
+1.0556 (CPU 1.0570); 64KiB 1.0217 (CPU 1.0185).
+Mean synchronous request setup differences ~66.7us, 70.7us,
+90.4us respectively. At 16/32 inflight, 1KiB wall ratios
+were often below 1 despite approximately equal CPU. Shared
+GitHub runner diagnostics are not quiet-host performance proof.
+
+Analysis exposed the prior comparator pooling direct/unified
+private-memory deltas before taking one median. Benchmark-only
+comparison now reports mode-separated RSS/PSS/private KiB
+start/end medians plus mode difference, and tests use deliberately
+different direct/unified values. No hot-path changes. NEXT:
+verify updated t/25 with primary and optional integration CI.
+Full quiet-host confirmation is still required for any production
+optimization; no speculative URL cache. No main/merge/tag/release/
+version bump; HTTP3 0.13 still unreleased. Downstream untouched.
+
 ## Latest engine-pinned full CI PASS; full diagnostic running (2026-10-19)
 
 Upper feature 115b0b685934a3879ee6d7c5aa24375f5e91969c
