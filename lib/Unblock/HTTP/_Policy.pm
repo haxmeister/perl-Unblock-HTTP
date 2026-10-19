@@ -10,7 +10,10 @@ my @PROTOCOLS = ('http/1.1', 'h2', 'h3');
 
 sub new {
     my ($class, %options) = @_;
-    my %engines;
+    my $websocket_role = delete $options{_websocket_role};
+    croak 'invalid internal WebSocket policy role'
+        if defined($websocket_role) && $websocket_role ne 'server';
+    my (%engines, %websocket);
     for my $protocol (@PROTOCOLS) {
         my $name = $NAME{$protocol};
         next unless exists $options{$name};
@@ -23,8 +26,11 @@ sub new {
         croak "$name websocket must be 0 or 1"
             unless defined($websocket) && !ref($websocket)
                 && "$websocket" =~ /\A[01]\z/;
-        croak "$name WebSocket attachment is not implemented yet; see docs/IMPLEMENTATION.md"
-            if $websocket;
+        if ($websocket) {
+            croak "$name WebSocket attachment is not implemented yet; see docs/IMPLEMENTATION.md"
+                unless $protocol eq 'http/1.1' && defined($websocket_role);
+            $websocket{$protocol} = 1;
+        }
         for my $key (keys %$config) {
             croak "$name option '$key' is managed by Unblock::HTTP"
                 if $key =~ /\Aon_/ || $key =~ /\A(?:transport|quic|protocol|alpn|receive_body)\z/;
@@ -58,7 +64,7 @@ sub new {
     }
     croak 'unknown protocol option: ' . join(', ', sort keys %options) if %options;
     croak 'enable at least one of http1, http2, or http3' unless keys %engines;
-    return bless { engines => \%engines }, $class;
+    return bless { engines => \%engines, websocket => \%websocket }, $class;
 }
 
 sub protocols {
@@ -75,6 +81,12 @@ sub enabled {
     my ($self, $protocol) = @_;
     return defined($protocol) && !ref($protocol)
         && exists($self->{engines}{$protocol}) ? 1 : 0;
+}
+
+sub websocket_enabled {
+    my ($self, $protocol) = @_;
+    return defined($protocol) && !ref($protocol)
+        && $self->{websocket}{$protocol} ? 1 : 0;
 }
 
 sub options {
