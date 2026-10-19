@@ -1,3 +1,31 @@
+## HTTP1 Server WebSocket vertical slice pending full CI (2026-10-19)
+
+Resumed from 9f64ccf9e8ed8d645f5329ee7ef3065d0c4d83a7 on
+feature/high-level-client-server. Implemented first opt-in HTTP/1.1
+Server-to-Unblock::WebSocket transition: `http1 => { websocket => 1 }`
+requires an `on_websocket` callback that returns WebSocket constructor
+options or undef for HTTP 403. The H1 engine sends its own 101
+handshake response, then its on_switch calls the framework
+`unblock_upgrade($ws)` hook and transfers take_remainder() exactly
+once. Normal HTTP requests keep the direct callback path; the host
+retains its original write queue and byte transport, the engine its
+real transaction identity. Malformed attempts receive HTTP 400.
+
+Added t/28-server-websocket.t for real WebSocket framing, coalesced
+upgrade+frame input, later WebSocket messages, ordinary HTTP, rejection
+and disabled-policy paths. Pinned read-only Unblock::WebSocket main
+6f27677e176a3010355e1db5d135895baa3d8128 into the existing
+primary and optional full CI source-install steps. Updated the old
+t/13 policy expectation and Server POD. No lower engines, WebSocket
+source, Net::QUIC, Uniform::HTTP, main refs or versions touched.
+H2/H3 WebSocket and unified Client connect_websocket still reject.
+Do not claim CI passed until the final job status and new t/28
+assertions are inspected.
+
+NEXT: inspect full CI tests; fix concrete t/28 or integration errors,
+then record the verified results. Do not restart broad benchmarking,
+merge, tag, release, bump versions or edit main.
+
 ## Graceful Client shutdown verified with full CI (2026-10-19)
 
 Production and regression source commit df7ec1bdfaf40d7915f82f0420543e836ba78b51
