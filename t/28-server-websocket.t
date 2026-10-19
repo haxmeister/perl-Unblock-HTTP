@@ -121,7 +121,7 @@ is(scalar @{ $host->{aborts} }, 0, 'handoff does not abort the host');
 
 my $ordinary_host = Local::WebSocketHost->new;
 my $ordinary_engine = $definition->attach_stream(transport => $ordinary_host);
-my $ordinary_client = Unblock::HTTP1::Client->new;
+my $ordinary_client = Unblock::HTTP1::Client->new(receive_body => 'buffered');
 my $ordinary_tx = $ordinary_client->request(
     method => 'GET', target => '/ordinary', authority => 'example.test',
 );
