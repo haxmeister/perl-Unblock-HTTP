@@ -31,7 +31,8 @@ jobs:
             perl-Net-QUIC:1606308eeeaf29f2601fa166046703a4b4ba9491 \
             perl-Unblock-HTTP1:783e2a951dafac2756ba2c3cf34ea35fc043de6f \
             perl-Unblock-HTTP2:90639bf52394098296be4115e5485606ba6d7f92 \
-            perl-Unblock-HTTP3:5e0d496bb52331670edc9850d6fa417d984d0e67; do
+            perl-Unblock-HTTP3:5e0d496bb52331670edc9850d6fa417d984d0e67 \
+            perl-Unblock-WebSocket:6f27677e176a3010355e1db5d135895baa3d8128; do
             project=${spec%%:*}
             revision=${spec#*:}
             source_dir="/tmp/unblock-sources/$project"
@@ -46,6 +47,7 @@ jobs:
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP1
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP2
           sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-HTTP3
+          sudo cpanm --notest --quiet /tmp/unblock-sources/perl-Unblock-WebSocket
       - name: Build and run distribution tests
         run: |
           perl Makefile.PL
