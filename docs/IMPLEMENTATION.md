@@ -1,3 +1,24 @@
+## Verified graceful Client shutdown (2026-10-19)
+
+The upper Client now provides shutdown() and is_shutdown().
+Calling shutdown() prevents new request admission, clears Alt-Svc,
+cancels queued and connecting requests and their timer/factory
+callbacks, and immediately releases idle connections. In-flight
+HTTP/1.1, HTTP/2 and HTTP/3 transactions are NOT cancelled:
+the engine still finishes them normally, and the Client releases
+a retired transport after its final active stream completes.
+This is an explicit nonblocking drain, not a blocking wait.
+shutdown() is idempotent. Applications needing immediate close
+may explicitly cancel their retained active operation handles.
+Transport release callbacks see reason shutdown.
+
+Test t/27-client-shutdown.t covers cancellation, reentrant
+on_finish, late readiness, H2 multiplexed draining, H3 draining
+and idle timer cleanup. Full Linux::Event integration CI with
+published Net::QUIC 0.05 passed at run 39310090480, and the
+separate optional QUIC feature integration passed 39310090357.
+No lower engine code or runtime ABI changed.
+
 # Implementation status and continuation plan
 
 Updated: 2026-10-17

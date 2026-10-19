@@ -1,3 +1,32 @@
+## Graceful Client shutdown verified with full CI (2026-10-19)
+
+Production and regression source commit df7ec1bdfaf40d7915f82f0420543e836ba78b51
+PASSED both full integration workflows:
+- Primary Linux::Event with PUBLISHED Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39310090480
+- Separate optional unreleased Net::QUIC MAX_DATA diagnostic:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39310090357
+
+Both ran the full distribution suite (including the new
+t/27-client-shutdown.t), real TCP/QUIC connection and Reader
+integration, sustained 16/32-inflight memory guards, and existing
+benchmark smoke checks. Every workflow step succeeded.
+
+Client->shutdown() and is_shutdown() are now implemented and CI
+verified on the upper feature branch. Shutdown cancels unsent
+and in-progress connection attempts without fabricated HTTP
+errors, releases idle connections/timers, permanently prevents
+new admission, and lets active HTTP1/2/3 transactions drain
+normally before releasing their transport. Idempotent,
+reentrant callbacks and late ready() are covered. Release reason
+is shutdown, and no lower engine, Net::QUIC or Uniform::HTTP
+changes were required.
+
+NEXT: continue useful Client/Server application API work on
+the existing feature branches, without more broad performance
+testing or release prep. No merges/main/tags/releases/version
+bumps authorized. HTTP3 0.13 remains unreleased.
+
 ## Graceful Client shutdown implementation (2026-10-19)
 
 Resumed from 4bfb00ecc200001135abc01c625b6cbda344b0c3.
