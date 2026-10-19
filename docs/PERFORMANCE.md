@@ -1,7 +1,12 @@
 ## URL cache experiment: rejected (October 18, 2026)
 
 A bounded four-entry exact-URL parse cache was tested on the upper
-feature branch and subsequently removed. The canonical `URI->new`
+feature branch and subsequently removed. The restored primary
+published-Net::QUIC-0.05 integration
+[39179316288](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39179316288)
+and separate diagnostic
+[39179316250](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39179316250)
+both PASS, including the original 16/32-concurrency resource guards. The canonical `URI->new`
 parser and normal per-request validation remain unchanged.
 
 Paired benchmark evidence:

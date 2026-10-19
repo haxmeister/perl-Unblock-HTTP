@@ -1,3 +1,36 @@
+## URL cache experiment reverted and verified green (2026-10-18)
+
+Upper feature 1ac97036c0c26aeb33e9a0fbb170f992f519057b
+restores the original Client.pm, t/15-client-pool.t,
+both profilers and the primary Linux::Event CI workflow
+**byte-for-byte** from known-green upper feature
+0fa088d55221ceeffb5924a9bd0418c6918678a7.
+Only Handoff.md and docs/PERFORMANCE.md retain measurements
+and the decision. GitHub blob SHA comparison confirmed exact
+restoration for those five production/test/benchmark/workflow files.
+
+Restored primary published Net::QUIC 0.05 CI
+[39179316288](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39179316288)
+PASS, including distribution, live TCP/QUIC and held Reader tests,
+16/32 sustained bounded-memory regression assertions and benchmark
+smokes. Separate unreleased-QUIC-feature diagnostic
+[39179316250](https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39179316250)
+also PASS. HTTP3 engine and Net::QUIC branches unchanged.
+
+No cache remains in production; user-visible Client and Uniform
+APIs unchanged. Repeated-URL cache looked faster in the CPU-only
+mock and one real-QUIC profile, but full-QUIC results varied
+(4.0% then 0.4%) and 16-URL cache misses cost 2.7% on one
+hosted-runner trial. Maintaining extra request-path state without
+a reproducible dedicated-host benefit is not justified.
+See following section and docs/PERFORMANCE.md for exact runs.
+
+Next: develop a controlled host benchmarking recipe for realistic
+dynamic URLs, concurrency and body size, or instrument specific
+native copy boundaries only after an actionable bottleneck
+is demonstrated. No main changes, merges, tags, releases or
+version bumps. HTTP3 0.13 remains unreleased.
+
 ## Discarded URL parse cache after paired profiling (2026-10-18)
 
 **Decision:** revert the speculative four-entry exact-URL parsing
