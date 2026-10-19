@@ -1,3 +1,45 @@
+## Paired-round and JSON profile capture (development, 2026-10-18)
+
+The real-QUIC profiler now prints **paired round** comparisons in
+addition to its historical direct and unified wall-time medians. Each pair
+comes from the same round and workload, with alternating mode order.
+The median of seven paired wall ratios is not generally the ratio of the
+two independent wall-time medians. Each pair also reports the ratio of
+client-only process CPU time, unified-minus-direct synchronous request
+cost, and p50/p95/p99 completion latency differences (microseconds).
+A zero direct CPU reading produces NA rather than a division by zero.
+
+For a reproducible archive of raw per-trial measurements, opt in to a
+single versioned JSON file. The writer runs **after** all timed trials,
+not in an HTTP callback or QUIC hot path:
+
+    UNBLOCK_H3_PROFILE_URL_MODE=unique \
+    UNBLOCK_H3_PROFILE_JSON_FILE=/tmp/h3-unique-c16.json \
+      perl -Iblib/lib -Iblib/arch \
+      bench/h3-workload-profile.pl 2048 128 7 16 4096,16384
+
+The JSON contains workload parameters, all direct/unified round results,
+their memory checkpoint arrays (when explicitly enabled), and paired
+summary statistics. Keep the exact Perl/XS versions, CPU model, clock/
+governor, OS/kernel, and runner load with the resulting file; the JSON
+does not claim to fingerprint or control the machine. Use unique output
+filenames for each scenario. Never compare checkpoint-instrumented runs
+against ordinary timing runs.
+
+For the controlled-host sweep repeat this command with concurrency 1,
+8, 16 and 32, 1024-byte, alternating 4096/16384-byte and 65536-byte
+responses, and both cycled/unique URL modes. Change one parameter at
+a time. Record the order of scenarios and preferably rotate that order
+across repetitions. Seven alternating-order rounds reduce, but do not
+eliminate, time/order effects. Compare within host, record median paired
+ratios AND their range along with CPU and p95/p99, and make no
+production changes from hosted-CI speed ratios alone.
+
+The pure-Perl paired-statistics validator has a synthetic test
+(t/23-h3-profile-summary.t), including malformed/missing trials and the
+difference between paired-ratio median and ratio-of-medians. No change
+was made to application request construction, URL parsing, or transport.
+
 ## Matched repeated-vs-unique URL control results
 
 On the same Ubuntu GitHub runner, the published Net::QUIC 0.05

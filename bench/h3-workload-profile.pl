@@ -5,6 +5,9 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 use File::Temp qw(tempdir);
 use File::Spec;
 use JSON::PP ();
+use FindBin;
+use lib "$FindBin::Bin/lib";
+use H3Profile::Summary qw(summarize_trials);
 use POSIX qw(_exit);
 use Linux::Event::IO::Sock::Dgram;
 use Linux::Event::Address;
@@ -43,6 +46,9 @@ my @bodies = map { 'B' x $_ } @sizes;
 my $url_mode = $ENV{UNBLOCK_H3_PROFILE_URL_MODE} // 'cycled';
 die "UNBLOCK_H3_PROFILE_URL_MODE must be cycled or unique\n"
     unless $url_mode eq 'cycled' || $url_mode eq 'unique';
+my $json_report = $ENV{UNBLOCK_H3_PROFILE_JSON_FILE};
+die "UNBLOCK_H3_PROFILE_JSON_FILE must be a nonempty path\n"
+    if defined($json_report) && !length($json_report);
 my $heap_dir = $ENV{UNBLOCK_H3_HEAP_DIR};
 my $profile_wire = $ENV{UNBLOCK_H3_PROFILE_WIRE} ? 1 : 0;
 my $checkpoint_every = $ENV{UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY} // 0;
@@ -754,10 +760,12 @@ print "# Timeout watchdog=$watchdog_seconds seconds per trial.\n"
 print "# Optional Perl heap dumps are diagnostic and invalidate timing comparisons.\n"
     if defined $heap_dir;
 my %times;
+my @trial_records;
 for my $round (1 .. $rounds) {
     for my $mode ($round % 2 ? ('direct', 'unified') : ('unified', 'direct')) {
         my $v = run_isolated_trial($mode, $round);
         push @{ $times{$mode} }, $v->{elapsed};
+        push @trial_records, { round => $round, %$v };
         printf "%-7s round=%d req/s=%.1f wall=%.4fs client_cpu=%.4fs"
             . " request_us=%.2f p50_us=%.1f p95_us=%.1f p99_us=%.1f"
             . " inflight_peak=%d client_rss_start_kib=%s client_rss_end_kib=%s client_rss_sample_peak_kib=%s"
@@ -826,3 +834,47 @@ for my $mode (qw(direct unified)) {
 }
 printf "# median unified/direct wall ratio %.3f (descriptive only)\n",
     $median{unified} / $median{direct};
+
+# Paired results complement, but do not replace, the historical separate
+# median wall times above. They cannot remove hosted-runner scheduling noise.
+my $summary = summarize_trials(\@trial_records, $rounds);
+for my $pair (@{ $summary->{paired} }) {
+    printf "# paired round=%d wall_ratio=%.4f cpu_ratio=%s"
+        . " unified_minus_direct_request_us=%.2f"
+        . " p50_delta_us=%.1f p95_delta_us=%.1f p99_delta_us=%.1f\n",
+        $pair->{round}, $pair->{wall_ratio},
+        (defined $pair->{cpu_ratio}
+            ? sprintf('%.4f', $pair->{cpu_ratio}) : 'NA'),
+        $pair->{request_delta_us}, $pair->{p50_delta_us},
+        $pair->{p95_delta_us}, $pair->{p99_delta_us};
+}
+printf "# median paired unified/direct wall ratio %.4f"
+    . " (range %.4f..%.4f; descriptive only)\n",
+    $summary->{median_paired_wall_ratio},
+    $summary->{min_paired_wall_ratio}, $summary->{max_paired_wall_ratio};
+
+if (defined $json_report) {
+    # Optional output occurs AFTER every isolated trial; never add file IO
+    # inside request(), callbacks, the QUIC loop or timed measurements.
+    my $data = {
+        schema_version => 1,
+        workload => {
+            samples => 0 + $samples, warmup => 0 + $warmup,
+            rounds => 0 + $rounds, inflight => 0 + $concurrency,
+            response_bytes => [map { 0 + $_ } @sizes],
+            url_mode => $url_mode,
+            memory_checkpoint_every => 0 + $checkpoint_every,
+            registry_checkpoint => 0 + $profile_registry,
+            bounded_assertions => 0 + $assert_bounded,
+            wire_counters => 0 + $profile_wire,
+        },
+        trials => \@trial_records,
+        summary => $summary,
+    };
+    open my $fh, '>', $json_report
+        or die "cannot open profile JSON report $json_report: $!\n";
+    print {$fh} JSON::PP->new->canonical->pretty->encode($data)
+        or die "cannot write profile JSON report $json_report: $!\n";
+    close $fh or die "cannot close profile JSON report $json_report: $!\n";
+    print "# machine-readable profile JSON: $json_report\n";
+}

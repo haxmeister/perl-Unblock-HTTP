@@ -1,3 +1,32 @@
+## Paired real-QUIC performance capture (development, 2026-10-18)
+
+Resumed from upper feature 4325ec64278e9fa2fb539d85c43ed4399f747470;
+remote HTTP3 feature 6687bcef0efd11991ac609f7dc7f7fa487153d28;
+published Net::QUIC 0.05 stays unchanged. Last primary Linux::Event
+integration 39184885870 PASS and independent optional QUIC-feature
+diagnostic 39184885939 PASS. Existing 16/32-inflight 2048-request
+bounded-memory guards remain untouched.
+
+Added a benchmark-only paired-round report and optional versioned JSON
+export to bench/h3-workload-profile.pl. Pure-Perl summary helper
+bench/lib/H3Profile/Summary.pm and t/23-h3-profile-summary.t validate
+pairing, ratios, missing/duplicate trials, zero CPU, and avoid confusing
+the median of paired ratios with a ratio of independent medians.
+Timed per-request, callback and QUIC paths are not modified; writing
+JSON occurs after all trials complete. docs/PERFORMANCE.md documents
+a controlled seven-round host procedure with CPU, p50/p95/p99,
+synchronous setup and memory interpretation. This is instrumentation,
+not a measured throughput improvement or a native allocation/copy count.
+
+NEXT: validate the upper distribution suite and Linux::Event real-QUIC
+primary workflow against published CPAN Net::QUIC 0.05, especially
+existing bounded-memory 16/32 guards and new paired output. Record CI
+run links and results. Then use a quiet dedicated host if accessible for
+the seven-round cycled/unique, 1/8/16/32-concurrency and response-size
+sweep, keeping results separate from hosted CI. Do not reintroduce the
+URL parsing cache on current evidence. No main/merge/tag/release/bump
+or other-repository edits; HTTP3 0.13 remains unreleased.
+
 ## Unique URL real-QUIC results and matched cycled control (2026-10-18)
 
 Upper feature dynamic-URL profiler cd06c07ca7f8c8e1ef7866b919fd7571ce505fe5
