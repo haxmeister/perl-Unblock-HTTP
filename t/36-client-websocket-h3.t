@@ -234,7 +234,8 @@ ok(run_until(sub { $denied->is_terminal }),
 is($denied->state, 'error', 'HTTP 403 WebSocket handshake is an error');
 ok(!$denied->websocket, 'rejected H3 handshake creates no WebSocket');
 is(scalar @denied_error, 1, 'rejected H3 handshake invokes on_error once');
-is_deeply(\@denied_finish, ['error'], 'rejected H3 handshake finishes once');
+is_deeply(\@denied_finish, ['cancelled'],
+    'underlying H3 stream finishes once with native cancelled state');
 is($client->pool_stats->{active}, 2,
     'denied H3 stream returns credit without affecting two WebSockets');
 
