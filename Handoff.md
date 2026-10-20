@@ -1,27 +1,51 @@
-## Native borrowed-input WebSocket boundary regression (2026-10-19)
+## Unified HTTP1 Client WebSocket implemented; final CI running (2026-10-19)
 
-Following the verified HTTP1 Server WebSocket slice, added
-t/29-server-websocket-native.t. It exercises the actual HTTP1
-_Native::BorrowedDriver with an attached host, verifies INPUT_SWITCH,
-the exact consumed HTTP handshake prefix, host switch after the 101
-bytes are accepted, and forwards only the unconsumed borrowed suffix
-into the established WebSocket engine. Also tests resubmission of a
-partial HTTP head, later WebSocket messages, and no duplicate remainder.
+Latest production/test source commit 65c88e0fa57ad11c753b03ba1745ac832f46de16
+on feature/high-level-client-server. Added Client->connect_websocket()
+for opt-in http1 => { websocket => 1 }, built with the existing per-origin
+connection factories and request scheduler, no new socket wrapper. The
+read-only Unblock::WebSocket 0.02 handshake helper creates an HTTP1 GET
+Upgrade request and validates its response. On accepted 101, the existing
+HTTP1 Client engine invokes on_switch after outgoing data acceptance.
+The adapter's synchronous unblock_upgrade($ws) selects the real
+Unblock::WebSocket::Client as the new input owner; HTTP1 take_remainder()
+bytes are transferred once. The HTTP connection is removed from the
+pool WITHOUT calling release_connection or closing the socket.
+The operation->websocket accessor exposes the established engine;
+on_open($ws, $http_tx) runs before the handshake's on_finish($tx).
 
-The existing optional Linux::Event adapter now implements
-unblock_upgrade($ws) by selecting the WebSocket as the input consumer
-while retaining the original HTTP engine and stream's ordered output
-queue. All input, EOF, errors and writable notifications follow the
-current consumer. t/12-linux-event-adapter.t covers the switch and
-lifecycle routing with a fake consumer. This adapter uses the public
-Perl input path, NOT the raw NativeABI. Native providers continue to
-own and forward the unconsumed window at INPUT_SWITCH according to
-the existing ABI; no C ABI changes or engine modifications.
-CI verification pending; do not call this complete before green runs.
+A real lifecycle issue was fixed during CI iteration: the newly detached
+pool/connection were held only by weak per-transaction callbacks and
+could be destroyed before HTTP1 invoked on_finish after on_switch.
+A short-lived, explicitly deleted upgrade_retirement pair on the
+operation now retains just those bookkeeping objects through the
+terminal callback. No references survive terminal cleanup.
+t/30-client-websocket.t tests handshake, frame exchange, detachment,
+normal HTTP reuse, shutdown independence, disabled policy and 403
+rejection/error callback behavior. The distribution-suite stage has
+passed for commit 65c88e0 in the running primary/optional workflows;
+do not claim full workflow success until both jobs finish.
 
-NEXT: verify t/12 and t/29 in full CI; fix concrete regressions,
-record both green workflows. Then work on Client connect_websocket.
-No main, merge, tag, release or version bump.
+Earlier native/adapter slice (commit 3505abf5c01993f02ace9ef31b76f2d6069d076f)
+VERIFIED in BOTH full workflows:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39364338085
+- Optional MAX_DATA branch:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39364338022
+t/29 exercises the real borrowed-input NativeABI transition, strict
+consumed-prefix ownership and partial-head resubmission; the optional
+Linux::Event adapter implements post-upgrade input/EOF/error/drain
+routing (Perl input mode) and has t/12 regressions. Added runnable
+examples/linux-event-websocket-server.pl. The native framework still
+owns/forwards its unconsumed native window at INPUT_SWITCH. C ABI and
+all lower repositories are UNCHANGED.
+
+NEXT: inspect primary CI 39365198070 and optional CI 39365198109
+for the current Client commit; both distribution stages passed.
+Fix any remaining concrete failures, then record verified CI and
+continue HTTP2/HTTP3 WebSocket streaming or Client edge lifecycle
+coverage. Do not start a broad profiling campaign or release audit.
+No main/merge/tag/releases/version bumps.
 
 ## HTTP1 Server WebSocket transition VERIFIED (2026-10-19)
 
