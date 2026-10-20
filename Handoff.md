@@ -1,3 +1,52 @@
+## HTTP2 Client WebSocket Extended CONNECT implementation (2026-10-20)
+
+Starting from verified HTTP2 Server checkpoint ec7c6819c21cacc922330ef5a7ce05fbc97f7e7f,
+the upper Client now accepts opt-in `http2 => { websocket => 1 }`.
+`connect_websocket(url => ..., http_version => '2', ...)` uses the existing
+factory/pool and a real H2 CONNECT Transaction, with RFC8441 validation by the
+read-only Unblock::WebSocket handshake helper. With only H2 WebSocket enabled,
+http_version defaults to '2'; if HTTP1 is also enabled, default remains '1.1'.
+
+The same socket stays in the H2 pool: no unblock_upgrade() and no detachment.
+Client waits until the peer's first SETTINGS frame before opening CONNECT,
+requires ENABLE_CONNECT_PROTOCOL = 1, and explicitly fails without sending
+CONNECT if absent. Existing H2 connection waiting for SETTINGS prevents new
+TCP attempts on the same origin. SETTINGS callbacks wake the pool using the
+normal deferred scheduler. Other HTTP2/WS streams remain independent.
+
+After the HTTP 200 handshake, on_open($ws, $tx) exposes the real
+Unblock::WebSocket::Client and H2 Transaction. Incoming on_data forwards
+DATA to WebSocket; outbound frames share _WebSocketH2Body's deferred stream
+queue and per-stream on_drain. One HTTP2 transaction stays active for the
+full WS lifetime; its on_finish runs at stream end, and bridge state detaches
+then. Cancellation resets only that stream; normal HTTP and other WebSockets
+remain usable. HTTP Client shutdown still drains active streams before
+releasing the multiplexed connection. No HTTP1 behavior changed.
+
+Changes on upper feature branch only:
+- lib/Unblock/HTTP/_Policy.pm: opt-in Client H2 permission.
+- lib/Unblock/HTTP/Client.pm: strict version selection, SETTINGS gated
+  queue, per-stream WebSocket callbacks and cleanup, safe weak ownership.
+- lib/Unblock/HTTP/_ClientOperation.pm POD and Client POD.
+- t/33-client-websocket-h2.t: real H2/WebSocket in-memory test exercising
+  peer SETTINGS gate, concurrent WS streams, ordinary HTTP, stream-local
+  cancellation, Close/END_STREAM, peer denial and pre-SETTINGS cancel.
+
+Production/test source commit:
+bebb92c02d817c3b89bef956e03e846235040b40
+The first two full workflows have PASSED their distribution-test stages,
+but both full workflow conclusions must be checked before claiming
+verification:
+- published Net::QUIC 0.05: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286760
+- optional QUIC MAX_DATA: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286933
+
+NEXT: check full workflow results, repair any concrete failures, record
+actual verified source SHA/results. Then targeted H2 Client lifecycle
+coverage (rejected 200, reset, shutdown) before considering H3
+WebSocket. Lower HTTP engines, Net::QUIC, Uniform::HTTP and
+Unblock::WebSocket remain read-only; no main/merge/tag/release/version
+bump. Avoid restarting broad benchmark campaigns.
+
 ## HTTP2 Extended CONNECT WebSocket Server FULL CI VERIFIED (2026-10-20)
 
 Resumed upper Unblock::HTTP feature/high-level-client-server from
