@@ -147,7 +147,7 @@ my $live = $life_client->connect_websocket(
 );
 pump();
 isa_ok($live->websocket, 'Unblock::WebSocket::Client');
-is($live_client->pool_stats->{active}, 1, 'accepted WebSocket occupies one H2 stream');
+is($life_client->pool_stats->{active}, 1, 'accepted WebSocket occupies one H2 stream');
 my $before_shutdown = scalar @releases;
 $life_client->shutdown;
 is(scalar @releases, $before_shutdown, 'Client shutdown does not close active WebSocket');
