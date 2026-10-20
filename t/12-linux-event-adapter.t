@@ -91,4 +91,39 @@ $h1->http->{writable} = 0;
 $h1->on_eof;
 is($h1->http->{eof}, 1, 'EOF not forwarded again after read stops');
 
+{
+    package Local::WebSocketConsumer;
+    sub new { bless { received => [], readable => 1 }, shift }
+    sub input { push @{ $_[0]{received} }, $_[1] }
+    sub want_read { $_[0]{readable} }
+    sub input_eof { $_[0]{eof}++ }
+    sub resume_output { $_[0]{resumed}++ }
+    sub transport_error { $_[0]{error} = $_[1] }
+}
+
+my $upgradable = MyStream->new;
+$upgradable->on_ready;
+my $original = $upgradable->http;
+my $websocket = Local::WebSocketConsumer->new;
+ok(!$upgradable->websocket, 'no WebSocket exists before HTTP upgrade');
+$upgradable->unblock_upgrade($websocket);
+is($upgradable->http, $original, 'native HTTP engine remains accessible');
+is($upgradable->websocket, $websocket, 'adapter retains the new input consumer');
+$upgradable->on_data('frame');
+is_deeply($websocket->{received}, ['frame'], 'WebSocket receives post-upgrade data');
+is_deeply($original->{received}, [], 'HTTP does not see WebSocket frames');
+$upgradable->on_drain;
+is($websocket->{resumed}, 1, 'WebSocket receives writable notifications');
+is($original->{resumed} || 0, 0, 'retired HTTP parser no longer receives writable notifications');
+$upgradable->on_eof;
+is($websocket->{eof}, 1, 'WebSocket receives post-upgrade EOF');
+$upgradable->on_error('transport down');
+is($websocket->{error}, 'transport down', 'WebSocket receives post-upgrade transport error');
+ok(!eval { $upgradable->unblock_upgrade($websocket); 1 },
+    'adapter rejects duplicate upgrade');
+like($@, qr/already upgraded/, 'duplicate upgrade reports reason');
+ok(!eval { (MyStream->new)->unblock_upgrade(bless {}, 'UnknownConsumer'); 1 },
+    'adapter rejects consumer without transport lifecycle methods');
+like($@, qr/consumer is required/, 'incomplete consumer is rejected');
+
 done_testing;
