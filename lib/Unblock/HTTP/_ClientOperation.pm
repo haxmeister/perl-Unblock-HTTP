@@ -29,6 +29,7 @@ sub new {
 sub state       { $_[0]{state} }
 sub error       { $_[0]{error} }
 sub transaction { $_[0]{transaction} }
+sub websocket   { $_[0]{websocket} }
 sub is_terminal { $_[0]{state} =~ /\A(?:complete|error|cancelled)\z/ ? 1 : 0 }
 
 sub _cancel_timer {
@@ -65,6 +66,9 @@ Unblock::HTTP::_ClientOperation - A pending outgoing HTTP request
 A Client request returns this handle immediately, including before its
 transport has connected. C<transaction()> becomes the actual engine
 Transaction once the request is issued, without an HTTP transaction wrapper.
+For C<connect_websocket()>, C<websocket()> becomes the established
+C<Unblock::WebSocket::Client> only after the HTTP1 101 response is validated
+and the framework-owned transport has changed its input consumer.
 
 C<state()> is queued, connecting, active, complete, error, or cancelled.
 C<error()> reports a connection or transaction error, if any.
