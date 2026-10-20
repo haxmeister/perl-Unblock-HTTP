@@ -32,7 +32,7 @@ sub new {
                 unless defined($websocket_role)
                     && ($protocol eq 'http/1.1'
                         || $protocol eq 'h2'
-                        || ($protocol eq 'h3' && $websocket_role eq 'server'));
+                        || $protocol eq 'h3');
             $websocket{$protocol} = 1;
         }
         for my $key (keys %$config) {
