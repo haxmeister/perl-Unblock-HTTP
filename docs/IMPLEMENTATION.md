@@ -33,12 +33,16 @@ This is the H3 SERVER slice; the unified H3 Client WebSocket
 connect_websocket remains disabled until a separate peer SETTINGS,
 pool admission and lifecycle implementation passes its own tests.
 
-The original real-QUIC positive test passed both distribution suites
-at source 6211132b553a147ab855b6ec3010be80cddd6be8.
-The expanded 400/403 cases at b43532e92917d5850b6abc78c16485e3e16acc37
-are undergoing integration CI; do not call the expanded slice verified
-until both full workflow conclusions are green. No broad profiling or
-release preparation.
+The expanded real QUIC/TLS positive and 400/403 test source
+b43532e92917d5850b6abc78c16485e3e16acc37 PASSED both FULL
+Unblock::HTTP integration workflows:
+- Published Net::QUIC 0.05: 39513252507 PASS
+- Optional QUIC MAX_DATA feature: 39513252547 PASS
+Both passed 27 distribution test files / 1,102 checks including t/35
+and t/34, all existing live TCP/QUIC and resource guards and preexisting
+smoke steps. No speedup is claimed, and no lower library is modified.
+H3 Client WebSocket remains disabled pending its own implementation.
+No broad profiling or release preparation.
 
 ## HTTP2 Client WebSocket Extended CONNECT (2026-10-20)
 
