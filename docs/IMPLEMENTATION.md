@@ -25,8 +25,11 @@ callback. t/30-client-websocket.t tests real in-memory H1/WebSocket
 traffic, pool detach, subsequent normal HTTP, shutdown, disabled
 policy and rejected handshake. Implementation/test source is
 65c88e0fa57ad11c753b03ba1745ac832f46de16. Both full CI
-workflows have passed distribution tests; final full CI
-verification was still pending at this checkpoint.
+workflows PASSED: primary published Net::QUIC 0.05 run 39365198070
+and optional QUIC-feature run 39365198109. Both passed 22 files /
+960 distribution checks plus existing live TCP/QUIC, sustained
+resource tests and pre-existing benchmark smokes. No claimed
+throughput improvement comes from those shared runners.
 
 Native borrowed input is covered separately by
 t/29-server-websocket-native.t: it drives the actual native HTTP1
