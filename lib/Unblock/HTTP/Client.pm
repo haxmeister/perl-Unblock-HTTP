@@ -21,7 +21,7 @@ sub new {
     for my $name (qw(http1 http2 http3)) {
         $protocols{$name} = delete $option{$name} if exists $option{$name};
     }
-    my $policy = Unblock::HTTP::_Policy->new(%protocols);
+    my $policy = Unblock::HTTP::_Policy->new(%protocols, _websocket_role => 'client');
     my %factory;
     for my $name (qw(connect_stream connect_quic defer schedule_timer release_connection)) {
         $factory{$name} = delete $option{$name} if exists $option{$name};
@@ -190,11 +190,78 @@ sub network_changed {
     return;
 }
 
+# One HTTP1 Upgrade operation transfers the framework-owned transport to
+# Unblock::WebSocket. The resulting socket no longer belongs to the HTTP pool.
+sub connect_websocket {
+    my ($self, @args) = @_;
+    croak 'connect_websocket(): expected named arguments' if @args % 2;
+    my %option = @args;
+    croak 'connect_websocket(): http1 websocket support is disabled'
+        unless $self->{policy}->websocket_enabled('http/1.1');
+    my $url = delete $option{url};
+    croak 'connect_websocket(): url is required'
+        unless defined($url) && !ref($url) && length($url);
+    my %handshake_option;
+    for my $name (qw(headers origin subprotocols permessage_deflate)) {
+        $handshake_option{$name} = delete $option{$name}
+            if exists $option{$name};
+    }
+    my %session_option;
+    for my $name (qw(
+        backend max_message_size high_water low_water random_bytes
+        on_message on_ping on_pong on_close on_drain
+    )) {
+        $session_option{$name} = delete $option{$name}
+            if exists $option{$name};
+    }
+    my $on_open = delete $option{on_open};
+    croak 'connect_websocket(): on_open must be a coderef'
+        if defined($on_open) && ref($on_open) ne 'CODE';
+    my $on_error = delete $option{on_error};
+    croak 'connect_websocket(): on_error must be a coderef'
+        if defined($on_error) && ref($on_error) ne 'CODE';
+    my $on_finish = delete $option{on_finish};
+    croak 'connect_websocket(): on_finish must be a coderef'
+        if defined($on_finish) && ref($on_finish) ne 'CODE';
+    my $timeout = delete $option{timeout};
+    croak 'connect_websocket(): unknown option: ' . join(', ', sort keys %option)
+        if %option;
+
+    require Unblock::WebSocket::Handshake;
+    my ($handshake, $request) =
+        Unblock::WebSocket::Handshake->client_request(
+            $url, http_version => '1.1', %handshake_option,
+        );
+    my $http_url = "$url";
+    $http_url =~ s/\A(?:ws|wss):/lc(sub request {
+) eq 'ws:' ? 'http:' : 'https:'/ie;
+    my $spec = {
+        handshake => $handshake,
+        options => \%session_option,
+        on_open => $on_open,
+    };
+    return $self->request(
+        url => $http_url,
+        http_version => '1.1',
+        _websocket_request => $request,
+        _websocket_connect => $spec,
+        (defined($on_error) ? (on_error => $on_error) : ()),
+        (defined($on_finish) ? (on_finish => $on_finish) : ()),
+        (defined($timeout) ? (timeout => $timeout) : ()),
+    );
+}
+
 sub request {
     my ($self, @args) = @_;
     croak 'request(): Client is shut down' if $self->{shutdown};
     croak 'request(): expected named arguments' if @args % 2;
     my %field = @args;
+    my $ws_spec = delete $field{_websocket_connect};
+    my $ws_request = delete $field{_websocket_request};
+    croak 'request(): internal WebSocket options must occur together'
+        if (!!$ws_spec) != (!!$ws_request);
+    croak 'request(): HTTP1 WebSocket option is disabled'
+        if $ws_spec && !$self->{policy}->websocket_enabled('http/1.1');
     my $url = delete $field{url};
     croak 'request(): url is required' unless defined($url) && !ref($url) && length($url);
     my ($scheme, $host, $port, $authority, $target);
@@ -280,9 +347,19 @@ sub request {
     croak 'request(): do not pass scheme, authority or target with url'
         if grep { exists($field{$_}) } qw(scheme authority target);
     $field{method} = 'GET' unless exists $field{method};
-    my $request = Uniform::HTTP::Request->new(
+    croak 'request(): internal WebSocket request cannot override HTTP fields'
+        if $ws_request && keys %field > 1;
+    my $request = $ws_request || Uniform::HTTP::Request->new(
         %field, scheme => $scheme, authority => $authority, target => $target,
     );
+    if ($ws_request) {
+        croak 'request(): WebSocket requires HTTP/1.1'
+            unless $version eq 'http/1.1';
+        croak 'request(): WebSocket URL and handshake request disagree'
+            unless $request->scheme eq $scheme
+                && $request->authority eq $authority
+                && $request->target eq $target;
+    }
     my $key = join('|', $scheme, lc($host), $port);
     my $origin = $self->{pools}{$key} ||= {
         info => {
@@ -300,6 +377,7 @@ sub request {
         $self, $request, \%callbacks, $version, $origin,
     );
     $op->{stream_body} = $stream_body;
+    $op->{websocket_connect} = $ws_spec if $ws_spec;
     if (!$strict_version && $scheme eq 'https'
         && $version eq 'tcp' && $self->{policy}->enabled('h3')) {
         my $advertised = $self->{alt_svc}->lookup($key);
@@ -353,6 +431,8 @@ sub _retired {
     my ($conn) = @_;
     my $engine = $conn->{engine};
     return 1 if $conn->{stale};
+    return 1 if $conn->{protocol} eq 'http/1.1'
+        && $engine->can('is_switched') && $engine->is_switched;
     if ($conn->{protocol} eq 'h2') {
         return $engine->can('draining') && $engine->draining ? 1 : 0;
     }
@@ -755,6 +835,7 @@ sub _dispatch {
     weaken($weak_conn);
     weaken($weak_op);
     my $callbacks = $op->{callbacks};
+    my $ws_spec = $op->{websocket_connect};
     my %engine_callback;
     $engine_callback{on_data} = $callbacks->{on_data} if $callbacks->{on_data};
     $engine_callback{on_informational} = $callbacks->{on_informational}
@@ -793,6 +874,50 @@ sub _dispatch {
     }
     if ($callbacks->{on_error}) {
         $engine_callback{on_error} = $callbacks->{on_error};
+    }
+    if ($ws_spec) {
+        # Validation must happen before HTTP1 yields its byte-stream.
+        # Invalid 101 replies and ordinary HTTP rejection responses are
+        # failed handshakes, not successful established WebSockets.
+        $engine_callback{on_response} = sub {
+            my ($tx, $response) = @_;
+            $ws_spec->{handshake}->validate_client_response($response);
+        };
+        $engine_callback{on_switch} = sub {
+            my ($tx, $response) = @_;
+            my $active_self = $weak_self or return;
+            my $active_pool = $weak_pool or return;
+            my $active_conn = $weak_conn or return;
+            my $active_op = $weak_op or return;
+            local $active_pool->{callback_depth} =
+                ($active_pool->{callback_depth} || 0) + 1;
+            my $host = $active_conn->{host};
+            croak 'connect_websocket(): transport must implement unblock_upgrade()'
+                unless $host->can('unblock_upgrade');
+
+            require Unblock::WebSocket::Client;
+            my $ws = Unblock::WebSocket::Client->new(
+                %{ $ws_spec->{handshake}->connection_options },
+                %{ $ws_spec->{options} },
+                transport => $host,
+                ($callbacks->{on_error}
+                    ? (on_error => $callbacks->{on_error}) : ()),
+            );
+            # The framework changes the input owner synchronously, while
+            # leaving its ordered write queue and the socket unchanged.
+            $host->unblock_upgrade($ws);
+            $active_op->{websocket} = $ws;
+            $active_conn->{released} = 1; # transferred, never close by pool
+            $active_self->_cancel_idle($active_conn)
+                if $active_conn->{idle_cancel};
+            $active_pool->{connections} = [
+                grep { $_ != $active_conn } @{ $active_pool->{connections} }
+            ];
+            $ws_spec->{on_open}->($ws, $tx)
+                if $ws_spec->{on_open};
+            my $tail = $active_conn->{engine}->take_remainder;
+            $ws->input($tail) if length $tail;
+        };
     }
     $engine_callback{on_finish} = sub {
         my ($tx) = @_;
@@ -840,6 +965,9 @@ sub _dispatch {
     };
     my $no_credit = 0;
     my $ok = eval {
+        die "connect_websocket(): requires an upgrade-capable HTTP1 transport\n"
+            if $ws_spec && ($conn->{protocol} ne 'http/1.1'
+                || !$conn->{host}->can('unblock_upgrade'));
         $op->{transaction} = $conn->{engine}->request(
             $op->{request},
             stream_body => $op->{stream_body},
