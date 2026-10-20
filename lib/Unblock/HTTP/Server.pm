@@ -455,10 +455,12 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
 This feature branch implements reusable attachment and ordinary buffered or
 streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
-HTTP/1.1 Server WebSocket Upgrade and HTTP/2 Server Extended CONNECT
-are available as separate opt-in paths using optional Unblock::WebSocket.
-HTTP/2 Client and HTTP/3 WebSockets remain planned; the unified HTTP/1.1
-Client Upgrade is implemented separately in Unblock::HTTP::Client.
+HTTP/1.1 Server Upgrade and HTTP/2 Server Extended CONNECT are verified
+opt-in paths using Unblock::WebSocket. HTTP/2 Client Extended CONNECT is
+also verified and documented in Unblock::HTTP::Client. An HTTP/3 Server
+Extended CONNECT implementation is in progress on this feature branch;
+its real-QUIC correctness tests are required before it can be considered
+verified. HTTP/3 Client WebSocket is not yet implemented.
 Initial Client factories and bounded pooling are also implemented there.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
@@ -515,15 +517,15 @@ before the transaction is terminal. Its exceptions do not undo cleanup.
 C<on_error> retains the engine's arguments: transaction, error, and an
 optional protocol error code. Cancellation alone is not an error.
 
-C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket Upgrade
-and/or HTTP/2 Extended CONNECT, only when C<on_websocket> is supplied.
-Both default to disabled. HTTP/2 WebSockets additionally require the
-C<defer> callback, which must schedule execution on a later event-loop
-turn. H2 Extended CONNECT is advertised only when its WebSocket policy
-is enabled. HTTP/3 Extended CONNECT WebSockets remain unsupported.
-HTTP/1.1 Client Upgrade is documented separately in Unblock::HTTP::Client.
-For H2 WebSocket CONNECT transactions, C<on_websocket> replaces ordinary
-C<on_headers>/C<on_request> delivery; normal HTTP2 requests are unchanged.
+C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket Upgrade,
+HTTP/2 Extended CONNECT, and the experimental HTTP/3 Extended CONNECT
+server path, only when C<on_websocket> is supplied. All default to
+disabled. HTTP/2 and HTTP/3 WebSockets require C<defer>, which schedules
+execution on a later event-loop turn. The relevant Extended CONNECT
+setting is advertised only when that protocol's WebSocket policy is
+enabled. The HTTP/3 Client WebSocket path remains disabled. For H2/H3
+WebSocket CONNECT transactions, C<on_websocket> replaces ordinary
+C<on_headers>/C<on_request> delivery; other HTTP requests are unchanged.
 
 =head2 HTTP/1.1 WebSocket Upgrade
 
@@ -668,6 +670,31 @@ There is no intermediate connection wrapper and no transaction wrapper.
 Missing or empty ALPN selects HTTP/1.1 only if HTTP/1.1 is enabled. Unknown
 or disabled protocols fail. Explicit C<protocol =E<gt> 'h2'> is for cleartext
 prior knowledge. HTTP/3 cannot be attached to a byte stream.
+
+=head2 HTTP/3 Extended CONNECT WebSocket Server (experimental)
+
+Opt in with C<http3 =E<gt> { websocket =E<gt> 1 }>, supply
+C<on_websocket($tx, $request)> and C<defer($work)> as for HTTP/2,
+and attach each ready Net::QUIC connection with C<attach_quic>.
+The unified Server advertises SETTINGS_ENABLE_CONNECT_PROTOCOL
+(HTTP/3 setting 8) only when explicitly enabled. A WebSocket CONNECT
+uses a normal QUIC bidirectional request stream, not a separate UDP
+socket or QUIC connection. The handshake is HTTP 200 (not HTTP 101).
+
+Incoming WebSocket DATA uses the existing H3 Transaction C<on_data>.
+An internal deferred per-stream writer queues outbound WebSocket frames
+and hands them to the same Transaction through C<write()>, using
+C<on_drain> to honor stream backpressure. The WebSocket Close
+handshake ultimately ends the stream. Application denial returns
+HTTP 403; invalid WebSocket handshake returns HTTP 400. Ordinary
+HTTP/3 traffic continues to use its normal callbacks. C<defer>
+must never invoke the scheduled callback inline from an H3 parser
+callback. The framework remains responsible for QUIC UDP delivery,
+timeout scheduling, writable readiness and connection lifecycle.
+
+This integration is being exercised against real Net::QUIC 0.05
+loopback TLS and is not considered verified until the full
+coordination suite passes. H3 Client WebSocket is separate work.
 
 =head2 attach_quic
 
