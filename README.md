@@ -2,13 +2,15 @@
 
 Unblock::HTTP is the framework-neutral application layer above HTTP/1,
 HTTP/2, HTTP/3, and eventually WebSocket. Protocol parsing stays in the
-existing engines. This distribution adds no XS.
+existing engines. WebSocket sessions use the separate Unblock::WebSocket
+distribution; this top layer adds no XS.
 
-This feature branch is under development. The reusable Server and direct
-connection attachment are implemented, along with the first shared Client
-factory, request-handle, bounded queue and pooling slice. WebSocket transitions,
-cross-host Alt-Svc and post-dispatch retries remain unimplemented; optional
-framework-driven request deadlines are now available. The
+This feature branch is under development. It implements reusable Server
+attachment, a shared Client with per-origin pools and bounded queues,
+and opt-in WebSocket handshakes over HTTP/1.1 Upgrade and HTTP/2/3
+Extended CONNECT. The WebSocket library is an optional dependency.
+Cross-host Alt-Svc and post-dispatch request replay remain unimplemented;
+optional framework-driven request deadlines are available. The
 buffered and streamed callbacks require the coordinated engine feature
 branches. Read [implementation status](docs/IMPLEMENTATION.md) before using
 the branch. It is not a release candidate.
@@ -32,7 +34,12 @@ my $server = Unblock::HTTP::Server->new(
 ```
 
 An omitted protocol is disabled. Each protocol hash can carry engine tuning
-options. `websocket => 0` is accepted; enabling it currently fails explicitly.
+options. WebSocket remains disabled by default; enable it per protocol
+using `websocket => 1` and supply `on_websocket($tx, $request)`.
+HTTP/2 and HTTP/3 require a framework `defer($callback)` that schedules
+work on a later event-loop turn. The Server advertises Extended CONNECT
+only for explicitly enabled protocols. WebSocket acceptance affects
+one multiplexed stream on H2/H3, but transfers a whole HTTP1 socket.
 
 `on_headers($tx, $request)` runs first. By default the engine buffers up to
 1 MiB, then calls `on_request($tx, $request)` with the complete frozen request.
@@ -183,9 +190,9 @@ limitations. CI correctness tests do not enforce throughput rates.
 
 The queue defaults to 128 pending requests, with at most four connections per
 origin and 32 concurrent streams per H2/H3 connection. An H1 connection runs
-one request at a time. The limits are adjustable. Pool idle expiry, validated
-DNS HTTPS discovery, WebSocket upgrades and convenience framework connector
-classes are future milestones. Authenticated same-host Alt-Svc now permits
+one request at a time. The limits are adjustable. Pool idle expiry and
+WebSocket upgrades/Extended CONNECT are implemented; validated DNS HTTPS
+discovery and convenience framework connector classes remain future work. Authenticated same-host Alt-Svc now permits
 future requests to select HTTP/3. Advertisements are only learned when
 the TCP factory explicitly reports verified_origin => 1 after certificate
 and origin hostname verification. When advertised HTTP/3 is selected, the
@@ -194,12 +201,60 @@ verified_origin => 1 before the request can be sent. A failed advertised
 QUIC connection may safely fall back before dispatch; a request already
 submitted to an engine is never automatically replayed. This is **not** a release candidate.
 
+## WebSockets across HTTP/1, HTTP/2 and HTTP/3
+
+For each enabled protocol, Server C<on_websocket> returns the WebSocket
+session options/callbacks, or undef to reject the request with HTTP 403.
+The handshake is validated before creating an established
+Unblock::WebSocket::Server. H1 uses HTTP 101 and a socket input-consumer
+switch; H2/H3 use HTTP 200 and independent streaming CONNECT
+transactions on their existing multiplexed connections.
+
+    my $server = Unblock::HTTP::Server->new(
+        http2 => { websocket => 1 },
+        http3 => { websocket => 1 },
+        defer => sub { $framework->defer($_[0]) },
+        on_request => sub { $_[0]->respond(status => 200, body => 'HTTP') },
+        on_websocket => sub {
+            return {
+                on_message => sub {
+                    my ($ws, $message, $type) = @_;
+                    $ws->send_text("echo:$message") if $type eq 'text';
+                },
+            };
+        },
+    );
+
+A unified Client selects its WebSocket protocol explicitly with
+C<http_version =E<gt> '1.1'>, C<'2'>, or C<'3'>, or defaults to the
+first enabled WebSocket protocol in that order:
+
+    my $operation = $client->connect_websocket(
+        url => 'wss://example.com/chat',
+        http_version => '3',
+        on_open => sub {
+            my ($ws, $tx) = @_;
+            $ws->send_text('hello');
+        },
+    );
+
+The operation's C<websocket()> accessor holds the actual WebSocket
+Client once opened. H2/H3 WebSockets remain in the Client's pool until
+their individual streams finish, allowing ordinary HTTP to share the
+connection. HTTP3 Client WebSockets wait for the peer's current
+Extended CONNECT SETTINGS before dispatch; if QUIC bidi-stream
+capacity is unavailable, the original unsent operation remains
+queued until credit returns. A denied/invalid handshake fails only
+the relevant operation. Consult the Server and Client POD for the
+complete transport, backpressure, Close and callback contracts.
+
 ## Examples and tests
 
 The optional Linux::Event examples are:
 
 - `examples/linux-event-server.pl`: a shared Server with H1/H2 attachment.
 - `examples/linux-event-quic-server.pl`: a shared Server with a QUIC manager.
+- `examples/linux-event-websocket-server.pl`: HTTP1 Upgrade and WebSocket echo on one listener.
 
 Each separates application behavior from framework plumbing. The core does
 not require Linux::Event. Core requires Perl 5.20; this optional adapter uses
@@ -213,9 +268,12 @@ Run the live tests after installing the real engines, Linux::Event and Net::QUIC
 
     prove -l xt/linux-event-tcp.t xt/linux-event-quic.t
 
-The isolated suite uses test doubles. Its success does not establish wire-level
-correctness or native ABI compatibility. The live suite currently covers basic
-cleartext H1/H2 and QUIC H3 exchanges; broader coverage is still planned.
+The distribution suite combines isolated contract tests with real H1/H2
+WebSocket exchanges, a borrowed native H1 input handoff regression,
+and full localhost QUIC/TLS H3 WebSocket Server/Client tests.
+The optional live integration suite additionally exercises real sockets,
+streamed bodies, QUIC flow credit and resource bounds. CI does not
+enforce performance or throughput thresholds.
 
 ## License
 
