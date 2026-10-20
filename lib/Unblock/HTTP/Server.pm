@@ -281,7 +281,7 @@ sub _attach_h3_websocket_connection {
     my $defer = $self->{defer};
     my $on_headers = $self->{callbacks}{on_request};
     my $on_request_end = $self->{callbacks}{on_request_end};
-    my %sessions;
+    my (%sessions, %websocket_attempts);
 
     my $on_request = sub {
         my ($tx, $request) = @_;
@@ -291,8 +291,11 @@ sub _attach_h3_websocket_connection {
                 || _websocket_candidate($request));
         return $on_headers->(@_) unless $candidate;
 
+        my $id = $tx->stream_id;
+        $websocket_attempts{$id} = 1;
         my $selected = $handler->($tx, $request);
         unless (defined $selected) {
+            $tx->on_finish(sub { delete $websocket_attempts{$id} });
             $tx->respond(status => 403, body => 'WebSocket denied');
             return;
         }
@@ -320,6 +323,7 @@ sub _attach_h3_websocket_connection {
             1;
         };
         unless ($valid) {
+            $tx->on_finish(sub { delete $websocket_attempts{$id} });
             $tx->respond(status => 400, body => 'Invalid WebSocket handshake');
             return;
         }
@@ -331,12 +335,12 @@ sub _attach_h3_websocket_connection {
             %option, transport => $bridge,
         );
         $bridge->websocket($ws);
-        my $id = $tx->stream_id;
         $sessions{$id} = { bridge => $bridge, websocket => $ws };
         $tx->on_data(sub { $ws->input($_[1]) });
         $tx->on_finish(sub {
             $bridge->detach;
             delete $sessions{$id};
+            delete $websocket_attempts{$id};
         });
         $tx->respond(
             $handshake->server_response,
@@ -349,8 +353,13 @@ sub _attach_h3_websocket_connection {
 
     my $on_request_complete = sub {
         my ($tx) = @_;
-        if (my $session = $sessions{$tx->stream_id}) {
-            $session->{websocket}->input_eof;
+        my $id = $tx->stream_id;
+        if ($websocket_attempts{$id}) {
+            if (my $session = $sessions{$id}) {
+                $session->{websocket}->input_eof;
+            }
+            # Even a 400/403 CONNECT belongs to on_websocket, not to
+            # the ordinary request-end responder. Do not respond twice.
             return;
         }
         return $on_request_end->(@_);
