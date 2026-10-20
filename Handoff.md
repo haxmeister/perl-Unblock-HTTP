@@ -1,4 +1,4 @@
-## Unified HTTP1 Client WebSocket implemented; final CI running (2026-10-19)
+## Unified HTTP1 Client WebSocket FULL CI VERIFIED (2026-10-19)
 
 Latest production/test source commit 65c88e0fa57ad11c753b03ba1745ac832f46de16
 on feature/high-level-client-server. Added Client->connect_websocket()
@@ -22,9 +22,16 @@ operation now retains just those bookkeeping objects through the
 terminal callback. No references survive terminal cleanup.
 t/30-client-websocket.t tests handshake, frame exchange, detachment,
 normal HTTP reuse, shutdown independence, disabled policy and 403
-rejection/error callback behavior. The distribution-suite stage has
-passed for commit 65c88e0 in the running primary/optional workflows;
-do not claim full workflow success until both jobs finish.
+rejection/error callback behavior. BOTH full integration workflows
+PASSED on source/test 65c88e0fa57ad11c753b03ba1745ac832f46de16:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39365198070
+- Optional QUIC MAX_DATA feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39365198109
+Both passed 22 distribution test files / 960 checks (including t/12,
+t/28, t/29 and t/30), existing live TCP/QUIC integration, sustained
+resource checks and pre-existing benchmark smoke steps. No throughput
+claim is made.
 
 Earlier native/adapter slice (commit 3505abf5c01993f02ace9ef31b76f2d6069d076f)
 VERIFIED in BOTH full workflows:
@@ -40,12 +47,17 @@ examples/linux-event-websocket-server.pl. The native framework still
 owns/forwards its unconsumed native window at INPUT_SWITCH. C ABI and
 all lower repositories are UNCHANGED.
 
-NEXT: inspect primary CI 39365198070 and optional CI 39365198109
-for the current Client commit; both distribution stages passed.
-Fix any remaining concrete failures, then record verified CI and
-continue HTTP2/HTTP3 WebSocket streaming or Client edge lifecycle
-coverage. Do not start a broad profiling campaign or release audit.
-No main/merge/tag/releases/version bumps.
+NEXT: HTTP1 Server/Client Upgrade now has a tested full byte-level
+in-memory path, native borrowed-input Server handoff regression and
+optional LinuxEvent Server adapter integration. H2/H3 Extended CONNECT
+streaming WebSockets are still unsupported by unified policy. Next
+inspect the lower engines' actual stream-body credit and callback
+contracts and implement a narrowly scoped H2 WebSocket vertical slice.
+Check Client TLS/WSS and native-provider real-socket adapter
+integration as separate focused correctness milestones, not as
+unsubstantiated performance campaigns. No main/merge/tag/releases/
+version bumps; all individual HTTP engines, Net::QUIC, Uniform::HTTP
+and Unblock::WebSocket remain unmodified.
 
 ## HTTP1 Server WebSocket transition VERIFIED (2026-10-19)
 
