@@ -5,8 +5,8 @@ use warnings;
 use Carp qw(croak);
 use Scalar::Util qw(blessed weaken);
 
-# Connection-local, stream-specific adapter. WebSocket output is accepted
-# into a bounded producer queue and flushed only after nghttp2 callbacks
+# Stream-specific adapter for HTTP2/HTTP3. WebSocket output is accepted
+# into a bounded producer queue and flushed only after protocol callbacks
 # unwind. The framework must schedule defer() on a later loop turn.
 sub new {
     my ($class, %option) = @_;
@@ -154,19 +154,19 @@ __END__
 
 =head1 NAME
 
-Unblock::HTTP::_WebSocketH2Body - Deferred H2 DATA transport for WebSocket
+Unblock::HTTP::_WebSocketH2Body - Deferred multiplexed HTTP2/HTTP3 WebSocket body transport
 
 =head1 DESCRIPTION
 
-Internal stream-specific bridge. Incoming H2 DATA is passed to the
-WebSocket engine through Transaction C<on_data>. Outgoing complete
-WebSocket frame buffers are queued and written to the same HTTP2
-Transaction on a framework-deferred turn. An HTTP2 C<on_drain> callback
+Internal stream-specific bridge reused by HTTP2 and HTTP3. Incoming
+DATA is passed to the WebSocket through Transaction C<on_data>.
+Outgoing complete WebSocket frame buffers are queued and written to
+the same HTTP Transaction on a framework-deferred turn. C<on_drain>
 wakes a blocked producer. C<unblock_finish> sends END_STREAM after
 queued frames. WebSocket errors cancel only their own transaction,
-not the entire multiplexed HTTP2 connection.
+not the entire multiplexed connection.
 
 The framework C<defer> callback must schedule a later loop turn,
-never invoke the closure synchronously from an HTTP2 callback.
+never invoke the closure synchronously from a protocol callback.
 
 =cut
