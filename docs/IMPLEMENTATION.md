@@ -46,10 +46,17 @@ request, rejected handshake, stream-local cancellation, Client
 shutdown while a WebSocket remains active, and WebSocket Close.
 t/37-client-h3-websocket-admission.t verifies unsupported peer
 SETTINGS and QUIC credit exhaustion without new socket attempts.
-Both tests are undergoing complete CI for source
-e762a6181d13c264ead1f99a91561f2e68b6779c. Do not claim
-full verification until both integration workflows pass.
-No lower library, native ABI or QUIC library changes were needed.
+Both tests and the corrected H3 rejection lifecycle PASSED
+FULL CI at production/test source
+a3f429edf66562a55ab23e0d5b55a8e3eb989b7c:
+- Published Net::QUIC 0.05: run 39516674510 PASS
+- Optional QUIC MAX_DATA feature: run 39516674529 PASS
+Both ran 29 distribution files and 1,170 checks, including real
+QUIC/TLS WebSocket Client/Server, unsupported peer SETTINGS, and
+stream-credit retry without opening another socket. Existing live
+TCP/QUIC, resource tests and diagnostic smoke also passed. No
+performance change is claimed. No lower library, native ABI or
+QUIC library changes were needed.
 
 ## HTTP3 Server WebSocket Extended CONNECT (2026-10-20)
 
@@ -82,9 +89,9 @@ echo in both directions over HTTP3 DATA, verifies ordinary HTTP3
 requests can share the connection, and tests WebSocket Close/FIN.
 Expanded cases cover invalid HTTP 400 and application-denied HTTP 403
 CONNECT requests without disrupting an active WebSocket.
-This is the H3 SERVER slice; the unified H3 Client WebSocket
-connect_websocket remains disabled until a separate peer SETTINGS,
-pool admission and lifecycle implementation passes its own tests.
+This Server milestone is complemented by the now-verified unified
+HTTP3 Client WebSocket implementation described above, including
+current peer SETTINGS admission and QUIC request-stream credit.
 
 The expanded real QUIC/TLS positive and 400/403 test source
 b43532e92917d5850b6abc78c16485e3e16acc37 PASSED both FULL
