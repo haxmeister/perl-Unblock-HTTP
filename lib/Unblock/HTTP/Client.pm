@@ -190,18 +190,20 @@ sub network_changed {
     return;
 }
 
-# HTTP1 upgrades transfer the entire socket out of the pool. HTTP2 WebSocket
-# CONNECT stays in the normal multiplexed pool until its stream terminates.
+# HTTP1 upgrades transfer the socket out of the pool. HTTP2 and HTTP3
+# CONNECT use independent streams on a multiplexed pooled connection.
 sub connect_websocket {
     my ($self, @args) = @_;
     croak 'connect_websocket(): expected named arguments' if @args % 2;
     my %option = @args;
     my $http_version = delete $option{http_version};
-    $http_version = $self->{policy}->websocket_enabled('http/1.1') ? '1.1' : '2'
+    $http_version = $self->{policy}->websocket_enabled('http/1.1') ? '1.1'
+        : $self->{policy}->websocket_enabled('h2') ? '2' : '3'
         unless defined $http_version;
-    croak 'connect_websocket(): http_version must be 1.1 or 2'
-        if ref($http_version) || $http_version !~ /\A(?:1\.1|2)\z/;
-    my $ws_protocol = $http_version eq '2' ? 'h2' : 'http/1.1';
+    croak 'connect_websocket(): http_version must be 1.1, 2 or 3'
+        if ref($http_version) || $http_version !~ /\A(?:1\.1|2|3)\z/;
+    my $ws_protocol = $http_version eq '3' ? 'h3'
+        : $http_version eq '2' ? 'h2' : 'http/1.1';
     croak "connect_websocket(): $ws_protocol websocket support is disabled"
         unless $self->{policy}->websocket_enabled($ws_protocol);
     my $url = delete $option{url};
@@ -268,7 +270,8 @@ sub request {
         if (!!$ws_spec) != (!!$ws_request);
     croak 'request(): WebSocket option is disabled'
         if $ws_spec && !$self->{policy}->websocket_enabled(
-            $ws_request->version eq '2' ? 'h2' : 'http/1.1'
+            $ws_request->version eq '3' ? 'h3'
+                : $ws_request->version eq '2' ? 'h2' : 'http/1.1'
         );
     my $url = delete $field{url};
     croak 'request(): url is required' unless defined($url) && !ref($url) && length($url);
@@ -363,7 +366,8 @@ sub request {
     if ($ws_request) {
         croak 'request(): WebSocket protocol and handshake version disagree'
             unless ($version eq 'http/1.1' && $request->version eq '1.1')
-                || ($version eq 'h2' && $request->version eq '2');
+                || ($version eq 'h2' && $request->version eq '2')
+                || ($version eq 'h3' && $request->version eq '3');
         croak 'request(): WebSocket URL and handshake request disagree'
             unless $request->scheme eq $scheme
                 && $request->authority eq $authority
@@ -385,7 +389,8 @@ sub request {
     my $op = Unblock::HTTP::_ClientOperation->new(
         $self, $request, \%callbacks, $version, $origin,
     );
-    $op->{stream_body} = $ws_spec && $version eq 'h2' ? 1 : $stream_body;
+    $op->{stream_body} = $ws_spec
+        && ($version eq 'h2' || $version eq 'h3') ? 1 : $stream_body;
     $op->{websocket_connect} = $ws_spec if $ws_spec;
     if (!$strict_version && $scheme eq 'https'
         && $version eq 'tcp' && $self->{policy}->enabled('h3')) {
@@ -465,9 +470,14 @@ sub _usable {
     return 0 unless _compatible($version, $conn->{protocol});
     return 0 if $conn->{released} || _closed($conn) || _retired($conn)
         || $conn->{credit_blocked};
-    return 0 if $op && $op->{websocket_connect} && $version eq 'h2'
-        && (!$conn->{h2_settings_seen}
-            || $conn->{engine}->peer_setting('enable_connect_protocol') != 1);
+    if ($op && $op->{websocket_connect}) {
+        return 0 if $version eq 'h2'
+            && (!$conn->{h2_settings_seen}
+                || $conn->{engine}->peer_setting('enable_connect_protocol') != 1);
+        return 0 if $version eq 'h3'
+            && (!$conn->{engine}->peer_settings_received
+                || !$conn->{engine}->peer_extended_connect_enabled);
+    }
     my $capacity = $conn->{protocol} eq 'http/1.1'
         ? 1 : $self->{limit}{max_streams_per_connection};
     return 0 if $conn->{active} >= $capacity;
@@ -603,23 +613,37 @@ sub _pump {
             $self->{pending_count}--;
             next;
         }
-        # A peer SETTINGS frame is mandatory before Extended CONNECT.
-        # Do not create a stream or repeatedly open new TCP connections
-        # while an already-established H2 connection awaits that frame.
-        if ($op->{websocket_connect} && $op->{version} eq 'h2') {
+        # Extended CONNECT is only legal after current peer SETTINGS.
+        # Wait on an existing protocol connection without opening more
+        # sockets. If its peer explicitly disables Extended CONNECT,
+        # reject this unsent operation rather than downgrading/replaying.
+        if ($op->{websocket_connect}
+            && ($op->{version} eq 'h2' || $op->{version} eq 'h3')) {
+            my $version = $op->{version};
             my @existing = grep {
-                $_->{protocol} eq 'h2' && !$_->{released}
+                $_->{protocol} eq $version && !$_->{released}
                     && !_closed($_) && !_retired($_)
             } @{ $pool->{connections} };
-            if (@existing && !grep {
-                    $_->{h2_settings_seen}
-                        && $_->{engine}->peer_setting('enable_connect_protocol') == 1
-                } @existing) {
-                last if grep { !$_->{h2_settings_seen} } @existing;
+            my $ready = sub {
+                my ($conn) = @_;
+                return $version eq 'h2'
+                    ? ($conn->{h2_settings_seen}
+                        && $conn->{engine}->peer_setting(
+                            'enable_connect_protocol') == 1)
+                    : ($conn->{engine}->peer_settings_received
+                        && $conn->{engine}->peer_extended_connect_enabled);
+            };
+            if (@existing && !grep { $ready->($_) } @existing) {
+                last if grep {
+                    $version eq 'h2' ? !$_->{h2_settings_seen}
+                        : !$_->{engine}->peer_settings_received
+                } @existing;
                 shift @{ $pool->{pending} };
                 $self->{pending_count}--;
                 $self->_fail_pending(
-                    $pool, $op, 'peer has not enabled HTTP/2 WebSocket Extended CONNECT',
+                    $pool, $op, 'peer has not enabled HTTP/'
+                        . ($version eq 'h2' ? '2' : '3')
+                        . ' WebSocket Extended CONNECT',
                 );
                 next;
             }
@@ -815,6 +839,15 @@ sub _connected {
             $weak_conn->{credit_blocked} = 0;
             $weak_self->_schedule($weak_pool);
         };
+        if ($self->{policy}->websocket_enabled('h3')) {
+            # This hook fires after the CURRENT H3 peer SETTINGS frame,
+            # including when it contains no extension settings. Never
+            # submit CONNECT inline from the native receive callback.
+            $options->{on_extension_settings} = sub {
+                return unless $weak_self && $weak_pool && $weak_conn;
+                $weak_self->_schedule($weak_pool);
+            };
+        }
     }
     my $engine = Unblock::HTTP::_EngineFactory->create(
         'Client', $protocol, %$options, %arg,
@@ -909,8 +942,9 @@ sub _dispatch {
     if ($callbacks->{on_error}) {
         $engine_callback{on_error} = $callbacks->{on_error};
     }
-    if ($ws_spec && $conn->{protocol} eq 'h2') {
-        # Unlike HTTP1, a WebSocket occupies one multiplexed HTTP2 stream.
+    if ($ws_spec && ($conn->{protocol} eq 'h2'
+                     || $conn->{protocol} eq 'h3')) {
+        # Unlike HTTP1, a WebSocket occupies one multiplexed H2/H3 stream.
         # Its normal transaction lifetime remains active until END_STREAM.
         # No host socket takeover or HTTP pool detachment is performed.
         $engine_callback{on_response} = sub {
@@ -939,7 +973,7 @@ sub _dispatch {
         $engine_callback{on_data} = sub {
             my $active_op = $weak_op or return;
             my $ws = $active_op->{websocket}
-                or die 'HTTP2 WebSocket DATA arrived before validated response';
+                or die 'multiplexed WebSocket DATA arrived before validated response';
             $ws->input($_[1]);
         };
         $engine_callback{on_drain} = sub {
@@ -1053,9 +1087,9 @@ sub _dispatch {
     };
     my $no_credit = 0;
     my $ok = eval {
-        die "connect_websocket(): requires HTTP1 or HTTP2 transport\n"
+        die "connect_websocket(): requires HTTP1, HTTP2 or HTTP3 transport\n"
             if $ws_spec && $conn->{protocol} ne 'http/1.1'
-                && $conn->{protocol} ne 'h2';
+                && $conn->{protocol} ne 'h2' && $conn->{protocol} ne 'h3';
         die "connect_websocket(): HTTP1 requires unblock_upgrade()\n"
             if $ws_spec && $conn->{protocol} eq 'http/1.1'
                 && !$conn->{host}->can('unblock_upgrade');
