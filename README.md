@@ -203,7 +203,7 @@ submitted to an engine is never automatically replayed. This is **not** a releas
 
 ## WebSockets across HTTP/1, HTTP/2 and HTTP/3
 
-For each enabled protocol, Server C<on_websocket> returns the WebSocket
+For each enabled protocol, Server `on_websocket` returns the WebSocket
 session options/callbacks, or undef to reject the request with HTTP 403.
 The handshake is validated before creating an established
 Unblock::WebSocket::Server. H1 uses HTTP 101 and a socket input-consumer
@@ -226,7 +226,7 @@ transactions on their existing multiplexed connections.
     );
 
 A unified Client selects its WebSocket protocol explicitly with
-C<http_version =E<gt> '1.1'>, C<'2'>, or C<'3'>, or defaults to the
+`http_version => '1.1'`, `'2'`, or `'3'`, or defaults to the
 first enabled WebSocket protocol in that order:
 
     my $operation = $client->connect_websocket(
@@ -238,7 +238,7 @@ first enabled WebSocket protocol in that order:
         },
     );
 
-The operation's C<websocket()> accessor holds the actual WebSocket
+The operation's `websocket()` accessor holds the actual WebSocket
 Client once opened. H2/H3 WebSockets remain in the Client's pool until
 their individual streams finish, allowing ordinary HTTP to share the
 connection. HTTP3 Client WebSockets wait for the peer's current
