@@ -48,7 +48,7 @@ sub send_to {
 
 my ($ss, $cs) = (udp(), udp());
 my ($server_deadline, $client_deadline);
-my (@deferred, @server_messages, @client_messages, @ordinary, @releases);
+my (@deferred, @server_messages, @ordinary, @releases);
 my ($server_ws, $server_tx, $server_h3);
 my $defer = sub { push @deferred, $_[0] };
 my $definition = Unblock::HTTP::Server->new(
@@ -200,8 +200,9 @@ my $second = $client->connect_websocket(
 );
 ok(run_until(sub { $second->websocket }), 'H3-only policy defaults to version 3');
 $second->websocket->send_text('second-h3');
-ok(run_until(sub { @second_messages }), 'second H3 WebSocket receives a reply');
-is_deeply(\@second_messages, ['echo:second-h3'],
+ok(run_until(sub { @second_messages >= 2 }),
+    'second H3 WebSocket receives greeting and reply');
+is_deeply(\@second_messages, ['welcome-h3', 'echo:second-h3'],
     'independent H3 WebSocket stream works');
 is($client->pool_stats->{active}, 2, 'two H3 WebSockets share one QUIC connection');
 is($connect_count, 1, 'multiplexed H3 WebSockets reuse QUIC');
