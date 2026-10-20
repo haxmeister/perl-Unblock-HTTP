@@ -23,16 +23,24 @@ sub new {
         croak "new(): $name must be a coderef" unless ref($callback) eq 'CODE';
         $callbacks{$name} = $callback;
     }
+    my $defer = delete $options{defer};
+    croak 'new(): defer must be a coderef'
+        if defined($defer) && ref($defer) ne 'CODE';
     croak 'new(): unknown option: ' . join(', ', sort keys %options) if %options;
     croak 'new(): on_request callback is required' unless $callbacks{on_request};
     my $policy = Unblock::HTTP::_Policy->new(%protocols, _websocket_role => 'server');
-    croak 'new(): on_websocket callback is required for HTTP1 WebSocket support'
-        if $policy->websocket_enabled('http/1.1') && !$callbacks{on_websocket};
-    croak 'new(): on_websocket requires http1 websocket => 1'
-        if !$policy->websocket_enabled('http/1.1') && $callbacks{on_websocket};
+    my $websocket_enabled = $policy->websocket_enabled('http/1.1')
+        || $policy->websocket_enabled('h2');
+    croak 'new(): on_websocket callback is required for enabled WebSocket support'
+        if $websocket_enabled && !$callbacks{on_websocket};
+    croak 'new(): on_websocket requires http1 or http2 websocket => 1'
+        if !$websocket_enabled && $callbacks{on_websocket};
+    croak 'new(): HTTP2 WebSocket requires a defer callback'
+        if $policy->websocket_enabled('h2') && !$defer;
     return bless {
         policy => $policy,
         on_websocket => $callbacks{on_websocket},
+        defer => $defer,
         # Map once at definition time; no transaction or body wrapper.
         callbacks => {
             on_request => $callbacks{on_headers} || \&_ignore_headers,
@@ -165,6 +173,102 @@ sub _attach_websocket_stream {
     return $attached;
 }
 
+# Extended CONNECT belongs to one H2 transaction; the HTTP/2 connection
+# remains able to serve independent ordinary HTTP and other WebSockets.
+# Outgoing WebSocket frames must NEVER re-enter nghttp2 from input callbacks.
+sub _attach_h2_websocket_stream {
+    my ($self, $transport, $engine_options) = @_;
+    require Unblock::HTTP::_WebSocketH2Body;
+    my $handler = $self->{on_websocket};
+    my $defer = $self->{defer};
+    my $on_headers = $self->{callbacks}{on_request};
+    my $on_request_end = $self->{callbacks}{on_request_end};
+    my %sessions;
+
+    my $on_request = sub {
+        my ($tx, $request) = @_;
+        my $protocol = $request->protocol;
+        my $candidate = $request->method eq 'CONNECT'
+            && ((defined($protocol) && $protocol eq 'websocket')
+                || _websocket_candidate($request));
+        return $on_headers->(@_) unless $candidate;
+
+        my $selected = $handler->($tx, $request);
+        unless (defined $selected) {
+            $tx->respond(status => 403, body => 'WebSocket denied');
+            return;
+        }
+        croak 'on_websocket must return a hash reference or undef'
+            unless ref($selected) eq 'HASH';
+        my %option = %$selected;
+        my %handshake_option;
+        for my $name (qw(subprotocols permessage_deflate)) {
+            $handshake_option{$name} = delete $option{$name}
+                if exists $option{$name};
+        }
+        my $on_open = delete $option{on_open};
+        croak 'on_websocket on_open must be a coderef'
+            if defined($on_open) && ref($on_open) ne 'CODE';
+        croak 'on_websocket may not override the H2 stream transport'
+            if exists $option{transport};
+
+        require Unblock::WebSocket::Handshake;
+        require Unblock::WebSocket::Server;
+        my $handshake;
+        my $valid = eval {
+            $handshake = Unblock::WebSocket::Handshake->server_accept(
+                $request, %handshake_option,
+            );
+            1;
+        };
+        unless ($valid) {
+            $tx->respond(status => 400, body => 'Invalid WebSocket handshake');
+            return;
+        }
+        my $bridge = Unblock::HTTP::_WebSocketH2Body->new(
+            transaction => $tx, defer => $defer,
+        );
+        my $ws = Unblock::WebSocket::Server->new(
+            %{ $handshake->connection_options },
+            %option, transport => $bridge,
+        );
+        $bridge->websocket($ws);
+        my $id = $tx->stream_id;
+        $sessions{$id} = { bridge => $bridge, websocket => $ws };
+        $tx->on_data(sub {
+            $ws->input($_[1]);
+        });
+        $tx->on_finish(sub {
+            $bridge->detach;
+            delete $sessions{$id};
+        });
+        $tx->respond(
+            $handshake->server_response,
+            stream_body => 1,
+            on_drain => sub { $bridge->resume },
+        );
+        $on_open->($ws, $tx, $request) if $on_open;
+        return;
+    };
+
+    my $on_request_complete = sub {
+        my ($tx) = @_;
+        if (my $session = $sessions{$tx->stream_id}) {
+            $session->{websocket}->input_eof;
+            return;
+        }
+        return $on_request_end->(@_);
+    };
+
+    my %callbacks = %{ $self->{callbacks} };
+    $callbacks{on_request} = $on_request;
+    $callbacks{on_request_end} = $on_request_complete;
+    return Unblock::HTTP::_EngineFactory->create(
+        'Server', 'h2', %$engine_options,
+        %callbacks, transport => $transport,
+    );
+}
+
 sub protocols { return $_[0]{policy}->protocols }
 sub alpn_protocols { return $_[0]{policy}->alpn_protocols }
 sub supports { return $_[0]{policy}->enabled($_[1]) }
@@ -193,6 +297,8 @@ sub attach_stream {
     }
     return $self->_attach_websocket_stream($transport, $engine_options)
         if $protocol eq 'http/1.1' && $self->{policy}->websocket_enabled($protocol);
+    return $self->_attach_h2_websocket_stream($transport, $engine_options)
+        if $protocol eq 'h2' && $self->{policy}->websocket_enabled($protocol);
     return Unblock::HTTP::_EngineFactory->create(
         'Server', $protocol, %$engine_options,
         %{ $self->{callbacks} }, transport => $transport,
