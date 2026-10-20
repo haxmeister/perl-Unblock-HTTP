@@ -37,10 +37,16 @@ stream-local cancellation. These tests are in the upper feature
 branch; individual protocol engines, Unblock::WebSocket, Net::QUIC
 and Uniform::HTTP remain read-only, with no ABI change.
 
-This is a Server H2 milestone only. Unified Client H2 WebSocket and
-HTTP3 WebSocket remain disabled. No broad performance benchmarking or
-release preparation. CI for the full HTTP2 slice must be explicitly
-confirmed before this is called verified.
+This Server H2 milestone is now FULL CI VERIFIED at production/test
+source 9e7a122c4d9ae6105ed3997540469a1d67a35e16:
+- Published Net::QUIC 0.05 full integration run 39398673128: PASS
+- Optional separate QUIC MAX_DATA full integration run 39398673160: PASS
+Both ran 24 distribution files / 1,010 checks, plus all existing
+live TCP/QUIC, resource guards and diagnostic smoke steps. No
+quantified performance change is claimed. Both workflows used the
+pinned read-only protocol engines and Unblock::WebSocket 0.02.
+Unified Client H2 WebSocket and HTTP3 WebSocket remain disabled.
+Do not restart release work or the prior performance sweep.
 
 ## HTTP1 Client WebSocket and native successor handoff (2026-10-19)
 
