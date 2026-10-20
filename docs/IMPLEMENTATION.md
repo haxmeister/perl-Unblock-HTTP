@@ -1,3 +1,45 @@
+## HTTP3 Server WebSocket Extended CONNECT (2026-10-20)
+
+Opt-in `http3 => { websocket => 1 }` now enables the unified
+Server's per-stream RFC9220 WebSocket Extended CONNECT over HTTP/3,
+using the same application `on_websocket($tx, $request)` API as H1/H2.
+The Server requires a `defer($work)` callback which schedules work on
+a later event-loop turn. It advertises HTTP/3 Extended CONNECT setting 8
+only when enabled; `enable_extended_connect => 0` with WebSocket
+enabled is explicitly rejected. The lower Unblock::HTTP3 and Net::QUIC
+libraries remain read-only.
+
+The existing H3 Transaction receives incoming CONNECT DATA with its
+native streaming `on_data` callback, and the actual
+Unblock::WebSocket::Server parses WebSocket frames. On handshake success
+the transaction responds HTTP 200 with `stream_body => 1`. The same
+deferred per-stream outgoing frame bridge used for H2 supplies
+`Transaction->write`, `end`, and `on_drain`; the bridge schedules
+those calls outside native protocol callbacks. No QUIC stream or
+connection wrapper, new UDP socket, or app-level HTTP parser is
+introduced. A normal H3 request continues through the direct HTTP
+callbacks unchanged. Application denial uses HTTP 403, invalid WebSocket
+handshakes HTTP 400. A terminal transaction releases its WebSocket
+bridge independently of sibling streams.
+
+`t/35-server-websocket-h3.t` establishes **real** Net::QUIC 0.05
+UDP/TLS loopback connections with generated short-lived localhost
+certificates, negotiates H3 SETTINGS, sends a WebSocket greeting and
+echo in both directions over HTTP3 DATA, verifies ordinary HTTP3
+requests can share the connection, and tests WebSocket Close/FIN.
+Expanded cases cover invalid HTTP 400 and application-denied HTTP 403
+CONNECT requests without disrupting an active WebSocket.
+This is the H3 SERVER slice; the unified H3 Client WebSocket
+connect_websocket remains disabled until a separate peer SETTINGS,
+pool admission and lifecycle implementation passes its own tests.
+
+The original real-QUIC positive test passed both distribution suites
+at source 6211132b553a147ab855b6ec3010be80cddd6be8.
+The expanded 400/403 cases at b43532e92917d5850b6abc78c16485e3e16acc37
+are undergoing integration CI; do not call the expanded slice verified
+until both full workflow conclusions are green. No broad profiling or
+release preparation.
+
 ## HTTP2 Client WebSocket Extended CONNECT (2026-10-20)
 
 Unified Client now supports opt-in `http2 => { websocket => 1 }`.
