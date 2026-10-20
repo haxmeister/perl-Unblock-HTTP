@@ -1289,12 +1289,82 @@ error has been invented. An intentional user C<cancel()> remains distinct:
 it does not manufacture an on_error callback. No timed-out request is
 automatically replayed.
 
+=head1 HTTP/1.1 WEBSOCKETS
+
+C<connect_websocket()> is an opt-in HTTP/1.1 client upgrade, available only
+with C<http1 =E<gt> { websocket =E<gt> 1 }>. It uses the same one-object
+Client factory and per-origin admission queue as ordinary HTTP requests:
+
+    my $client = Unblock::HTTP::Client->new(
+        http1 => { websocket => 1 },
+        connect_stream => sub { ... },
+        defer => sub { ... },
+    );
+    my $operation = $client->connect_websocket(
+        url => 'wss://example.com/chat',
+        on_open => sub {
+            my ($ws, $http_tx) = @_;
+            $ws->send_text('hello');
+        },
+        on_message => sub {
+            my ($ws, $message, $type) = @_;
+        },
+        on_error => sub {
+            my ($object, $error) = @_;
+        },
+    );
+
+The optional L<Unblock::WebSocket> library builds and validates the
+HTTP/1.1 GET Upgrade request. C<on_open($ws, $http_tx)> runs only after
+the HTTP 101 response has passed validation and the framework stream has
+been assigned to the WebSocket. The Client operation is the handshake
+operation, not a wrapper around the established WebSocket. Its
+C<transaction()> returns the real H1 transaction, and C<websocket()>
+returns the real C<Unblock::WebSocket::Client> after successful Upgrade.
+C<on_finish> observes the HTTP handshake terminal state; it does not wait
+for the WebSocket Close handshake.
+
+The method accepts C<url> with ws or wss scheme, optional C<headers>,
+C<origin>, C<subprotocols> and C<permessage_deflate> for handshake
+negotiation, WebSocket constructor options C<backend>,
+C<max_message_size>, C<high_water>, C<low_water> and C<random_bytes>,
+and handlers C<on_open>, C<on_message>, C<on_ping>, C<on_pong>,
+C<on_close>, C<on_drain>, C<on_error>, C<on_finish> and optional
+handshake C<timeout>. C<on_error> may be called with the operation or
+HTTP transaction for a handshake failure, and with the WebSocket engine
+for a later WebSocket protocol error. C<on_open> is optional, but is
+needed to react immediately to asynchronous establishment.
+
+A TCP/TLS host used for a WebSocket must additionally implement
+C<unblock_upgrade($ws)> and synchronously select that WebSocket as its
+new input, EOF, error and resume-output consumer. It must retain the same
+ordered socket output queue: the HTTP request and frames use that queue.
+The Client transfers any HTTP1 C<take_remainder()> into the WebSocket
+after the transition. For a native borrowed-input provider, C<INPUT_SWITCH>
+leaves the unconsumed window with the native transport; it must feed
+that suffix into the new consumer exactly once.
+
+After the successful switch, the connection is removed from the HTTP pool
+without calling C<release_connection()> or closing the transport. The
+framework and WebSocket own the connection lifetime from then on;
+C<shutdown()> does not forcibly close an already-established WebSocket.
+Other HTTP work for the same origin opens/reuses a different HTTP stream.
+Rejected or malformed handshakes fail the original operation; there is
+no automatic request replay. Calling C<cancel()> before establishment
+uses the usual queued/connecting/active operation cancellation semantics.
+
+HTTP/2 and HTTP/3 WebSocket Extended CONNECT are not yet implemented or
+advertised. Enabling C<websocket =E<gt> 1> for those protocols is rejected
+until their complete streaming transitions are supplied.
+
 =head1 LIMITATIONS
 
-WebSocket upgrades, cross-host Alt-Svc, retries after dispatch, DNS HTTPS
-discovery and optional framework convenience classes are not implemented. Frameworks must retain their network transports and use
-their normal writable readiness/QUIC timer paths. This branch requires the
-coordinated receive/lifecycle engine feature branches, not released engines.
+HTTP/2 or HTTP/3 WebSocket upgrades, cross-host Alt-Svc, retries after
+dispatch, DNS HTTPS discovery and optional framework convenience
+classes are not implemented. Frameworks retain their network transports
+and use their normal writable readiness/QUIC timer paths. This branch
+requires the coordinated receive/lifecycle engine feature branches,
+not released engines.
 
 =head1 LICENSE
 
