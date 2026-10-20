@@ -1,7 +1,7 @@
 # Unblock::HTTP
 
 Unblock::HTTP is the framework-neutral application layer above HTTP/1,
-HTTP/2, HTTP/3, and eventually WebSocket. Protocol parsing stays in the
+HTTP/2, HTTP/3, and WebSocket. Protocol parsing stays in the
 existing engines. WebSocket sessions use the separate Unblock::WebSocket
 distribution; this top layer adds no XS.
 
