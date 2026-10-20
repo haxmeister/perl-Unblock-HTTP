@@ -29,13 +29,23 @@ with Net::QUIC::Driver 0.05, H3 SETTINGS negotiation, bidirectional
 WebSocket frames, concurrent ordinary H3 request, and Close/FIN.
 Early CI also required changing t/13 and t/28 expectations that H3
 WebSockets are always rejected; those have been updated.
-DO NOT call H3 complete until real t/35 and both full workflows pass.
+Real t/35 full QUIC/TLS websocket positive path and expanded HTTP 400/403
+rejection cases passed 27 distribution test files / 1,102 checks at
+production/test source b43532e92917d5850b6abc78c16485e3e16acc37.
+The first complete full CI workflow PASSED:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39513252507
+The optional MAX_DATA workflow has passed distribution and live QUIC
+integration stages; final diagnostic smoke stage was pending at this
+checkpoint:
+- Optional MAX_DATA:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39513252547
+Do not call BOTH full workflows verified until optional run concludes.
 
-NEXT: verify full CI at the current H3 production source/tests, fix
-actual failures (especially real QUIC body and Close paths), update
-Server POD and docs/IMPLEMENTATION.md, and record both verified run
-links. H3 Client connect_websocket remains DISABLED and requires a
-separate policy/peer-SETTINGS admission design, not implicit fallback.
+NEXT: confirm final optional CI conclusion and update handoff, then
+implement H3 Client connect_websocket as a separate opt-in milestone
+with peer SETTINGS gating, credit wakeups and stream-local lifecycle,
+not implicit fallback. No new performance sweep.
 All lower HTTP engines, Net::QUIC, Uniform::HTTP and WebSocket are
 READ-ONLY. No main edits, merges, tags, releases or version bumps.
 
