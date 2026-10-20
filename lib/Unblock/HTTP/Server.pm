@@ -355,10 +355,11 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
 This feature branch implements reusable attachment and ordinary buffered or
 streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
-HTTP/1.1 Server WebSocket Upgrade is available as an opt-in, using
-Unblock::WebSocket as an optional dependency. Client upgrades and H2/H3 Extended
-CONNECT WebSockets remain planned. Initial Client factories and bounded
-pooling are implemented separately in Unblock::HTTP::Client.
+HTTP/1.1 Server WebSocket Upgrade and HTTP/2 Server Extended CONNECT
+are available as separate opt-in paths using optional Unblock::WebSocket.
+HTTP/2 Client and HTTP/3 WebSockets remain planned; the unified HTTP/1.1
+Client Upgrade is implemented separately in Unblock::HTTP::Client.
+Initial Client factories and bounded pooling are also implemented there.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
 =head1 CONSTRUCTOR
@@ -489,6 +490,68 @@ graceful shutdown and C<unblock_finish>. The framework still owns sockets,
 TLS, input dispatch and writable notifications.
 
 =head1 METHODS
+
+=head2 HTTP/2 Extended CONNECT WebSocket Server
+
+Opt in with C<http2 =E<gt> { websocket =E<gt> 1 }> and the same
+C<on_websocket($tx, $request)> callback used for HTTP/1.1. When HTTP/2
+WebSocket support is enabled, provide a C<defer> coderef on the Server:
+
+    my $server = Unblock::HTTP::Server->new(
+        http2 => { websocket => 1 },
+        defer => sub {
+            my ($work) = @_;
+            $framework->defer($work);   # Always a later event-loop turn
+        },
+        on_request => sub {
+            my ($tx) = @_;
+            $tx->respond(status => 200, body => 'normal HTTP2');
+        },
+        on_websocket => sub {
+            my ($tx, $request) = @_;
+            return {
+                on_message => sub {
+                    my ($ws, $payload, $type) = @_;
+                    $ws->send_text("echo:$payload") if $type eq 'text';
+                },
+                on_open => sub {
+                    my ($ws, $tx, $request) = @_;
+                },
+            };
+        },
+    );
+
+This policy advertises HTTP/2 SETTINGS_ENABLE_CONNECT_PROTOCOL. Without
+it, the unified Server explicitly disables advertising. Conflicting
+manual SETTINGS value 8 or C<enable_connect_protocol =E<gt> 0> is rejected.
+HTTP/2 WebSocket is an Extended CONNECT with C<:protocol> set to
+C<websocket>, returning HTTP 200 (not 101). The upgrade affects one
+stream, not the TCP/TLS connection. Other streams remain ordinary HTTP2.
+
+Incoming stream DATA goes directly through the real Transaction's
+C<on_data()> to its own Unblock::WebSocket::Server. A small internal
+stream-specific bridge accepts outgoing WebSocket frames and queues
+them into the existing Transaction's C<write()> on the provided
+deferred event-loop turn. The bridge respects the Transaction's
+C<on_drain()> and calls C<end()> only after all queued frames are
+accepted. WebSocket errors reset their own stream, not the shared
+HTTP/2 connection. No application or framework adapter needs to
+manually ferry DATA to WebSocket. The callback can return undef to
+reject the attempt with HTTP 403, and an invalid handshake gets HTTP 400.
+
+C<defer> MUST schedule work after the current HTTP/2 parser callback
+returns, never run it synchronously. Synchronous execution would reenter
+nghttp2 and is unsupported. The framework continues to send and
+receive ordinary HTTP2 bytes through its existing C<unblock_send>,
+C<input>, C<input_eof>, C<transport_error>, and C<resume_output>.
+It does not call C<unblock_upgrade> for HTTP/2. As a result, one
+attached H2 engine can handle multiple WebSockets and ordinary
+requests simultaneously. The transaction and socket remain owned by
+the existing H2 engine and framework.
+
+HTTP/2 Client WebSocket support and HTTP/3 Extended CONNECT remain
+separate, unfinished milestones. This H2 Server slice does not make
+any change to the lower HTTP2 or WebSocket distribution.
 
 =head2 attach_stream
 
