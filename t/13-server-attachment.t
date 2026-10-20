@@ -142,7 +142,7 @@ for my $case (
     [ { http1 => { websocket => 2 } }, qr/0 or 1/ ],
     [ { http1 => { websocket => 1 } }, qr/on_websocket callback is required/ ],
     [ { http2 => { websocket => 1 } }, qr/on_websocket callback is required/ ],
-    [ { http3 => { websocket => 1 } }, qr/not implemented/ ],
+    [ { http3 => { websocket => 1 } }, qr/on_websocket callback is required/ ],
     [ { http1 => { transport => $host1 } }, qr/managed/ ],
     [ { http2 => { on_request => $callback } }, qr/managed/ ],
     [ { http2 => { enable_connect_protocol => 1 } }, qr/conflicts/ ],
