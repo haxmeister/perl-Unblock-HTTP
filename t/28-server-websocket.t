@@ -168,7 +168,7 @@ for my $case (
     [ sub { Unblock::HTTP::Server->new(http3 => { websocket => 1 }, on_request => sub {}) },
       qr/not implemented/ ],
     [ sub { Unblock::HTTP::Server->new(http1 => {}, on_request => sub {}, on_websocket => sub {}) },
-      qr/requires http1 websocket/ ],
+      qr/requires http1 or http2 websocket/ ],
     [ sub { $definition->attach_stream(transport => Local::OrdinaryHost->new) },
       qr/unblock_upgrade/ ],
 ) {
