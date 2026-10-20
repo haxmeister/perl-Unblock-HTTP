@@ -164,7 +164,7 @@ for my $case (
     [ sub { Unblock::HTTP::Server->new(http1 => { websocket => 1 }, on_request => sub {}) },
       qr/on_websocket callback is required/ ],
     [ sub { Unblock::HTTP::Server->new(http2 => { websocket => 1 }, on_request => sub {}) },
-      qr/not implemented/ ],
+      qr/on_websocket callback is required/ ],
     [ sub { Unblock::HTTP::Server->new(http3 => { websocket => 1 }, on_request => sub {}) },
       qr/not implemented/ ],
     [ sub { Unblock::HTTP::Server->new(http1 => {}, on_request => sub {}, on_websocket => sub {}) },
