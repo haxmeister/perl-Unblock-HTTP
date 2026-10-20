@@ -31,7 +31,8 @@ sub new {
             croak "$name WebSocket attachment is not implemented yet; see docs/IMPLEMENTATION.md"
                 unless defined($websocket_role)
                     && ($protocol eq 'http/1.1'
-                        || $protocol eq 'h2');
+                        || $protocol eq 'h2'
+                        || ($protocol eq 'h3' && $websocket_role eq 'server'));
             $websocket{$protocol} = 1;
         }
         for my $key (keys %$config) {
@@ -69,9 +70,16 @@ sub new {
             }
         }
         if ($protocol eq 'h3') {
-            croak 'http3 enable_extended_connect conflicts with disabled WebSocket support'
-                if $config->{enable_extended_connect};
-            $config->{enable_extended_connect} = 0;
+            if ($websocket) {
+                croak 'http3 WebSocket requires enable_extended_connect => 1'
+                    if exists($config->{enable_extended_connect})
+                        && !$config->{enable_extended_connect};
+                $config->{enable_extended_connect} = 1;
+            } else {
+                croak 'http3 enable_extended_connect conflicts with disabled WebSocket support'
+                    if $config->{enable_extended_connect};
+                $config->{enable_extended_connect} = 0;
+            }
         }
         $engines{$protocol} = $config;
     }
