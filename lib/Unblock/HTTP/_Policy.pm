@@ -31,7 +31,7 @@ sub new {
             croak "$name WebSocket attachment is not implemented yet; see docs/IMPLEMENTATION.md"
                 unless defined($websocket_role)
                     && ($protocol eq 'http/1.1'
-                        || ($protocol eq 'h2' && $websocket_role eq 'server'));
+                        || $protocol eq 'h2');
             $websocket{$protocol} = 1;
         }
         for my $key (keys %$config) {
