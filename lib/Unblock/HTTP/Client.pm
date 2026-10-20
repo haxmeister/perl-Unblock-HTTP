@@ -988,6 +988,10 @@ sub _dispatch {
         };
         $engine_callback{on_data} = sub {
             my $active_op = $weak_op or return;
+            # An H3 rejection may carry an ordinary HTTP error body.
+            # Discard it after validation has failed; it is not framed
+            # WebSocket DATA and must not unwind the QUIC receive call.
+            return if $active_op->{websocket_handshake_error};
             my $ws = $active_op->{websocket}
                 or die 'multiplexed WebSocket DATA arrived before validated response';
             $ws->input($_[1]);
