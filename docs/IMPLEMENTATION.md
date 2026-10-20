@@ -1,3 +1,38 @@
+## HTTP2 Client WebSocket Extended CONNECT (2026-10-20)
+
+Unified Client now supports opt-in `http2 => { websocket => 1 }`.
+Use `connect_websocket(url => 'wss://...', http_version => '2')`,
+or omit http_version when HTTP2 is the only enabled WebSocket policy.
+HTTP1 remains the default when both H1 and H2 support WebSockets.
+The internal RFC8441 handshake helper creates a real H2 CONNECT request.
+The Client waits for initial peer SETTINGS and does not submit CONNECT
+unless ENABLE_CONNECT_PROTOCOL = 1. An H2 connection pending peer SETTINGS
+does not cause repeated TCP connection establishment. A peer that rejects
+Extended CONNECT fails the queued operation explicitly and cannot cause
+a silent HTTP1 fallback or replay after dispatch.
+
+On successful H2 HTTP 200 response validation, the original H2 Transaction
+and a real Unblock::WebSocket::Client are passed to on_open($ws, $tx).
+The operation's websocket() accessor exposes that engine. Incoming H2
+on_data is forwarded to ws->input, and outgoing WebSocket frame buffers
+flow through the same deferred H2 DATA bridge as server sessions.
+on_drain wakes the bridge after H2 output congestion. The stream remains
+active through WebSocket Close and END_STREAM, so on_finish refers to the
+final H2 transaction outcome, not to initial handshake success.
+
+The H2 TCP/TLS socket remains pooled and multiplexed throughout. Ordinary
+HTTP2 and multiple WebSockets can share the same engine; cancellation
+resets only its own stream and shutdown lets active streams drain.
+HTTP1 upgrades still transfer the whole socket out of the pool.
+HTTP3 WebSocket remains disabled.
+
+t/33-client-websocket-h2.t tests the actual H2 and WebSocket engines,
+SETTINGS gating, two simultaneous WebSocket streams, normal HTTP traffic,
+cancellation isolation, close lifecycle and unsupported peer handling.
+The two full CI integration workflows for source bebb92c02d817c3b89bef956e03e846235040b40
+have passed distribution-test stages; final workflow conclusions are
+pending. No lower library source or ABI changes. No release work.
+
 ## HTTP2 Server WebSocket Extended CONNECT (2026-10-20)
 
 The shared Server now supports opt-in `http2 => { websocket => 1 }`
