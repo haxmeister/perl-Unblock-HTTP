@@ -1,3 +1,56 @@
+## HTTP3 Client WebSocket Extended CONNECT (2026-10-20)
+
+The unified Client now implements opt-in `http3 => { websocket => 1 }`
+with `connect_websocket(url => 'wss://...', http_version => '3')`.
+Version 3 becomes the implicit selection only when H1 and H2
+WebSocket modes are not enabled. The read-only WebSocket handshake
+helper constructs a real HTTP3 Extended CONNECT; the original
+Client pools and `connect_quic` factory remain in use.
+
+The H3 Client does not send CONNECT until the CURRENT peer HTTP3
+SETTINGS frame has arrived and confirms
+SETTINGS_ENABLE_CONNECT_PROTOCOL = 1. Its
+`on_extension_settings` callback schedules pool admission on a
+later framework-deferred turn, avoiding reentrancy into H3/QUIC
+receive callbacks. Remembered early-data settings are insufficient.
+An existing H3 connection waiting for SETTINGS does not trigger
+more QUIC connection attempts. A peer without support fails the
+unsent operation with on_error/on_finish, with no CONNECT or
+fallback. If H3 request credit is exhausted, the existing
+on_request_available one-shot wakeup retries that SAME queued
+operation without a second socket or replay of sent bytes.
+
+A successful HTTP 200 creates the real
+`Unblock::WebSocket::Client`, available through on_open and
+`operation->websocket()`. Incoming HTTP3 DATA is delivered to
+its `input` callback. Outgoing frames go through the existing
+deferred per-stream `_WebSocketH2Body` bridge to the real H3
+Transaction. Stream cancellation, Close, on_finish, H3 body credit,
+and Client shutdown follow the existing multiplexed pool
+lifecycle. The underlying QUIC connection can carry multiple
+WebSockets and ordinary HTTP3 streams simultaneously.
+
+One real QUIC test uncovered a rejected-handshake bug: exceptions
+thrown by the H3 client response validation could unwind the QUIC
+receive callback. HTTP3 now records the application operation
+error, schedules stream-local cancellation outside the callback,
+and discards an ordinary HTTP 400/403 error response body without
+attempting to parse it as WebSocket frames. H2's existing tested
+error path remains unchanged.
+
+t/36-client-websocket-h3.t exercises the full unified Client and
+Server over real localhost UDP/TLS using published Net::QUIC 0.05:
+QUIC factory, peer SETTINGS gate, outgoing/incoming WebSocket
+frames, multiple concurrent WebSocket streams, ordinary HTTP3
+request, rejected handshake, stream-local cancellation, Client
+shutdown while a WebSocket remains active, and WebSocket Close.
+t/37-client-h3-websocket-admission.t verifies unsupported peer
+SETTINGS and QUIC credit exhaustion without new socket attempts.
+Both tests are undergoing complete CI for source
+e762a6181d13c264ead1f99a91561f2e68b6779c. Do not claim
+full verification until both integration workflows pass.
+No lower library, native ABI or QUIC library changes were needed.
+
 ## HTTP3 Server WebSocket Extended CONNECT (2026-10-20)
 
 Opt-in `http3 => { websocket => 1 }` now enables the unified
