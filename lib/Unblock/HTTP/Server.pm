@@ -457,10 +457,9 @@ streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
 HTTP/1.1 Server Upgrade and HTTP/2 Server Extended CONNECT are verified
 opt-in paths using Unblock::WebSocket. HTTP/2 Client Extended CONNECT is
-also verified and documented in Unblock::HTTP::Client. An HTTP/3 Server
-Extended CONNECT implementation is in progress on this feature branch;
-its real-QUIC correctness tests are required before it can be considered
-verified. HTTP/3 Client WebSocket is not yet implemented.
+also verified and documented in Unblock::HTTP::Client. HTTP/3 Server Extended CONNECT is now verified by real-QUIC
+loopback TLS plus both full upper integration workflows. HTTP/3 Client
+WebSocket is not yet implemented.
 Initial Client factories and bounded pooling are also implemented there.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
@@ -518,7 +517,7 @@ C<on_error> retains the engine's arguments: transaction, error, and an
 optional protocol error code. Cancellation alone is not an error.
 
 C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket Upgrade,
-HTTP/2 Extended CONNECT, and the experimental HTTP/3 Extended CONNECT
+HTTP/2 Extended CONNECT, and HTTP/3 Extended CONNECT
 server path, only when C<on_websocket> is supplied. All default to
 disabled. HTTP/2 and HTTP/3 WebSockets require C<defer>, which schedules
 execution on a later event-loop turn. The relevant Extended CONNECT
@@ -671,7 +670,7 @@ Missing or empty ALPN selects HTTP/1.1 only if HTTP/1.1 is enabled. Unknown
 or disabled protocols fail. Explicit C<protocol =E<gt> 'h2'> is for cleartext
 prior knowledge. HTTP/3 cannot be attached to a byte stream.
 
-=head2 HTTP/3 Extended CONNECT WebSocket Server (experimental)
+=head2 HTTP/3 Extended CONNECT WebSocket Server
 
 Opt in with C<http3 =E<gt> { websocket =E<gt> 1 }>, supply
 C<on_websocket($tx, $request)> and C<defer($work)> as for HTTP/2,
@@ -692,9 +691,10 @@ must never invoke the scheduled callback inline from an H3 parser
 callback. The framework remains responsible for QUIC UDP delivery,
 timeout scheduling, writable readiness and connection lifecycle.
 
-This integration is being exercised against real Net::QUIC 0.05
-loopback TLS and is not considered verified until the full
-coordination suite passes. H3 Client WebSocket is separate work.
+The actual Net::QUIC 0.05 loopback/TLS integration, WebSocket frames,
+ordinary stream isolation, Close and HTTP 400/403 tests passed both
+full upper integration workflows at source b43532e92917d5850b6abc78c16485e3e16acc37.
+H3 Client WebSocket is separate work.
 
 =head2 attach_quic
 
