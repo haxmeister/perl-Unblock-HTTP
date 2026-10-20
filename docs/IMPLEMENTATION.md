@@ -1,3 +1,47 @@
+## HTTP1 Client WebSocket and native successor handoff (2026-10-19)
+
+HTTP/1.1 WebSocket support now includes the opt-in unified Client.
+`Client->connect_websocket(url => 'ws://...'| 'wss://...', ...)`
+returns the existing request operation immediately. It uses an HTTP1
+handshake request from Unblock::WebSocket::Handshake, negotiates strictly
+HTTP/1.1 through the existing connect_stream factory, and validates the
+101 response before switching input ownership. The transport supplies
+`unblock_upgrade($ws)` and continues using its existing ordered queue.
+On success the HTTP1 engine leaves the per-origin connection pool
+without being closed or passed to release_connection. `on_open($ws, $tx)`
+receives the actual WebSocket Client and HTTP1 transaction; the
+operation's `websocket()` accessor then provides the same WebSocket
+engine. `on_finish($tx)` reports the HTTP upgrade transaction only,
+not eventual WebSocket Close. A successful WebSocket is unaffected by
+the HTTP Client's later shutdown. Protocol flags for H2/H3 WebSockets
+remain unavailable.
+
+A terminal-callback lifetime bug was found and corrected during
+integration: removing the upgraded connection from the pool also
+released its weak callback bookkeeping too early. A temporary
+upgrade_retirement reference on the operation lasts exactly through
+HTTP1 on_finish and is deleted before the application's on_finish
+callback. t/30-client-websocket.t tests real in-memory H1/WebSocket
+traffic, pool detach, subsequent normal HTTP, shutdown, disabled
+policy and rejected handshake. Implementation/test source is
+65c88e0fa57ad11c753b03ba1745ac832f46de16. Both full CI
+workflows have passed distribution tests; final full CI
+verification was still pending at this checkpoint.
+
+Native borrowed input is covered separately by
+t/29-server-websocket-native.t: it drives the actual native HTTP1
+consumer, checks INPUT_SWITCH's consumed prefix and forwards only
+the unconsumed suffix to the established WebSocket. It also covers
+fragmented HTTP headers. The optional LinuxEvent stream adapter
+switches data, EOF, error and output-resume handling to WebSocket,
+and examples/linux-event-websocket-server.pl shows the complete
+HTTP/1.1 server use case. That adapter uses public Perl input; an
+XS/native framework must still retain and hand over its borrowed
+unconsumed native buffer itself. This earlier source
+3505abf5c01993f02ace9ef31b76f2d6069d076f passed full
+published-Net::QUIC CI 39364338085 and optional QUIC-feature CI
+39364338022. No NativeABI version change or lower-engine edits.
+
 ## HTTP1 Server WebSocket transition slice (2026-10-19)
 
 On the upper feature branch only, opt-in `http1 => { websocket => 1 }`
@@ -26,12 +70,12 @@ The distribution suite passes 20 files / 890 checks including the 34
 new t/28 WebSocket checks; existing live TCP/QUIC, memory and benchmark
 smoke steps also pass.
 
-Native borrowed-input providers still own their unconsumed input window
-when HTTP1 returns INPUT_SWITCH. The public-input handoff test does not
-establish native successor-consumer support; frameworks using the raw
-native provider must transfer that window themselves. Native successor
-composition, Client connect_websocket, and H2/H3 streaming WebSockets
-are the next unfinished milestones. Keep existing feature branches.
+The subsequent Client and native input work above extends this
+original server-only milestone. Native borrowed-input providers own
+their unconsumed input window when HTTP1 returns INPUT_SWITCH; they
+must transfer exactly that suffix to the new WebSocket consumer.
+HTTP2 and HTTP3 Extended CONNECT WebSocket streaming are still
+unimplemented. Keep existing feature branches.
 
 ## Verified graceful Client shutdown (2026-10-19)
 
