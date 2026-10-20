@@ -127,7 +127,7 @@ sub tick {
         }
     }
 }
-sub until {
+sub run_until {
     my ($condition) = @_;
     my $end = time() + 10;
     while (time() < $end) {
@@ -140,7 +140,7 @@ sub until {
 $server_driver->start;
 $client_driver->start;
 my $server_quic;
-ok(until(sub {
+ok(run_until(sub {
     $server_quic ||= $server_driver->next_connection;
     $server_quic && $server_quic->ready && $client_quic->ready;
 }), 'real QUIC/TLS h3 handshake completes');
@@ -148,7 +148,7 @@ ok(until(sub {
 $server_h3 = $definition->attach_quic(connection => $server_quic);
 $client_h3 = Unblock::HTTP3::Client->new(quic => $client_quic);
 $client_h3->start;
-ok(until(sub {
+ok(run_until(sub {
     $server_h3->peer_settings_received && $client_h3->peer_settings_received;
 }), 'both HTTP3 endpoints receive initial SETTINGS');
 ok($server_h3->extended_connect_enabled,
@@ -187,7 +187,7 @@ $client_tx = $client_h3->request(
     on_error => sub { push @errors, $_[1] },
 );
 ok($client_tx, 'H3 Extended CONNECT created a real QUIC request stream');
-ok(until(sub { @client_messages >= 2 }),
+ok(run_until(sub { @client_messages >= 2 }),
     'WebSocket greeting and echo cross real QUIC socket');
 is_deeply(\@client_messages, ['welcome-h3', 'echo:hello-h3'],
     'real HTTP3 DATA transports bidirectional WebSocket frames');
@@ -203,16 +203,16 @@ $client_h3->request(
     authority => 'localhost',
     on_response => sub { $ordinary_response = $_[1]->status },
 );
-ok(until(sub { defined $ordinary_response }),
+ok(run_until(sub { defined $ordinary_response }),
     'ordinary H3 transaction runs alongside WebSocket');
 is($ordinary_response, 200, 'ordinary H3 response remains functional');
 is_deeply(\@ordinary, ['/normal'], 'only GET reached ordinary HTTP handler');
 
 $client_ws->close;
-ok(until(sub { $client_ws->close_received }),
+ok(run_until(sub { $client_ws->close_received }),
     'WebSocket Close response arrives over H3 DATA');
 ok($server_ws->close_received, 'server received WebSocket Close');
-ok(until(sub { $client_tx->is_terminal }),
+ok(run_until(sub { $client_tx->is_terminal }),
     'client H3 transaction terminates after WebSocket Close');
 is_deeply(\@errors, [], 'real QUIC WebSocket exchange has no stream errors');
 is_deeply(\@completed, ['complete'], 'client H3 Transaction completes once');
