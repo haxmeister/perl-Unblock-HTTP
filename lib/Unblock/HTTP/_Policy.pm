@@ -12,7 +12,8 @@ sub new {
     my ($class, %options) = @_;
     my $websocket_role = delete $options{_websocket_role};
     croak 'invalid internal WebSocket policy role'
-        if defined($websocket_role) && $websocket_role ne 'server';
+        if defined($websocket_role)
+            && $websocket_role ne 'server' && $websocket_role ne 'client';
     my (%engines, %websocket);
     for my $protocol (@PROTOCOLS) {
         my $name = $NAME{$protocol};
