@@ -1,3 +1,44 @@
+## H2 Client lifecycle VERIFIED and H3 Server WebSocket in progress (2026-10-20)
+
+After verified H2 Client source bebb92c02d817c3b89bef956e03e846235040b40,
+added t/34-client-websocket-h2-lifecycle.t. It tests a denied
+HTTP 403 Extended CONNECT, invalid HTTP 200 with unsolicited
+subprotocol, active WebSocket continuing during Client shutdown,
+graceful Close releasing one retired H2 connection, peer-initiated
+stream RESET failure and continued ordinary HTTP on a sibling
+transaction. This focused H2 lifecycle-only commit was
+db034a85c72a475ca7bd18f2b1ada9da2dea73ba.
+BOTH full integration workflows passed:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39512039817
+- Optional QUIC MAX_DATA:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39512039809
+Both passed 26 distribution test files / 1,078 checks, plus existing
+live TCP/QUIC and benchmark smoke steps. H2 Client feature remains
+complete; no lower-library modifications.
+
+NEW H3 SERVER SLICE (unverified): On the upper feature branch only,
+Policy now allows server opt-in http3 => { websocket => 1 } and
+advertises enable_extended_connect only when enabled. Server uses
+a new per-H3-transaction on_data handler plus existing deferred
+_WebSocketH2Body DATA bridge, real Unblock::WebSocket Server, and
+per-stream on_finish cleanup. HTTP 400/403 are sent without creating
+a WebSocket; ordinary H3 requests still use their standard callbacks.
+The new t/35-server-websocket-h3.t exercises real localhost QUIC/TLS
+with Net::QUIC::Driver 0.05, H3 SETTINGS negotiation, bidirectional
+WebSocket frames, concurrent ordinary H3 request, and Close/FIN.
+Early CI also required changing t/13 and t/28 expectations that H3
+WebSockets are always rejected; those have been updated.
+DO NOT call H3 complete until real t/35 and both full workflows pass.
+
+NEXT: verify full CI at the current H3 production source/tests, fix
+actual failures (especially real QUIC body and Close paths), update
+Server POD and docs/IMPLEMENTATION.md, and record both verified run
+links. H3 Client connect_websocket remains DISABLED and requires a
+separate policy/peer-SETTINGS admission design, not implicit fallback.
+All lower HTTP engines, Net::QUIC, Uniform::HTTP and WebSocket are
+READ-ONLY. No main edits, merges, tags, releases or version bumps.
+
 ## HTTP2 Client WebSocket Extended CONNECT FULL CI VERIFIED (2026-10-20)
 
 Starting from verified HTTP2 Server checkpoint ec7c6819c21cacc922330ef5a7ce05fbc97f7e7f,
