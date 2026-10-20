@@ -67,8 +67,11 @@ A Client request returns this handle immediately, including before its
 transport has connected. C<transaction()> becomes the actual engine
 Transaction once the request is issued, without an HTTP transaction wrapper.
 For C<connect_websocket()>, C<websocket()> becomes the established
-C<Unblock::WebSocket::Client> only after the HTTP1 101 response is validated
-and the framework-owned transport has changed its input consumer.
+C<Unblock::WebSocket::Client> only after the protocol-specific handshake
+has been validated. With HTTP/1.1 the entire transport changes its input
+consumer and the HTTP transaction finishes at 101. With HTTP/2 the
+WebSocket stays on a multiplexed H2 transaction until END_STREAM;
+C<on_finish> reflects that transaction's eventual terminal state.
 
 C<state()> is queued, connecting, active, complete, error, or cancelled.
 C<error()> reports a connection or transaction error, if any.
