@@ -29,9 +29,13 @@ HTTP3 WebSocket remains disabled.
 t/33-client-websocket-h2.t tests the actual H2 and WebSocket engines,
 SETTINGS gating, two simultaneous WebSocket streams, normal HTTP traffic,
 cancellation isolation, close lifecycle and unsupported peer handling.
-The two full CI integration workflows for source bebb92c02d817c3b89bef956e03e846235040b40
-have passed distribution-test stages; final workflow conclusions are
-pending. No lower library source or ABI changes. No release work.
+The two full CI integration workflows for source
+bebb92c02d817c3b89bef956e03e846235040b40 PASSED:
+published Net::QUIC 0.05 run 39510286760 and optional QUIC-feature
+run 39510286933. Both ran 25 distribution test files and 1,054
+checks, plus all existing live TCP/QUIC, resource guard and
+benchmark smoke stages. No performance gain claimed. No lower
+library source or ABI changes. No release work.
 
 ## HTTP2 Server WebSocket Extended CONNECT (2026-10-20)
 
