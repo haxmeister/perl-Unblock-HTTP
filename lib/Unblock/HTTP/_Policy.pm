@@ -29,7 +29,9 @@ sub new {
                 && "$websocket" =~ /\A[01]\z/;
         if ($websocket) {
             croak "$name WebSocket attachment is not implemented yet; see docs/IMPLEMENTATION.md"
-                unless $protocol eq 'http/1.1' && defined($websocket_role);
+                unless defined($websocket_role)
+                    && ($protocol eq 'http/1.1'
+                        || ($protocol eq 'h2' && $websocket_role eq 'server'));
             $websocket{$protocol} = 1;
         }
         for my $key (keys %$config) {
@@ -46,15 +48,25 @@ sub new {
                 && $config->{max_buffered_body_bytes} > 0
                 && $config->{max_buffered_body_bytes} <= (~0);
         if ($protocol eq 'h2') {
-            croak 'http2 enable_connect_protocol conflicts with disabled WebSocket support'
-                if $config->{enable_connect_protocol};
             if (exists $config->{settings}) {
                 croak 'http2 settings must be a hash reference'
                     unless ref($config->{settings}) eq 'HASH';
-                croak 'http2 SETTINGS_ENABLE_CONNECT_PROTOCOL conflicts with disabled WebSocket support'
-                    if $config->{settings}{8};
             }
-            $config->{enable_connect_protocol} = 0;
+            if ($websocket) {
+                croak 'http2 WebSocket requires enable_connect_protocol => 1'
+                    if exists($config->{enable_connect_protocol})
+                        && !$config->{enable_connect_protocol};
+                croak 'http2 WebSocket conflicts with settings 8 => 0'
+                    if exists($config->{settings}) && exists($config->{settings}{8})
+                        && !$config->{settings}{8};
+                $config->{enable_connect_protocol} = 1;
+            } else {
+                croak 'http2 enable_connect_protocol conflicts with disabled WebSocket support'
+                    if $config->{enable_connect_protocol};
+                croak 'http2 SETTINGS_ENABLE_CONNECT_PROTOCOL conflicts with disabled WebSocket support'
+                    if exists($config->{settings}) && $config->{settings}{8};
+                $config->{enable_connect_protocol} = 0;
+            }
         }
         if ($protocol eq 'h3') {
             croak 'http3 enable_extended_connect conflicts with disabled WebSocket support'
