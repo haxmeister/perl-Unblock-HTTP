@@ -157,6 +157,7 @@ my ($denied_handshake, $denied_request) =
 my $denied_status;
 $h2client->request(
     $denied_request,
+    stream_body => 1,
     on_response => sub { $denied_status = $_[1]->status },
 );
 pump();
@@ -165,13 +166,16 @@ is_deeply(\@server_events,
     ['offer:/chat', 'open:/chat', 'offer:/deny'],
     'denial does not create a WebSocket session');
 
-my ($bad_handshake, $bad_request) =
-    Unblock::WebSocket::Handshake->client_request(
-        'wss://example.test/bad', http_version => '2',
-    );
-$bad_request->set_header('Sec-WebSocket-Version', '12');
+require Uniform::HTTP::Request;
+my $bad_request = Uniform::HTTP::Request->new(
+    method => 'CONNECT', protocol => 'websocket',
+    target => '/bad', scheme => 'https', authority => 'example.test',
+    version => '2',
+    headers => [ [ 'Sec-WebSocket-Version' => '12' ] ],
+);
 my $bad_status;
 $h2client->request($bad_request,
+    stream_body => 1,
     on_response => sub { $bad_status = $_[1]->status });
 pump();
 is($bad_status, 400, 'invalid H2 handshake rejected without stream takeover');
