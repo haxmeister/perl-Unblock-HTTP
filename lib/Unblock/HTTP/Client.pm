@@ -1553,12 +1553,71 @@ retiring shared connection, consistent with ordinary active HTTP/2
 requests. The framework continues to feed the H2 engine normally;
 C<unblock_upgrade()> is neither used nor required for HTTP/2.
 
-HTTP/3 WebSocket Extended CONNECT is still unsupported.
+=head1 HTTP/3 WEBSOCKET EXTENDED CONNECT
+
+Opt in with C<http3 =E<gt> { websocket =E<gt> 1 }> and select
+C<http_version =E<gt> '3'> with C<connect_websocket()>:
+
+    my $client = Unblock::HTTP::Client->new(
+        http3 => { websocket => 1 },
+        connect_quic => sub { ... },
+        defer => sub { ... },
+    );
+    my $operation = $client->connect_websocket(
+        url => 'wss://example.com/chat',
+        http_version => '3',
+        on_open => sub {
+            my ($ws, $tx) = @_;
+            $ws->send_text('hello over QUIC');
+        },
+        on_message => sub {
+            my ($ws, $payload, $type) = @_;
+        },
+    );
+
+When HTTP/3 is the only enabled WebSocket protocol,
+C<connect_websocket()> selects version 3 by default; otherwise
+the default precedence is HTTP/1.1, HTTP/2, HTTP/3. Version 3
+requires an HTTPS origin (a wss URL), and uses a strict connection:
+it never falls back to TCP or replays a dispatched CONNECT.
+
+The existing C<connect_quic> factory supplies a ready, authenticated
+Net::QUIC connection. The unified Client starts the HTTP/3 engine and
+waits for the CURRENT server SETTINGS frame before attempting Extended
+CONNECT. The server must advertise SETTINGS_ENABLE_CONNECT_PROTOCOL = 1.
+An H3 connection awaiting SETTINGS does not cause new QUIC connection
+attempts for the same queued WebSocket. An explicit lack of support
+fails the unsent operation with on_error and on_finish and does not
+send CONNECT. Remembered 0-RTT SETTINGS alone do not authorize this
+WebSocket admission path.
+
+The WebSocket client handshake expects HTTP 200. After validation
+C<on_open($ws, $tx)> receives the real WebSocket engine and actual H3
+Transaction; C<$operation-E<gt>websocket()> returns that same engine.
+Outgoing WebSocket frames use the existing deferred per-stream H2/H3
+DATA bridge, with streaming C<write()>, C<on_drain()> and C<end()>.
+Incoming DATA calls the WebSocket's C<input()> directly. C<defer> must
+not execute callback work inline within QUIC or H3 receive callbacks.
+A refused or invalid HTTP/3 handshake records an operation error and
+defers stream-local cancellation, without throwing out of the QUIC
+receive dispatch. Ordinary HTTP3 requests are unaffected.
+
+The QUIC connection remains multiplexed and pooled throughout. A
+WebSocket occupies one H3 request stream; independent WebSockets and
+ordinary requests can share that QUIC connection. QUIC bidi credit
+exhaustion requeues the SAME unsent operation, waking only when the
+existing engine reports new request credit; it does not open a new
+connection, discard bytes or replay a sent request. Cancellation or
+errors terminate only the relevant stream. Client C<shutdown()>
+retires the pooled QUIC connection after its accepted active streams
+finish; graceful WebSocket Close sends END_STREAM. The operation's
+C<on_finish> observes the final H3 transaction state, not the
+successful opening HTTP 200.
 
 =head1 LIMITATIONS
 
-HTTP/3 WebSocket upgrades, cross-host Alt-Svc, retries after
-dispatch, DNS HTTPS discovery and optional framework convenience
+Cross-host Alt-Svc, retries after dispatch,
+DNS HTTPS discovery and optional framework convenience
 classes are not implemented. Frameworks retain their network transports
 and use their normal writable readiness/QUIC timer paths. This branch
 requires the coordinated receive/lifecycle engine feature branches,
