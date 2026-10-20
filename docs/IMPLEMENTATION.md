@@ -1,3 +1,47 @@
+## HTTP2 Server WebSocket Extended CONNECT (2026-10-20)
+
+The shared Server now supports opt-in `http2 => { websocket => 1 }`
+with the same `on_websocket($tx, $request)` callback used for HTTP1.
+H2 requires a `defer($callback)` option on the Server definition,
+which the framework MUST schedule on a later event-loop turn. It
+advertises ENABLE_CONNECT_PROTOCOL only when configured to allow
+WebSocket; conflicting manual SETTINGS are rejected. Without
+WebSocket permission, CONNECT advertising remains off.
+
+When the real HTTP2 Server receives Extended CONNECT with
+`:protocol = websocket`, on_websocket selects handshake options,
+callbacks and optional on_open, or returns undef for HTTP 403.
+The read-only Unblock::WebSocket handshake helper validates RFC8441
+and constructs HTTP 200 (invalid handshakes receive HTTP 400).
+The same real HTTP2 transaction is switched to streaming receive
+using `on_data`; it sends a streaming response (not a 101 switch).
+The TCP/TLS connection and all ordinary HTTP2 transactions continue
+unchanged. No framework-level WebSocket socket takeover is involved.
+
+Internal _WebSocketH2Body accepts complete WebSocket frame buffers,
+queues them, and sends each to the original H2 Transaction via
+`write` on the deferred event-loop turn. It obeys H2 on_drain
+congestion and uses `end` only after queued frames are accepted.
+A WebSocket abort resets only its own H2 transaction. The bridge
+keeps weak Transaction/WebSocket references so normal terminal
+cleanup releases all per-stream state. The ordinary HTTP paths
+remain unchanged when H2 WebSocket is disabled.
+
+t/31-server-websocket-h2.t runs actual HTTP2/WebSocket engines and
+checks SETTINGS, validation, on_open, bidirectional frames,
+concurrent ordinary HTTP, denial, invalid requests, Close exchange,
+END_STREAM, and connection reuse after WebSocket Close.
+t/32-h2-websocket-bridge.t separately checks whole-buffer transfer,
+deferred scheduling, congestion/resume, graceful end ordering and
+stream-local cancellation. These tests are in the upper feature
+branch; individual protocol engines, Unblock::WebSocket, Net::QUIC
+and Uniform::HTTP remain read-only, with no ABI change.
+
+This is a Server H2 milestone only. Unified Client H2 WebSocket and
+HTTP3 WebSocket remain disabled. No broad performance benchmarking or
+release preparation. CI for the full HTTP2 slice must be explicitly
+confirmed before this is called verified.
+
 ## HTTP1 Client WebSocket and native successor handoff (2026-10-19)
 
 HTTP/1.1 WebSocket support now includes the opt-in unified Client.
