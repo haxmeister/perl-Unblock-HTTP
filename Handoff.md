@@ -1,4 +1,4 @@
-## HTTP2 Client WebSocket Extended CONNECT implementation (2026-10-20)
+## HTTP2 Client WebSocket Extended CONNECT FULL CI VERIFIED (2026-10-20)
 
 Starting from verified HTTP2 Server checkpoint ec7c6819c21cacc922330ef5a7ce05fbc97f7e7f,
 the upper Client now accepts opt-in `http2 => { websocket => 1 }`.
@@ -34,18 +34,21 @@ Changes on upper feature branch only:
 
 Production/test source commit:
 bebb92c02d817c3b89bef956e03e846235040b40
-The first two full workflows have PASSED their distribution-test stages,
-but both full workflow conclusions must be checked before claiming
-verification:
-- published Net::QUIC 0.05: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286760
-- optional QUIC MAX_DATA: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286933
+Both full integration workflows have PASSED:
+- Published Net::QUIC 0.05: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286760
+- Optional QUIC MAX_DATA: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39510286933
+Both report 25 distribution files / 1,054 checks including the new
+t/33-client-websocket-h2.t, plus live TCP/QUIC integration, sustained
+resource tests and existing benchmark smoke. All workflow steps passed.
+No speedup/performance claim is implied by the CI smoke tests.
+Following commits only updated documentation, not production/test code.
 
-NEXT: check full workflow results, repair any concrete failures, record
-actual verified source SHA/results. Then targeted H2 Client lifecycle
-coverage (rejected 200, reset, shutdown) before considering H3
-WebSocket. Lower HTTP engines, Net::QUIC, Uniform::HTTP and
+NEXT: targeted H2 Client lifecycle coverage (HTTP 403/invalid
+handshake response, stream reset and shutdown while a WebSocket
+remains active), then consider H3 WebSocket. Continue to avoid broad
+profiling. Lower HTTP engines, Net::QUIC, Uniform::HTTP and
 Unblock::WebSocket remain read-only; no main/merge/tag/release/version
-bump. Avoid restarting broad benchmark campaigns.
+bump.
 
 ## HTTP2 Extended CONNECT WebSocket Server FULL CI VERIFIED (2026-10-20)
 
