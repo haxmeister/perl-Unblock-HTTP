@@ -466,10 +466,11 @@ streamed requests. It requires the receive/lifecycle feature branches of the
 three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
 HTTP/1.1 Server Upgrade and HTTP/2 Server Extended CONNECT are verified
 opt-in paths using Unblock::WebSocket. HTTP/2 Client Extended CONNECT is
-also verified and documented in Unblock::HTTP::Client. HTTP/3 Server Extended CONNECT is now verified by real-QUIC
-loopback TLS plus both full upper integration workflows. HTTP/3 Client
-WebSocket is not yet implemented.
-Initial Client factories and bounded pooling are also implemented there.
+also verified and documented in Unblock::HTTP::Client. HTTP/3 Server
+Extended CONNECT is verified by real QUIC/TLS loopback. HTTP/3 Client
+Extended CONNECT is also implemented and verified over real QUIC/TLS,
+including peer SETTINGS, stream-credit admission and cancellation.
+Initial Client factories and bounded pooling are implemented there.
 See docs/IMPLEMENTATION.md. This is not a release candidate.
 
 =head1 CONSTRUCTOR
@@ -531,7 +532,7 @@ server path, only when C<on_websocket> is supplied. All default to
 disabled. HTTP/2 and HTTP/3 WebSockets require C<defer>, which schedules
 execution on a later event-loop turn. The relevant Extended CONNECT
 setting is advertised only when that protocol's WebSocket policy is
-enabled. The HTTP/3 Client WebSocket path remains disabled. For H2/H3
+enabled. HTTP/3 Client WebSocket is also supported. For H2/H3
 WebSocket CONNECT transactions, C<on_websocket> replaces ordinary
 C<on_headers>/C<on_request> delivery; other HTTP requests are unchanged.
 
@@ -703,7 +704,9 @@ timeout scheduling, writable readiness and connection lifecycle.
 The actual Net::QUIC 0.05 loopback/TLS integration, WebSocket frames,
 ordinary stream isolation, Close and HTTP 400/403 tests passed both
 full upper integration workflows at source b43532e92917d5850b6abc78c16485e3e16acc37.
-H3 Client WebSocket is separate work.
+The separate H3 Client implementation has also passed full integration
+at source a3f429edf66562a55ab23e0d5b55a8e3eb989b7c; see
+Unblock::HTTP::Client for the Client-specific OPTIONS and callbacks.
 
 =head2 attach_quic
 
