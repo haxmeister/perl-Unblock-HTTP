@@ -1,3 +1,36 @@
+## HTTP2 Extended CONNECT WebSocket Server slice (2026-10-20)
+
+Resumed upper Unblock::HTTP feature/high-level-client-server from
+8b21c14a189a728941dfb51f566482f6a499529c. Implemented first
+opt-in H2 WebSocket Server path without modifying the lower engines,
+Unblock::WebSocket, Net::QUIC or Uniform::HTTP. H2 policy
+`http2 => { websocket => 1 }` advertises enable_connect_protocol=1;
+without the flag it remains disabled. Server requires the same
+on_websocket callback and an asynchronous `defer($callback)` hook.
+The HTTP2 engine delivers :protocol websocket CONNECT requests to
+a per-transaction WebSocket Server using on_data streaming; success
+returns HTTP 200 with stream_body=1 and regular HTTP2 streams still
+use unchanged callbacks. Invalid handshakes return HTTP 400,
+application denials HTTP 403. A new _WebSocketH2Body bridge queues
+whole outbound WebSocket frame buffers and defers H2 write/end/reset
+until outside the nghttp2 parser callbacks; stream-local drain
+honors H2 backpressure. No socket transition is used for H2.
+
+Files: lib/Unblock/HTTP/_WebSocketH2Body.pm (new), policy, Server,
+t/13, t/28 policy expectations, t/31-server-websocket-h2.t (new),
+Server POD. t/31 exercises H2 SETTINGS negotiation, on_open DATA,
+two-way WebSocket text frames, ordinary H2 multiplexing, denied and
+invalid handshakes, and cross-stream isolation. This slice is
+NOT YET CI VERIFIED. Current CI must pass before declaring complete.
+Engine/native ABIs remain unmodified.
+
+NEXT: inspect full upper integration CI for the current H2 source,
+correct actual failures, then add graceful Close/END_STREAM and
+backpressure-lifecycle tests. Only then consider H2 unified Client
+connect_websocket; H3 remains disabled. No main/merge/tag/release or
+version bump. Preserve the user's priority of usefulness and
+correctness over repetitive performance sweeps.
+
 ## Unified HTTP1 Client WebSocket FULL CI VERIFIED (2026-10-19)
 
 Latest production/test source commit 65c88e0fa57ad11c753b03ba1745ac832f46de16
