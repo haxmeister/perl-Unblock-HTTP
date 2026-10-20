@@ -415,10 +415,15 @@ before the transaction is terminal. Its exceptions do not undo cleanup.
 C<on_error> retains the engine's arguments: transaction, error, and an
 optional protocol error code. Cancellation alone is not an error.
 
-C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket upgrades
-only when C<on_websocket> is also supplied. The default remains disabled.
-Client upgrades and H2/H3 WebSockets are not yet supported. Extended CONNECT
-advertising stays disabled in H2/H3.
+C<websocket =E<gt> 1> enables server-side HTTP/1.1 WebSocket Upgrade
+and/or HTTP/2 Extended CONNECT, only when C<on_websocket> is supplied.
+Both default to disabled. HTTP/2 WebSockets additionally require the
+C<defer> callback, which must schedule execution on a later event-loop
+turn. H2 Extended CONNECT is advertised only when its WebSocket policy
+is enabled. HTTP/3 Extended CONNECT WebSockets remain unsupported.
+HTTP/1.1 Client Upgrade is documented separately in Unblock::HTTP::Client.
+For H2 WebSocket CONNECT transactions, C<on_websocket> replaces ordinary
+C<on_headers>/C<on_request> delivery; normal HTTP2 requests are unchanged.
 
 =head2 HTTP/1.1 WebSocket Upgrade
 
