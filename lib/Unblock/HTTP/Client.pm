@@ -907,6 +907,10 @@ sub _dispatch {
             # leaving its ordered write queue and the socket unchanged.
             $host->unblock_upgrade($ws);
             $active_op->{websocket} = $ws;
+            # Keep the detached pool bookkeeping alive only until HTTP1
+            # invokes on_finish immediately after this on_switch callback.
+            # The ordinary callback closure intentionally holds weak refs.
+            $active_op->{upgrade_retirement} = [$active_pool, $active_conn];
             $active_conn->{released} = 1; # transferred, never close by pool
             $active_self->_cancel_idle($active_conn)
                 if $active_conn->{idle_cancel};
@@ -923,8 +927,11 @@ sub _dispatch {
         my ($tx) = @_;
         my $active_op = $weak_op or return;
         return if $active_op->is_terminal;
+        my $upgrade_retirement = delete $active_op->{upgrade_retirement};
         my ($active_self, $active_pool, $active_conn) =
-            ($weak_self, $weak_pool, $weak_conn);
+            ($weak_self,
+             $weak_pool || ($upgrade_retirement && $upgrade_retirement->[0]),
+             $weak_conn || ($upgrade_retirement && $upgrade_retirement->[1]));
         return unless $active_self && $active_pool && $active_conn;
         local $active_pool->{callback_depth} =
             ($active_pool->{callback_depth} || 0) + 1;
