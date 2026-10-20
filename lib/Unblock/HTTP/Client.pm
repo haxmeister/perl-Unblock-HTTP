@@ -1444,13 +1444,66 @@ Rejected or malformed handshakes fail the original operation; there is
 no automatic request replay. Calling C<cancel()> before establishment
 uses the usual queued/connecting/active operation cancellation semantics.
 
-HTTP/2 and HTTP/3 WebSocket Extended CONNECT are not yet implemented or
-advertised. Enabling C<websocket =E<gt> 1> for those protocols is rejected
-until their complete streaming transitions are supplied.
+=head1 HTTP/2 WEBSOCKET EXTENDED CONNECT
+
+Opt in with C<http2 =E<gt> { websocket =E<gt> 1 }> and select it with
+C<http_version =E<gt> '2'> in C<connect_websocket()>. If only HTTP/2
+has WebSocket enabled, the method defaults to HTTP/2; if HTTP/1.1
+WebSocket is also enabled, the default remains HTTP/1.1.
+
+    my $client = Unblock::HTTP::Client->new(
+        http2 => { websocket => 1 },
+        connect_stream => sub { ... },
+        defer => sub { ... },
+    );
+    my $operation = $client->connect_websocket(
+        url => 'wss://example.com/chat',
+        http_version => '2',
+        on_open => sub {
+            my ($ws, $tx) = @_;
+            $ws->send_text('hello over HTTP/2');
+        },
+        on_message => sub {
+            my ($ws, $message, $type) = @_;
+        },
+    );
+
+The Client waits for the server's first HTTP/2 SETTINGS frame before
+issuing Extended CONNECT, and requires the peer to advertise
+SETTINGS_ENABLE_CONNECT_PROTOCOL = 1. A peer that does not advertise
+support causes an explicit operation error without submitting CONNECT.
+The request is never automatically downgraded or replayed; one
+waiting connection does not cause repeated TCP connection attempts.
+The framework C<defer> hook must schedule work for a later event-loop
+turn, not execute inline during an HTTP/2 callback.
+
+The HTTP/2 WebSocket handshake uses CONNECT with the websocket
+C<:protocol> pseudo-header and expects status 200. On successful
+response validation the callback C<on_open($ws, $tx)> receives the
+real WebSocket Client and the original H2 Transaction. The
+operation's C<websocket()> accessor returns the same WebSocket.
+Incoming DATA is dispatched to that WebSocket's C<input()>. Outgoing
+WebSocket frame buffers are accepted by an internal per-stream bridge
+and sent through C<$tx-E<gt>write()> on a later deferred turn. Stream
+output congestion waits for C<on_drain()>; graceful WebSocket Close
+eventually sends request END_STREAM. Errors and cancellation reset
+only the affected H2 stream.
+
+Unlike HTTP/1.1 Upgrade, HTTP/2 Extended CONNECT never transfers
+the socket or removes it from the pool. Other ordinary HTTP and
+WebSocket operations can use independent streams on the same
+connection. C<on_finish> therefore runs when the H2 Transaction
+actually ends, not when the WebSocket handshake succeeds. C<shutdown()>
+allows any active WebSocket streams to finish before releasing the
+retiring shared connection, consistent with ordinary active HTTP/2
+requests. The framework continues to feed the H2 engine normally;
+C<unblock_upgrade()> is neither used nor required for HTTP/2.
+
+HTTP/3 WebSocket Extended CONNECT is still unsupported.
 
 =head1 LIMITATIONS
 
-HTTP/2 or HTTP/3 WebSocket upgrades, cross-host Alt-Svc, retries after
+HTTP/3 WebSocket upgrades, cross-host Alt-Svc, retries after
 dispatch, DNS HTTPS discovery and optional framework convenience
 classes are not implemented. Frameworks retain their network transports
 and use their normal writable readiness/QUIC timer paths. This branch
