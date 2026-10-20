@@ -1,3 +1,50 @@
+## HTTP3 Client WebSocket Extended CONNECT in integration testing (2026-10-20)
+
+Continuing from verified H3 Server source b43532e92917d5850b6abc78c16485e3e16acc37
+and upper docs HEAD ef49c5c7507713933cd6779ab9750247b7b0bb27.
+New unified Client opt-in `http3 => { websocket => 1 }` with
+`connect_websocket(url => ..., http_version => '3')`. When H3 is
+the sole enabled WebSocket mode it is the default; otherwise precedence
+is H1, then H2, then H3. The existing RFC9220 handshake helper builds
+and validates the H3 CONNECT. It is STRICT H3 (no replay/downgrade).
+
+The existing QUIC factory creates and starts the H3 engine; its
+on_extension_settings callback wakes the pool only after the current
+peer SETTINGS has been parsed, even if no extension SETTINGS exist.
+The Client checks peer_settings_received and
+peer_extended_connect_enabled before submitting a stream. An existing
+H3 connection waiting for peer SETTINGS does not spawn replacements;
+an explicit negative capability fails the unsent operation.
+Credit-exhausted H3 request() continues to use the existing
+on_request_available one-shot wakeup, requeueing the SAME operation.
+
+After validated HTTP 200 response the actual H3 Transaction owns a
+Unblock::WebSocket::Client; incoming H3 DATA uses on_data and outgoing
+frames use the existing deferred per-stream _WebSocketH2Body bridge.
+The QUIC connection is not detached from its pool; WebSocket Close,
+cancel, error and shutdown follow H3 stream lifecycle, and ordinary
+HTTP and sibling WebSockets can remain multiplexed.
+
+New t/36-client-websocket-h3.t uses ACTUAL Net::QUIC 0.05 localhost
+UDP/TLS with the unified Client and Server. It tests connect factory,
+peer SETTINGS gate, initial echo, a second concurrent WebSocket,
+ordinary H3 request, sibling cancellation, shutdown while a WebSocket
+is live, Close and one terminal callback. Feature branch only:
+- _Policy.pm allows Client H3 WebSocket opt-in
+- Client.pm adds H3 version selection, SETTINGS gate, shared
+  multiplexed WebSocket callbacks and H3 credit-aware admission
+- t/36-client-websocket-h3.t adds real QUIC/TLS regression
+
+Production/test source commit e0fb58628e35e05b0582fadd8e76a342a38c27d9.
+Full CI is RUNNING, not yet verified:
+- Published Net::QUIC: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39515227921
+- Optional Net::QUIC feature: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39515228060
+
+NEXT: correct any actual CI failures, test unsupported peer SETTINGS
+and malformed H3 HTTP 200, publish documentation and confirm both full
+CI workflows. Do not merge, tag, release or bump versions. All H1/H2/H3
+engines, Net::QUIC, Uniform::HTTP and Unblock::WebSocket are READ ONLY.
+
 ## H2 Client lifecycle and H3 Server WebSocket FULL CI VERIFIED (2026-10-20)
 
 After verified H2 Client source bebb92c02d817c3b89bef956e03e846235040b40,
