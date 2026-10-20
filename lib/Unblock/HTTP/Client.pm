@@ -919,8 +919,9 @@ sub _dispatch {
             require Unblock::HTTP::_WebSocketH2Body;
             require Unblock::WebSocket::Client;
             my $active_op = $weak_op or return;
+            my $active_self = $weak_self or return;
             my $bridge = Unblock::HTTP::_WebSocketH2Body->new(
-                transaction => $tx, defer => $self->{factory}{defer},
+                transaction => $tx, defer => $active_self->{factory}{defer},
             );
             my $ws = Unblock::WebSocket::Client->new(
                 %{ $ws_spec->{handshake}->connection_options },
