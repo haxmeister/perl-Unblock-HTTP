@@ -233,8 +233,8 @@ sub connect_websocket {
             $url, http_version => '1.1', %handshake_option,
         );
     my $http_url = "$url";
-    $http_url =~ s/\A(?:ws|wss):/lc(sub request {
-) eq 'ws:' ? 'http:' : 'https:'/ie;
+    $http_url =~ s/\Aws:/http:/i;
+    $http_url =~ s/\Awss:/https:/i;
     my $spec = {
         handshake => $handshake,
         options => \%session_option,
