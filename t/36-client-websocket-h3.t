@@ -222,6 +222,22 @@ is($ordinary_status, 200, 'ordinary H3 request succeeds');
 is($ordinary_body, 'ordinary-ok', 'ordinary H3 response is unchanged');
 is_deeply(\@ordinary, ['/ordinary'], 'ordinary request bypasses WebSocket handler');
 
+my (@denied_error, @denied_finish);
+my $denied = $client->connect_websocket(
+    url => 'wss://localhost/deny', http_version => '3',
+    on_open => sub { die 'denied WebSocket must not open' },
+    on_error => sub { push @denied_error, $_[1] },
+    on_finish => sub { push @denied_finish, $_[0]->state },
+);
+ok(run_until(sub { $denied->is_terminal }),
+    'HTTP3 rejected WebSocket terminates the operation');
+is($denied->state, 'error', 'HTTP 403 WebSocket handshake is an error');
+ok(!$denied->websocket, 'rejected H3 handshake creates no WebSocket');
+is(scalar @denied_error, 1, 'rejected H3 handshake invokes on_error once');
+is_deeply(\@denied_finish, ['error'], 'rejected H3 handshake finishes once');
+is($client->pool_stats->{active}, 2,
+    'denied H3 stream returns credit without affecting two WebSockets');
+
 $second->cancel;
 ok(run_until(sub { $second->is_terminal }),
     'one H3 WebSocket can be cancelled independently');
