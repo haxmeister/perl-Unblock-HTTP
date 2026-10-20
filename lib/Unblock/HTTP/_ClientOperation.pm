@@ -69,9 +69,12 @@ Transaction once the request is issued, without an HTTP transaction wrapper.
 For C<connect_websocket()>, C<websocket()> becomes the established
 C<Unblock::WebSocket::Client> only after the protocol-specific handshake
 has been validated. With HTTP/1.1 the entire transport changes its input
-consumer and the HTTP transaction finishes at 101. With HTTP/2 the
-WebSocket stays on a multiplexed H2 transaction until END_STREAM;
-C<on_finish> reflects that transaction's eventual terminal state.
+consumer and the HTTP transaction finishes at 101. With HTTP/2 or
+HTTP/3 the WebSocket remains on one multiplexed H2/H3 transaction until
+END_STREAM; C<on_finish> reflects that transaction's eventual terminal
+state. HTTP/3 requires peer SETTINGS_ENABLE_CONNECT_PROTOCOL before
+dispatch and retains the original pending operation while waiting for
+QUIC bidirectional stream credit.
 
 C<state()> is queued, connecting, active, complete, error, or cancelled.
 C<error()> reports a connection or transaction error, if any.
