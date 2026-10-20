@@ -190,14 +190,20 @@ sub network_changed {
     return;
 }
 
-# One HTTP1 Upgrade operation transfers the framework-owned transport to
-# Unblock::WebSocket. The resulting socket no longer belongs to the HTTP pool.
+# HTTP1 upgrades transfer the entire socket out of the pool. HTTP2 WebSocket
+# CONNECT stays in the normal multiplexed pool until its stream terminates.
 sub connect_websocket {
     my ($self, @args) = @_;
     croak 'connect_websocket(): expected named arguments' if @args % 2;
     my %option = @args;
-    croak 'connect_websocket(): http1 websocket support is disabled'
-        unless $self->{policy}->websocket_enabled('http/1.1');
+    my $http_version = delete $option{http_version};
+    $http_version = $self->{policy}->websocket_enabled('http/1.1') ? '1.1' : '2'
+        unless defined $http_version;
+    croak 'connect_websocket(): http_version must be 1.1 or 2'
+        if ref($http_version) || $http_version !~ /\A(?:1\.1|2)\z/;
+    my $ws_protocol = $http_version eq '2' ? 'h2' : 'http/1.1';
+    croak "connect_websocket(): $ws_protocol websocket support is disabled"
+        unless $self->{policy}->websocket_enabled($ws_protocol);
     my $url = delete $option{url};
     croak 'connect_websocket(): url is required'
         unless defined($url) && !ref($url) && length($url);
@@ -230,7 +236,7 @@ sub connect_websocket {
     require Unblock::WebSocket::Handshake;
     my ($handshake, $request) =
         Unblock::WebSocket::Handshake->client_request(
-            $url, http_version => '1.1', %handshake_option,
+            $url, http_version => $http_version, %handshake_option,
         );
     my $http_url = "$url";
     $http_url =~ s/\Aws:/http:/i;
@@ -242,7 +248,7 @@ sub connect_websocket {
     };
     return $self->request(
         url => $http_url,
-        http_version => '1.1',
+        http_version => $http_version,
         _websocket_request => $request,
         _websocket_connect => $spec,
         (defined($on_error) ? (on_error => $on_error) : ()),
@@ -260,8 +266,10 @@ sub request {
     my $ws_request = delete $field{_websocket_request};
     croak 'request(): internal WebSocket options must occur together'
         if (!!$ws_spec) != (!!$ws_request);
-    croak 'request(): HTTP1 WebSocket option is disabled'
-        if $ws_spec && !$self->{policy}->websocket_enabled('http/1.1');
+    croak 'request(): WebSocket option is disabled'
+        if $ws_spec && !$self->{policy}->websocket_enabled(
+            $ws_request->version eq '2' ? 'h2' : 'http/1.1'
+        );
     my $url = delete $field{url};
     croak 'request(): url is required' unless defined($url) && !ref($url) && length($url);
     my ($scheme, $host, $port, $authority, $target);
@@ -353,8 +361,9 @@ sub request {
         %field, scheme => $scheme, authority => $authority, target => $target,
     );
     if ($ws_request) {
-        croak 'request(): WebSocket requires HTTP/1.1'
-            unless $version eq 'http/1.1';
+        croak 'request(): WebSocket protocol and handshake version disagree'
+            unless ($version eq 'http/1.1' && $request->version eq '1.1')
+                || ($version eq 'h2' && $request->version eq '2');
         croak 'request(): WebSocket URL and handshake request disagree'
             unless $request->scheme eq $scheme
                 && $request->authority eq $authority
@@ -376,7 +385,7 @@ sub request {
     my $op = Unblock::HTTP::_ClientOperation->new(
         $self, $request, \%callbacks, $version, $origin,
     );
-    $op->{stream_body} = $stream_body;
+    $op->{stream_body} = $ws_spec && $version eq 'h2' ? 1 : $stream_body;
     $op->{websocket_connect} = $ws_spec if $ws_spec;
     if (!$strict_version && $scheme eq 'https'
         && $version eq 'tcp' && $self->{policy}->enabled('h3')) {
@@ -407,7 +416,7 @@ sub request {
         && !$origin->{scheduled}
         && @{ $origin->{connections} } == 1) {
         my $conn = $origin->{connections}[0];
-        if ($self->_usable($conn, $op->{version})) {
+        if ($self->_usable($conn, $op->{version}, $op)) {
             $self->_dispatch($origin, $conn, $op);
             return $op;
         }
@@ -452,10 +461,13 @@ sub _closed {
 }
 
 sub _usable {
-    my ($self, $conn, $version) = @_;
+    my ($self, $conn, $version, $op) = @_;
     return 0 unless _compatible($version, $conn->{protocol});
     return 0 if $conn->{released} || _closed($conn) || _retired($conn)
         || $conn->{credit_blocked};
+    return 0 if $op && $op->{websocket_connect} && $version eq 'h2'
+        && (!$conn->{h2_settings_seen}
+            || $conn->{engine}->peer_setting('enable_connect_protocol') != 1);
     my $capacity = $conn->{protocol} eq 'http/1.1'
         ? 1 : $self->{limit}{max_streams_per_connection};
     return 0 if $conn->{active} >= $capacity;
@@ -591,7 +603,28 @@ sub _pump {
             $self->{pending_count}--;
             next;
         }
-        my ($conn) = grep { $self->_usable($_, $op->{version}) }
+        # A peer SETTINGS frame is mandatory before Extended CONNECT.
+        # Do not create a stream or repeatedly open new TCP connections
+        # while an already-established H2 connection awaits that frame.
+        if ($op->{websocket_connect} && $op->{version} eq 'h2') {
+            my @existing = grep {
+                $_->{protocol} eq 'h2' && !$_->{released}
+                    && !_closed($_) && !_retired($_)
+            } @{ $pool->{connections} };
+            if (@existing && !grep {
+                    $_->{h2_settings_seen}
+                        && $_->{engine}->peer_setting('enable_connect_protocol') == 1
+                } @existing) {
+                last if grep { !$_->{h2_settings_seen} } @existing;
+                shift @{ $pool->{pending} };
+                $self->{pending_count}--;
+                $self->_fail_pending(
+                    $pool, $op, 'peer has not enabled HTTP/2 WebSocket Extended CONNECT',
+                );
+                next;
+            }
+        }
+        my ($conn) = grep { $self->_usable($_, $op->{version}, $op) }
             @{ $pool->{connections} };
         if ($conn) {
             shift @{ $pool->{pending} };
@@ -770,7 +803,8 @@ sub _connected {
     if ($protocol eq 'h2') {
         # A peer may raise its advertised stream limit later.
         $options->{on_settings} = sub {
-            return unless $weak_self && $weak_pool;
+            return unless $weak_self && $weak_pool && $weak_conn;
+            $weak_conn->{h2_settings_seen} = 1;
             $weak_self->_schedule($weak_pool);
         };
     } elsif ($protocol eq 'h3') {
