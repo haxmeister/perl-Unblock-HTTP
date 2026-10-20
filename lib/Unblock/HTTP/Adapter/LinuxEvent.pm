@@ -9,6 +9,7 @@ use Scalar::Util qw(blessed);
 our $VERSION = '0.01';
 
 sub http { $_[0]{unblock_http} }
+sub websocket { $_[0]{unblock_websocket} }
 
 # Override this in a subclass for a cleartext HTTP/2 prior-knowledge port.
 # For TLS, the adapter uses the ALPN chosen by Linux::Event instead.
@@ -29,25 +30,41 @@ sub on_ready ($self) {
     $self->{unblock_http} = $server->attach_stream(
         transport => $self, %select,
     );
+    return;
+}
+
+sub unblock_upgrade ($self, $websocket) {
+    die "unblock_upgrade(): WebSocket input consumer is required\n"
+        unless blessed($websocket) && $websocket->can('input')
+            && $websocket->can('input_eof') && $websocket->can('transport_error')
+            && $websocket->can('resume_output');
+    die "unblock_upgrade(): transport already upgraded\n"
+        if $self->{unblock_websocket};
+    $self->{unblock_websocket} = $websocket;
+    return;
+}
+
+sub _consumer ($self) {
+    return $self->{unblock_websocket} || $self->{unblock_http};
 }
 
 sub on_data ($self, $bytes) {
-    $self->{unblock_http}->input($bytes);
+    $self->_consumer->input($bytes);
 }
 
 sub on_eof ($self) {
-    my $http = $self->{unblock_http};
-    $http->input_eof if $http && $http->want_read;
+    my $consumer = $self->_consumer;
+    $consumer->input_eof if $consumer && $consumer->want_read;
 }
 
 sub on_error ($self, $error) {
-    my $http = $self->{unblock_http};
-    $http->transport_error("$error") if $http;
+    my $consumer = $self->_consumer;
+    $consumer->transport_error("$error") if $consumer;
 }
 
 sub on_drain ($self) {
-    my $http = $self->{unblock_http};
-    $http->resume_output if $http;
+    my $consumer = $self->_consumer;
+    $consumer->resume_output if $consumer;
 }
 
 sub unblock_send ($self, $bytes) {
@@ -74,10 +91,22 @@ Override C<http_server()> to return one shared L<Unblock::HTTP::Server> definiti
 See examples/linux-event-server.pl for a complete program separating application
 behavior from adapter code.
 
-C<http()> returns the attached engine, not a unified connection wrapper.
-C<on_data>, C<on_eof>, C<on_error>, and C<on_drain> deliver transport events.
+C<http()> returns the original attached HTTP engine. C<websocket()> returns
+an established WebSocket engine after a successful HTTP1 upgrade (or undef
+beforehand). C<on_data>, C<on_eof>, C<on_error>, and C<on_drain> deliver
+transport events to the current protocol consumer.
 C<unblock_send>, C<unblock_finish>, and C<unblock_abort> map engine output to
 the Stream's existing queue and shutdown operations.
+
+When the Server enables C<http1 =E<gt> { websocket =E<gt> 1 }>, this
+adapter supplies the required C<unblock_upgrade($websocket)> hook.
+It switches the receive consumer after the HTTP1 engine accepts the 101
+response into the existing write queue. No new stream or socket is created.
+The HTTP1 engine's buffered C<take_remainder()> bytes are delivered by the
+Server transition callback; future data, EOF, errors, and output resumes go
+to the WebSocket engine. This adapter uses ordinary Perl C<input()>; a
+separate NativeABI consumer must still transfer its unconsumed borrowed tail
+at C<INPUT_SWITCH> using the reported consumed-byte count.
 
 TLS uses C<selected_alpn> after readiness. Configure the listener's TLS ALPN
 choices from the Server's C<alpn_protocols> list. Plaintext defaults to HTTP/1.1
