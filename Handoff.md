@@ -1,4 +1,4 @@
-## HTTP2 Extended CONNECT WebSocket Server slice (2026-10-20)
+## HTTP2 Extended CONNECT WebSocket Server FULL CI VERIFIED (2026-10-20)
 
 Resumed upper Unblock::HTTP feature/high-level-client-server from
 8b21c14a189a728941dfb51f566482f6a499529c. Implemented first
@@ -20,16 +20,35 @@ Files: lib/Unblock/HTTP/_WebSocketH2Body.pm (new), policy, Server,
 t/13, t/28 policy expectations, t/31-server-websocket-h2.t (new),
 Server POD. t/31 exercises H2 SETTINGS negotiation, on_open DATA,
 two-way WebSocket text frames, ordinary H2 multiplexing, denied and
-invalid handshakes, and cross-stream isolation. This slice is
-NOT YET CI VERIFIED. Current CI must pass before declaring complete.
+invalid handshakes, Close frame exchange, END_STREAM cleanup,
+post-close HTTP reuse and cross-stream isolation.
+t/32-h2-websocket-bridge.t tests the stream-specific bridge:
+deferred ordered writes, whole-buffer ownership, congestion,
+on_drain resumption, orderly END_STREAM and isolated abort.
 Engine/native ABIs remain unmodified.
 
-NEXT: inspect full upper integration CI for the current H2 source,
-correct actual failures, then add graceful Close/END_STREAM and
-backpressure-lifecycle tests. Only then consider H2 unified Client
-connect_websocket; H3 remains disabled. No main/merge/tag/release or
-version bump. Preserve the user's priority of usefulness and
-correctness over repetitive performance sweeps.
+Production and test source commit
+9e7a122c4d9ae6105ed3997540469a1d67a35e16 PASSED BOTH
+existing full Unblock::HTTP integration workflows:
+- Published Net::QUIC 0.05 / Linux::Event:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39398673128
+- Optional separate Net::QUIC MAX_DATA feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39398673160
+
+Both passed 24 files and 1,010 distribution checks including the
+new t/31 and t/32 tests, all existing live TCP/QUIC integration,
+resource guards and diagnostic benchmark smoke steps. No benchmark
+speedup or quantified performance result is claimed. Subsequent
+documentation commits did not alter production/test source.
+
+NEXT: implement H2 unified Client connect_websocket in a
+separate focused slice. It must respect peer SETTINGS availability
+before Extended CONNECT, multiplexed pool ownership, per-stream
+cancellation and on_finish semantics, and use the same non-reentrant
+deferred DATA bridge. Keep the H2 Server integration verified above.
+H3 WebSockets remain disabled. Follow with targeted real-socket
+H2/TLS adapter integration rather than a repetitive benchmark
+campaign. No main/merge/tag/release or version bump.
 
 ## Unified HTTP1 Client WebSocket FULL CI VERIFIED (2026-10-19)
 
