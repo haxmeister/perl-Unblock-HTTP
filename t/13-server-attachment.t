@@ -141,7 +141,7 @@ for my $case (
     [ { http3 => [] }, qr/hash reference/ ],
     [ { http1 => { websocket => 2 } }, qr/0 or 1/ ],
     [ { http1 => { websocket => 1 } }, qr/on_websocket callback is required/ ],
-    [ { http2 => { websocket => 1 } }, qr/not implemented/ ],
+    [ { http2 => { websocket => 1 } }, qr/on_websocket callback is required/ ],
     [ { http3 => { websocket => 1 } }, qr/not implemented/ ],
     [ { http1 => { transport => $host1 } }, qr/managed/ ],
     [ { http2 => { on_request => $callback } }, qr/managed/ ],
