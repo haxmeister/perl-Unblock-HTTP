@@ -1,3 +1,28 @@
+## Native borrowed-input WebSocket boundary regression (2026-10-19)
+
+Following the verified HTTP1 Server WebSocket slice, added
+t/29-server-websocket-native.t. It exercises the actual HTTP1
+_Native::BorrowedDriver with an attached host, verifies INPUT_SWITCH,
+the exact consumed HTTP handshake prefix, host switch after the 101
+bytes are accepted, and forwards only the unconsumed borrowed suffix
+into the established WebSocket engine. Also tests resubmission of a
+partial HTTP head, later WebSocket messages, and no duplicate remainder.
+
+The existing optional Linux::Event adapter now implements
+unblock_upgrade($ws) by selecting the WebSocket as the input consumer
+while retaining the original HTTP engine and stream's ordered output
+queue. All input, EOF, errors and writable notifications follow the
+current consumer. t/12-linux-event-adapter.t covers the switch and
+lifecycle routing with a fake consumer. This adapter uses the public
+Perl input path, NOT the raw NativeABI. Native providers continue to
+own and forward the unconsumed window at INPUT_SWITCH according to
+the existing ABI; no C ABI changes or engine modifications.
+CI verification pending; do not call this complete before green runs.
+
+NEXT: verify t/12 and t/29 in full CI; fix concrete regressions,
+record both green workflows. Then work on Client connect_websocket.
+No main, merge, tag, release or version bump.
+
 ## HTTP1 Server WebSocket transition VERIFIED (2026-10-19)
 
 Resumed from 9f64ccf9e8ed8d645f5329ee7ef3065d0c4d83a7 on
