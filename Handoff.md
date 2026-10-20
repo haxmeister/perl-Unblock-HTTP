@@ -35,15 +35,38 @@ is live, Close and one terminal callback. Feature branch only:
   multiplexed WebSocket callbacks and H3 credit-aware admission
 - t/36-client-websocket-h3.t adds real QUIC/TLS regression
 
-Production/test source commit e0fb58628e35e05b0582fadd8e76a342a38c27d9.
-Full CI is RUNNING, not yet verified:
-- Published Net::QUIC: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39515227921
-- Optional Net::QUIC feature: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39515228060
+CURRENT REGRESSIONS AND FIXES (unverified pending full CI):
+Initial actual H3 Client/Server WebSocket tests established QUIC/TLS,
+waited for SETTINGS, opened two WebSockets, exchanged frames, used one
+connection and issued ordinary HTTP3 (all confirmed before an
+intentional rejected-CONNECT test). A second WebSocket correctly
+received its server greeting before its echo; the initial expected
+test data was corrected (11aaa5af). A new denied HTTP 403 case exposed
+real callback safety issues:
+1. H3 Client handshake validation threw through the QUIC receive
+   callback; e023b56 stores a handshake error and defers stream-local
+   cancellation, retaining error/on_finish semantics.
+2. HTTP 403 has an ordinary response body, not WebSocket frames;
+   e762a618 ignores error-body DATA after rejection.
+3. Rejected H3 CONNECT reached the ordinary on_request_end handler
+   after the Server had already sent 403, causing a double response;
+   6697bf41 records WebSocket attempts until terminal to suppress
+   unrelated ordinary completion for denied/invalid CONNECT.
+Changes are ONLY on upper Client/Server source.
+t/36 exercises the real QUIC/TLS end-to-end Client, stream sharing,
+rejected handshakes, Close and shutdown; t/37 adds unsupported peer
+SETTINGS, credit starvation, original-operation retry and no
+extra socket creation. The positive t/36 paths and t/37 were seen
+passing in earlier CI attempts. Do not declare final verified until
+both complete suites pass on source 6697bf41e1cf384c930f75c4897da7ac81639fd4:
+- Published Net::QUIC:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516441966
+- Optional Net::QUIC feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516441857
 
-NEXT: correct any actual CI failures, test unsupported peer SETTINGS
-and malformed H3 HTTP 200, publish documentation and confirm both full
-CI workflows. Do not merge, tag, release or bump versions. All H1/H2/H3
-engines, Net::QUIC, Uniform::HTTP and Unblock::WebSocket are READ ONLY.
+NEXT: resolve any remaining real test failures; update Handoff and
+IMPLEMENTATION with final CI and comprehensive Client H3 API. No
+merge, tag, release, version bump, lower engine or QUIC edits.
 
 ## H2 Client lifecycle and H3 Server WebSocket FULL CI VERIFIED (2026-10-20)
 
