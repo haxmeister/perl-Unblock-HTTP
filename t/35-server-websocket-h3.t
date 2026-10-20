@@ -61,6 +61,7 @@ my $definition = Unblock::HTTP::Server->new(
     },
     on_websocket => sub {
         my ($tx, $request) = @_;
+        return undef if $request->target eq '/deny';
         return {
             backend => 'perl',
             on_open => sub {
@@ -207,6 +208,38 @@ ok(run_until(sub { defined $ordinary_response }),
     'ordinary H3 transaction runs alongside WebSocket');
 is($ordinary_response, 200, 'ordinary H3 response remains functional');
 is_deeply(\@ordinary, ['/normal'], 'only GET reached ordinary HTTP handler');
+
+# Denied and malformed H3 WebSocket attempts are rejected per stream,
+# without terminating another WebSocket or the shared QUIC connection.
+my ($deny_handshake, $deny_request) =
+    Unblock::WebSocket::Handshake->client_request(
+        'wss://localhost/deny', http_version => '3',
+    );
+my $deny_status;
+$client_h3->request($deny_request,
+    stream_body => 1,
+    on_response => sub { $deny_status = $_[1]->status },
+);
+ok(run_until(sub { defined $deny_status }),
+    'denied H3 WebSocket gets a final response');
+is($deny_status, 403, 'application denial returns HTTP 403');
+
+require Uniform::HTTP::Request;
+my $bad_request = Uniform::HTTP::Request->new(
+    method => 'CONNECT', protocol => 'websocket',
+    target => '/invalid', scheme => 'https', authority => 'localhost',
+    version => '3',
+    headers => [['Sec-WebSocket-Version' => '12']],
+);
+my $bad_status;
+$client_h3->request($bad_request,
+    stream_body => 1,
+    on_response => sub { $bad_status = $_[1]->status },
+);
+ok(run_until(sub { defined $bad_status }),
+    'malformed H3 WebSocket gets a final response');
+is($bad_status, 400, 'malformed H3 handshake returns HTTP 400');
+ok(!$client_tx->is_terminal, 'invalid sibling streams do not close active WebSocket');
 
 $client_ws->close;
 ok(run_until(sub { $client_ws->close_received }),
