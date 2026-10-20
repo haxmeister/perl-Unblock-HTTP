@@ -909,7 +909,50 @@ sub _dispatch {
     if ($callbacks->{on_error}) {
         $engine_callback{on_error} = $callbacks->{on_error};
     }
-    if ($ws_spec) {
+    if ($ws_spec && $conn->{protocol} eq 'h2') {
+        # Unlike HTTP1, a WebSocket occupies one multiplexed HTTP2 stream.
+        # Its normal transaction lifetime remains active until END_STREAM.
+        # No host socket takeover or HTTP pool detachment is performed.
+        $engine_callback{on_response} = sub {
+            my ($tx, $response) = @_;
+            $ws_spec->{handshake}->validate_client_response($response);
+            require Unblock::HTTP::_WebSocketH2Body;
+            require Unblock::WebSocket::Client;
+            my $active_op = $weak_op or return;
+            my $bridge = Unblock::HTTP::_WebSocketH2Body->new(
+                transaction => $tx, defer => $self->{factory}{defer},
+            );
+            my $ws = Unblock::WebSocket::Client->new(
+                %{ $ws_spec->{handshake}->connection_options },
+                %{ $ws_spec->{options} },
+                transport => $bridge,
+                ($callbacks->{on_error}
+                    ? (on_error => $callbacks->{on_error}) : ()),
+            );
+            $bridge->websocket($ws);
+            $active_op->{websocket} = $ws;
+            $active_op->{websocket_bridge} = $bridge;
+            $ws_spec->{on_open}->($ws, $tx)
+                if $ws_spec->{on_open};
+        };
+        $engine_callback{on_data} = sub {
+            my $active_op = $weak_op or return;
+            my $ws = $active_op->{websocket}
+                or die 'HTTP2 WebSocket DATA arrived before validated response';
+            $ws->input($_[1]);
+        };
+        $engine_callback{on_drain} = sub {
+            my $active_op = $weak_op or return;
+            my $bridge = $active_op->{websocket_bridge} or return;
+            $bridge->resume;
+        };
+        $engine_callback{on_complete} = sub {
+            my $active_op = $weak_op or return;
+            my $ws = $active_op->{websocket} or return;
+            $ws->input_eof if !$ws->is_closed;
+        };
+    }
+    elsif ($ws_spec) {
         # Validation must happen before HTTP1 yields its byte-stream.
         # Invalid 101 replies and ordinary HTTP rejection responses are
         # failed handshakes, not successful established WebSockets.
@@ -970,6 +1013,9 @@ sub _dispatch {
         local $active_pool->{callback_depth} =
             ($active_pool->{callback_depth} || 0) + 1;
         $active_op->{transaction} ||= $tx;
+        if (my $bridge = delete $active_op->{websocket_bridge}) {
+            $bridge->detach;
+        }
         $active_op->{state} = $active_op->{timeout_error} ? 'error'
             : $tx->is_cancelled ? 'cancelled'
             : $tx->is_error ? 'error' : 'complete';
@@ -1006,9 +1052,12 @@ sub _dispatch {
     };
     my $no_credit = 0;
     my $ok = eval {
-        die "connect_websocket(): requires an upgrade-capable HTTP1 transport\n"
-            if $ws_spec && ($conn->{protocol} ne 'http/1.1'
-                || !$conn->{host}->can('unblock_upgrade'));
+        die "connect_websocket(): requires HTTP1 or HTTP2 transport\n"
+            if $ws_spec && $conn->{protocol} ne 'http/1.1'
+                && $conn->{protocol} ne 'h2';
+        die "connect_websocket(): HTTP1 requires unblock_upgrade()\n"
+            if $ws_spec && $conn->{protocol} eq 'http/1.1'
+                && !$conn->{host}->can('unblock_upgrade');
         $op->{transaction} = $conn->{engine}->request(
             $op->{request},
             stream_body => $op->{stream_body},
