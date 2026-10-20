@@ -164,4 +164,38 @@ ok(!eval { $client->connect_websocket(url => 'ws://example.test/chat'); 1 },
     'Client shutdown also rejects new WebSocket operations');
 like($@, qr/shut down/, 'WebSocket operations honor Client shutdown');
 
+# An HTTP 403 response is a failed handshake, never a WebSocket.
+# Validation happens before the HTTP1 parser can change protocol.
+my $reject_definition = Unblock::HTTP::Server->new(
+    http1 => { websocket => 1 },
+    on_request => sub { die 'rejected upgrade is not ordinary HTTP' },
+    on_websocket => sub { return undef },
+);
+my ($reject_host, @reject_errors, @reject_finished);
+my $reject_client = Unblock::HTTP::Client->new(
+    http1 => { websocket => 1 },
+    connect_stream => sub {
+        my ($origin, $alpn, $ready) = @_;
+        my $ch = Local::WSWireHost->new;
+        my $sh = Local::WSWireHost->new;
+        $sh->{consumer} = $reject_definition->attach_stream(transport => $sh);
+        push @pairs, [$ch, $sh];
+        $reject_host = $ch;
+        $ch->{consumer} = $ready->(transport => $ch, alpn => 'http/1.1');
+    },
+    defer => sub { push @defers, $_[0] },
+);
+my $denied = $reject_client->connect_websocket(
+    url => 'ws://example.test/denied',
+    on_open => sub { die 'denied WebSocket must not open' },
+    on_error => sub { push @reject_errors, $_[1] },
+    on_finish => sub { push @reject_finished, $_[0]->state },
+);
+pump();
+is($denied->state, 'error', 'HTTP 403 results in a failed WebSocket handshake');
+ok(!$denied->websocket, 'failed handshake creates no established WebSocket');
+is($reject_host->{upgrades}, 0, 'rejected handshake does not change input owner');
+is(scalar @reject_errors, 1, 'handshake error delivered once');
+is_deeply(\@reject_finished, ['error'], 'rejected handshake has one terminal callback');
+
 done_testing;
