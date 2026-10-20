@@ -1,4 +1,4 @@
-## HTTP3 Client WebSocket Extended CONNECT in integration testing (2026-10-20)
+## HTTP3 Client WebSocket Extended CONNECT FULL CI VERIFIED (2026-10-20)
 
 Continuing from verified H3 Server source b43532e92917d5850b6abc78c16485e3e16acc37
 and upper docs HEAD ef49c5c7507713933cd6779ab9750247b7b0bb27.
@@ -35,38 +35,41 @@ is live, Close and one terminal callback. Feature branch only:
   multiplexed WebSocket callbacks and H3 credit-aware admission
 - t/36-client-websocket-h3.t adds real QUIC/TLS regression
 
-CURRENT REGRESSIONS AND FIXES (unverified pending full CI):
-Initial actual H3 Client/Server WebSocket tests established QUIC/TLS,
-waited for SETTINGS, opened two WebSockets, exchanged frames, used one
-connection and issued ordinary HTTP3 (all confirmed before an
-intentional rejected-CONNECT test). A second WebSocket correctly
-received its server greeting before its echo; the initial expected
-test data was corrected (11aaa5af). A new denied HTTP 403 case exposed
-real callback safety issues:
-1. H3 Client handshake validation threw through the QUIC receive
-   callback; e023b56 stores a handshake error and defers stream-local
-   cancellation, retaining error/on_finish semantics.
-2. HTTP 403 has an ordinary response body, not WebSocket frames;
-   e762a618 ignores error-body DATA after rejection.
-3. Rejected H3 CONNECT reached the ordinary on_request_end handler
-   after the Server had already sent 403, causing a double response;
-   6697bf41 records WebSocket attempts until terminal to suppress
-   unrelated ordinary completion for denied/invalid CONNECT.
-Changes are ONLY on upper Client/Server source.
-t/36 exercises the real QUIC/TLS end-to-end Client, stream sharing,
-rejected handshakes, Close and shutdown; t/37 adds unsupported peer
-SETTINGS, credit starvation, original-operation retry and no
-extra socket creation. The positive t/36 paths and t/37 were seen
-passing in earlier CI attempts. Do not declare final verified until
-both complete suites pass on source 6697bf41e1cf384c930f75c4897da7ac81639fd4:
-- Published Net::QUIC:
-  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516441966
-- Optional Net::QUIC feature:
-  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516441857
+REJECTED HANDSHAKE LIFECYCLE CORRECTIONS:
+- e023b56 records H3 invalid-handshake errors and defers a reset
+  outside the native QUIC receive callback.
+- e762a618 discards ordinary 400/403 HTTP response bodies after
+  failed WebSocket validation rather than parsing them as frames.
+- 6697bf41 records server-side WebSocket attempts until terminal,
+  so even denied CONNECT request-end callbacks cannot run the
+  ordinary HTTP responder a second time.
+- The operation reports state "error" and on_error once for
+  invalid handshake. The actual H3 Transaction has state
+  "cancelled" after its intentional stream-local reset; this
+  native distinction is preserved, not masked. Regression
+  t/36 now checks both (a3f429ed).
+Only upper Client/Server code was changed; all lower libraries
+and C ABIs remain untouched.
 
-NEXT: resolve any remaining real test failures; update Handoff and
-IMPLEMENTATION with final CI and comprehensive Client H3 API. No
-merge, tag, release, version bump, lower engine or QUIC edits.
+FINAL PRODUCTION/TEST SOURCE SHA:
+a3f429edf66562a55ab23e0d5b55a8e3eb989b7c
+BOTH FULL INTEGRATION WORKFLOWS PASSED:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516674510
+- Optional MAX_DATA QUIC feature:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39516674529
+Both passed 29 distribution files, 1,170 checks including
+real QUIC/TLS t/35, t/36, and t/37, and the existing live TCP/QUIC
+integration, resource tests and diagnostic smoke steps. No measured
+performance improvement is claimed. Later commits modified
+documentation only.
+
+NEXT: API/docs/example polish or explicitly authorized readiness audit
+for coordinated branch merging. Do not automatically begin release
+preparation. Consider focused WebSocket application/adapter examples
+and lifecycle edge tests, not another general profiling campaign.
+No main modifications, merges, tags, releases, version changes or
+lower dependency edits without explicit new approval.
 
 ## H2 Client lifecycle and H3 Server WebSocket FULL CI VERIFIED (2026-10-20)
 
