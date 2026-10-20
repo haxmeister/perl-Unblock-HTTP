@@ -183,6 +183,26 @@ ok(!$ws_tx->is_terminal, 'malformed sibling request cannot disrupt active WS');
 is_deeply(\@errors, [], 'independent streams report no HTTP2 errors');
 is_deeply($host->{aborted}, [], 'WebSocket does not abort H2 connection');
 
+$client_ws->close;
+$ws_tx->write($client_ws->output);
+pump();
+ok($server_ws->close_received, 'server received WebSocket Close frame');
+ok($client_ws->close_received, 'client received WebSocket Close reply');
+$ws_tx->end;
+pump();
+ok($server_tx->is_terminal, 'server WebSocket H2 transaction terminates after END_STREAM');
+ok($ws_tx->is_terminal, 'client WebSocket H2 transaction also terminates');
+is_deeply($host->{aborted}, [], 'WebSocket Close does not abort H2 transport');
+
+my $after_close = '';
+$h2client->request(
+    method => 'GET', target => '/after-close',
+    scheme => 'https', authority => 'example.test',
+    on_data => sub { $after_close .= $_[1] },
+);
+pump();
+is($after_close, 'ordinary-ok', 'HTTP2 remains usable after WebSocket Close');
+
 for my $case (
     [ sub {
         Unblock::HTTP::Server->new(
