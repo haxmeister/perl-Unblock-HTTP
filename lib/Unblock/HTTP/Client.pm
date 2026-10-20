@@ -1604,7 +1604,12 @@ Incoming DATA calls the WebSocket's C<input()> directly. C<defer> must
 not execute callback work inline within QUIC or H3 receive callbacks.
 A refused or invalid HTTP/3 handshake records an operation error and
 defers stream-local cancellation, without throwing out of the QUIC
-receive dispatch. Ordinary HTTP3 requests are unaffected.
+receive dispatch. The operation reports C<state() eq 'error'> and invokes
+C<on_error($tx, $message)> once; the actual H3 Transaction passed to
+C<on_finish> reports C<cancelled> because the stream is intentionally
+reset, not because the HTTP/3 parser discovered a protocol error.
+This is the same distinction as an active request timeout. Ordinary
+HTTP3 requests are unaffected.
 
 The QUIC connection remains multiplexed and pooled throughout. A
 WebSocket occupies one H3 request stream; independent WebSockets and
