@@ -949,7 +949,23 @@ sub _dispatch {
         # No host socket takeover or HTTP pool detachment is performed.
         $engine_callback{on_response} = sub {
             my ($tx, $response) = @_;
-            $ws_spec->{handshake}->validate_client_response($response);
+            # A rejected H3 handshake must not throw out of Net::QUIC's
+            # receive dispatch. Defer a reset of this stream only.
+            my $valid = eval {
+                $ws_spec->{handshake}->validate_client_response($response);
+                1;
+            };
+            if (!$valid) {
+                die $@ if $conn->{protocol} ne 'h3';
+                my $active_op = $weak_op or return;
+                $active_op->{websocket_handshake_error} =
+                    "$@" || 'HTTP3 WebSocket handshake failed';
+                my $active_self = $weak_self or return;
+                $active_self->{factory}{defer}->(sub {
+                    $tx->cancel unless $tx->is_terminal;
+                });
+                return;
+            }
             require Unblock::HTTP::_WebSocketH2Body;
             require Unblock::WebSocket::Client;
             my $active_op = $weak_op or return;
@@ -1051,15 +1067,19 @@ sub _dispatch {
         if (my $bridge = delete $active_op->{websocket_bridge}) {
             $bridge->detach;
         }
-        $active_op->{state} = $active_op->{timeout_error} ? 'error'
+        $active_op->{state} = ($active_op->{timeout_error}
+            || $active_op->{websocket_handshake_error}) ? 'error'
             : $tx->is_cancelled ? 'cancelled'
             : $tx->is_error ? 'error' : 'complete';
         $active_op->{error} = $active_op->{timeout_error}
+            || $active_op->{websocket_handshake_error}
             || ($tx->is_error ? $tx->error : undef);
         $active_op->_cancel_timer;
         $active_conn->{active}--;
-        if ($active_op->{timeout_error} && $callbacks->{on_error}) {
-            eval { $callbacks->{on_error}->($tx, $active_op->{timeout_error}); 1 }
+        if (($active_op->{timeout_error}
+             || $active_op->{websocket_handshake_error})
+            && $callbacks->{on_error}) {
+            eval { $callbacks->{on_error}->($tx, $active_op->{error}); 1 }
                 or warn $@;
         }
         my $ok = eval {
