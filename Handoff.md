@@ -1,4 +1,4 @@
-## H2 Client lifecycle VERIFIED and H3 Server WebSocket in progress (2026-10-20)
+## H2 Client lifecycle and H3 Server WebSocket FULL CI VERIFIED (2026-10-20)
 
 After verified H2 Client source bebb92c02d817c3b89bef956e03e846235040b40,
 added t/34-client-websocket-h2-lifecycle.t. It tests a denied
@@ -17,7 +17,7 @@ Both passed 26 distribution test files / 1,078 checks, plus existing
 live TCP/QUIC and benchmark smoke steps. H2 Client feature remains
 complete; no lower-library modifications.
 
-NEW H3 SERVER SLICE (unverified): On the upper feature branch only,
+NEW H3 SERVER SLICE (verified): On the upper feature branch only,
 Policy now allows server opt-in http3 => { websocket => 1 } and
 advertises enable_extended_connect only when enabled. Server uses
 a new per-H3-transaction on_data handler plus existing deferred
@@ -35,17 +35,20 @@ production/test source b43532e92917d5850b6abc78c16485e3e16acc37.
 The first complete full CI workflow PASSED:
 - Published Net::QUIC 0.05:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39513252507
-The optional MAX_DATA workflow has passed distribution and live QUIC
-integration stages; final diagnostic smoke stage was pending at this
-checkpoint:
+The optional MAX_DATA FULL workflow has also PASSED:
 - Optional MAX_DATA:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39513252547
-Do not call BOTH full workflows verified until optional run concludes.
+BOTH complete workflows confirm 27 distribution test files / 1,102
+checks, including t/34 and real QUIC/TLS t/35, plus all existing
+live TCP/QUIC integration, resource guards, and diagnostic smoke
+steps. No speedup is asserted. All lower protocol repositories
+remain UNMODIFIED, and HTTP/3 Client WebSocket is still disabled.
 
-NEXT: confirm final optional CI conclusion and update handoff, then
-implement H3 Client connect_websocket as a separate opt-in milestone
-with peer SETTINGS gating, credit wakeups and stream-local lifecycle,
-not implicit fallback. No new performance sweep.
+NEXT: implement H3 Client connect_websocket as a separate opt-in milestone
+with peer SETTINGS gating, QUIC stream-credit wakeups, per-transaction
+WebSocket output bridge and stream-local lifecycle, not implicit
+fallback. Then verify full H3 client-to-unified-server real QUIC/TLS.
+No new profiling sweep, merge, tag or release.
 All lower HTTP engines, Net::QUIC, Uniform::HTTP and WebSocket are
 READ-ONLY. No main edits, merges, tags, releases or version bumps.
 
