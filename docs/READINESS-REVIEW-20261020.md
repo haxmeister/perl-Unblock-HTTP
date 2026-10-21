@@ -39,6 +39,9 @@ be checked separately before calling that coverage verified.
   Linux::Event adapter, H1 default or H2 prior knowledge by environment.
 - examples/linux-event-quic-websocket-server.pl: one H3 app definition,
   QUIC/TLS server manager, one Linux::Event UDP socket and timer.
+- examples/linux-event-websocket-client.pl: shared H1/H2 Client,
+  event-loop TCP connection factory, socket-consumer handoff and
+  application-only WebSocket callbacks; cleartext local demo.
 - docs/WEBSOCKET-COOKBOOK.md: commands, app-versus-adapter separation,
   TLS caveats, Client invocation, ownership checklist.
 - lib/Unblock/HTTP/Integration.pm: the event-loop-neutral contract.
@@ -70,11 +73,12 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
    interoperability test. H3 is covered by real QUIC/TLS loopback using
    the project's engines; third-party RFC 8441/9220 peers have not been
    established by these tests.
-4. **Connection factories remain framework callbacks.** Server examples
-   are runnable, but no built-in generic TCP/TLS connector or complete
-   standalone shared-Client Linux::Event factory is shipped for every
-   protocol. Do not imply that `connect_websocket` creates framework
-   sockets with no adapter code.
+4. **Connection factories remain framework callbacks.** A runnable
+   Linux::Event shared Client example now covers local H1/H2 TCP
+   sockets. A generic framework-independent TCP/TLS connector and a
+   standalone application H3 Client QUIC/TLS factory are still not
+   shipped. Do not imply that `connect_websocket` creates sockets
+   without adapter code.
 5. **Deliberately absent features.** Cross-host Alt-Svc routing, DNS
    HTTPS record discovery, post-dispatch replay and automatic protocol
    downgrade for explicit WebSocket version selection are not supplied.
@@ -84,11 +88,11 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
 
 First verify the example compilation and new live H1/H2 WebSocket
 regression in both CI tracks, fixing only evidence-based failures.
-Next, add a small reusable shared-Client transport-factory example for
-a host framework, keeping application code and adapter code separate.
-After that, test an actual TLS ALPN H2 WebSocket exchange and at least
-one external Extended CONNECT peer if the required test environment is
-available. Do not start a broad profiling or release campaign.
+The shared-Client TCP transport example has now been added. Next,
+test a real TLS ALPN H2 WebSocket exchange and, if test tools are
+available, at least one external Extended CONNECT peer. A separate
+H3 QUIC/TLS shared Client factory example can follow the proven t/36
+harness. Do not start a broad profiling or release campaign.
 
 Dependencies explicitly remain read-only: Unblock::HTTP1/2/3,
 Unblock::WebSocket, Uniform::HTTP and Net::QUIC. All implementation
