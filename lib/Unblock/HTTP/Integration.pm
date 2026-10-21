@@ -15,13 +15,15 @@ Unblock::HTTP::Integration - Attach framework transports to HTTP engines
 
 =head1 IMPLEMENTATION STATUS
 
-This feature branch supplies reusable Server policy and direct engine
-attachment, with bounded buffered or streamed Server callbacks. It requires
-the coordinated engine feature branches. Automatic WebSocket transitions,
-shared Client factories and bounded pooling are now in progress. Validated
-Cross-host Alt-Svc, post-dispatch retries and WebSocket transitions remain
-later stages. Authenticated same-host Alt-Svc and unsent fallback are available.
-See docs/IMPLEMENTATION.md in the repository.
+This feature branch supplies reusable Server policy, direct engine
+attachment, and the shared pooled Client with buffered or streamed callbacks.
+It requires the coordinated engine feature branches. HTTP1 Upgrade and
+HTTP2/HTTP3 WebSocket Extended CONNECT are implemented for Client and
+Server; H3 Client/Server exchanges are verified over real QUIC/TLS.
+Authenticated same-host Alt-Svc and unsent connection fallback are
+implemented. Cross-host Alt-Svc, post-dispatch retries and generic
+framework-managed connection factories remain outside this layer.
+See docs/IMPLEMENTATION.md for current implementation status.
 
 =head1 TCP AND TLS SERVERS
 
@@ -184,6 +186,71 @@ never reached an engine calls on_error/on_finish with the request operation
 handle rather than pretending that an engine transaction exists. Do not
 automatically retry requests when connection outcome is ambiguous.
 
+=head1 WEBSOCKET ATTACHMENT AND LIFECYCLE
+
+For HTTP1 the host implements C<unblock_upgrade($websocket)> to switch
+the input consumer on the same TCP/TLS stream after its ordered output
+queue accepts the HTTP 101 response. C<Unblock::HTTP::Adapter::LinuxEvent>
+provides this hook. A native borrowed-buffer provider must hand its
+unconsumed input window to the new consumer exactly once. The HTTP1
+Client releases ownership of this socket to the WebSocket host; ordinary
+HTTP pool shutdown does not close it.
+
+For HTTP2 and HTTP3, no host-side socket or QUIC stream takeover is
+required. Enable WebSocket on the Server definition for each protocol:
+
+    http2 => { websocket => 1 },
+    http3 => { websocket => 1 },
+    defer => sub { $framework->defer($_[0]) },
+    on_websocket => sub {
+        my ($tx, $request) = @_;
+        return {
+            on_message => sub {
+                my ($ws, $bytes, $type) = @_;
+                $ws->send_text($bytes) if $type eq 'text';
+            },
+        };
+    },
+
+The framework's C<defer> hook MUST schedule on a later event-loop turn,
+not execute inline while an H2/H3 parser or QUIC callback is active.
+The Server processes HTTP Extended CONNECT and creates one WebSocket
+session per request Transaction, with HTTP 200 on success. That session
+receives DATA from the Transaction and sends its frames through a
+stream-local deferred output bridge. Independent WebSocket and ordinary
+HTTP streams continue on the same connection. Invalid/declined
+handshakes return HTTP 400/403 without changing the transport.
+
+The unified Client also accepts C<connect_websocket()> with explicit
+C<http_version =E<gt> '1.1'>, C<'2'> or C<'3'>. H2/H3 wait for the
+current peer SETTINGS_ENABLE_CONNECT_PROTOCOL setting before issuing
+CONNECT; H3 additionally respects QUIC bidirectional request-stream
+credit. An unsuccessful handshake reports an operation error, and the
+framework keeps ownership of the pooled connection while that one
+stream is closed. WebSocket Close and shutdown preserve ordinary
+multiplexed transaction lifetimes.
+
+Reference examples separate application callbacks from adapter setup:
+
+=over 4
+
+=item *
+
+F<examples/linux-event-websocket-server.pl> serves H1 Upgrade or H2
+prior-knowledge Extended CONNECT and ordinary HTTP on a TCP listener.
+
+=item *
+
+F<examples/linux-event-quic-websocket-server.pl> serves H3 Extended
+CONNECT over QUIC/TLS with a Linux::Event UDP socket and one replaceable
+timer.
+
+=back
+
+Neither example makes the core classes depend on Linux::Event. For
+the exact Client transport factory requirements, see the Client POD
+and this document's C<SHARED CLIENT FACTORIES> section.
+
 =head1 OPTIONAL LINUX::EVENT ADAPTER
 
 L<Unblock::HTTP::Adapter::LinuxEvent> is an optional Stream subclass.
@@ -191,16 +258,20 @@ Override C<http_server()> to return the shared Server definition. It attaches
 on readiness and feeds input directly to the selected engine. Application
 callbacks belong to the definition, not to each Stream subclass.
 
-See examples/linux-event-server.pl and examples/linux-event-quic-server.pl.
-This adapter is a reference integration; it is not loaded by core classes.
+See examples/linux-event-server.pl, examples/linux-event-websocket-server.pl,
+and examples/linux-event-quic-websocket-server.pl. This reference
+integration is not loaded by core classes.
 
 =head1 REMAINING CONTRACT WORK
 
-The final application API requires transaction receive-mode selection,
-terminal notification, per-stream pause/resume, and protocol transition hooks.
-The existing whole-buffer transport contract remains in force. Hard buffer
-limits, oversized writes, borrowed-buffer ownership across transitions, and
-all terminal paths still need cross-engine verification.
+The receive-mode, terminal-notification and H1/H2/H3 WebSocket
+transition paths are implemented on the coordinated feature branches.
+The whole-buffer transport contract remains in force. Adapter authors
+must still handle hard buffer limits, borrowed-input ownership across
+native H1 switches, and framework-specific shutdown semantics.
+Cross-engine real-wire and QUIC/TLS coverage is in the test suite;
+future adapter implementations should exercise those ownership rules
+before claiming production support.
 
 =head1 LICENSE
 
