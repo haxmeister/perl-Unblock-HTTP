@@ -53,6 +53,12 @@ jobs:
           perl Makefile.PL
           make
           make test
+      - name: Check documented Linux::Event examples
+        run: |
+          for example in examples/*.pl; do
+            echo "Checking $example"
+            perl -Iblib/lib -Iblib/arch -c "$example"
+          done
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
           prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
