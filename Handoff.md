@@ -39,18 +39,22 @@ VERIFICATION:
   H1/H2 WebSocket regression and example compile checks:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39524812155
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39524812151
-- Changes after the verified regression introduced the new Client
-  example and documentation only (no core protocol source changes).
-  The Client example compiled successfully on both tracks at
-  source c3c1bc53122520134dea8c8319b6c7c19e6d6611, while the
-  full workflows are still pending on that and latest docs:
+- The new Client example source c3c1bc53122520134dea8c8319b6c7c19e6d6611
+  PASSED BOTH FULL workflows, including explicit compile of ALL five
+  examples and the new real TCP WebSocket xt test:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139986
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139977
+  29 distribution files / 1,170 checks and 14 primary real
+  Linux::Event integration files / 702 checks, plus pre-existing
+  resource and diagnostic smoke stages, passed. xt/linux-event-websocket.t
+  adds 16 real TCP assertions for H1/H2. Neither workflow modified any
+  lower dependency and no throughput change is claimed.
+- Documentation-only follow-up source e3b65492880fbf375a7d30d5ccb73d31d874600f
+  had additional CI still underway at this checkpoint:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225290
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225269
-- DO NOT claim final full-source CI verification for later docs
-  until their actual conclusions are checked. No throughput claims;
-  existing diagnostic smoke benchmarks unchanged.
+  Follow-up README/Handoff corrections and example comment were
+  [skip ci]. No production or test logic changed after c3c1bc53.
 
 NEXT: check outstanding workflow conclusions and record final
 checkpoint. Then prefer one targeted TLS ALPN H2 WebSocket
