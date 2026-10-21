@@ -238,6 +238,8 @@ Reference examples separate application callbacks from adapter setup:
 
 F<examples/linux-event-websocket-server.pl> serves H1 Upgrade or H2
 prior-knowledge Extended CONNECT and ordinary HTTP on a TCP listener.
+F<examples/linux-event-websocket-client.pl> supplies the matching
+shared Client's TCP transport factory with cleartext local connections.
 
 =item *
 
