@@ -2,15 +2,19 @@
 
 These tests use the real protocol engines and local kernel sockets. They are
 intentionally excluded from the CPAN tarball because Linux::Event is an
-optional host framework.
+optional host framework. The test-only Linux::Event adapter fixture lives
+under xt/lib, not the installable lib/ tree, and is never shipped.
 
 Run after installing Unblock::HTTP1/2/3, Net::QUIC, and Linux::Event 0.117+:
 
     perl Makefile.PL
     make
     make test
-    prove -v -b xt/linux-event-tcp.t xt/linux-event-websocket.t xt/linux-event-websocket-tls.t xt/linux-event-quic.t
+    prove -v -b xt/linux-event-adapter.t xt/linux-event-tcp.t xt/linux-event-websocket.t xt/linux-event-websocket-tls.t xt/linux-event-quic.t
 
+- linux-event-adapter.t: mocked lifecycle tests for the fixture in
+  xt/lib/Unblock/HTTP/Adapter/LinuxEvent.pm; no supported adapter module
+  is installed or bundled by Unblock::HTTP.
 - linux-event-tcp.t: HTTP/1.1 and HTTP/2 prior-knowledge round trips with
   Linux::Event listener/stream objects and the unified Client/Server API.
 - linux-event-websocket.t: real TCP HTTP/1.1 Upgrade and HTTP/2
