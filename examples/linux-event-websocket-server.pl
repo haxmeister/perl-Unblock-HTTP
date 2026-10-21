@@ -48,14 +48,6 @@ use Scalar::Util qw(blessed);
 sub http { $_[0]{unblock_http} }
 sub websocket { $_[0]{unblock_websocket} }
 
-# Override this in a subclass for a cleartext HTTP/2 prior-knowledge port.
-# For TLS, the adapter uses the ALPN chosen by Linux::Event instead.
-sub http_protocol { undef }
-
-sub http_server ($self) {
-    die "http_server() must return a shared Unblock::HTTP::Server definition\n";
-}
-
 sub on_ready ($self) {
     my $server = $self->http_server;
     die "http_server() must return a shared Unblock::HTTP::Server definition\n"
