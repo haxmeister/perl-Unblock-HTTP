@@ -104,7 +104,26 @@ concurrent normal H3 requests, denial, Close and shutdown. The separate
 t/37-client-h3-websocket-admission.t tests unsupported peer SETTINGS
 and QUIC stream-credit exhaustion without extra connections.
 
-## 4. Create the application-facing Client
+## 4. Run an application-facing WebSocket Client
+
+Working example:
+[examples/linux-event-websocket-client.pl](../examples/linux-event-websocket-client.pl).
+
+Against the H1 server from section 1:
+
+    perl -Iblib/lib examples/linux-event-websocket-client.pl 127.0.0.1 8080 1.1
+
+Against the H2 prior-knowledge server from section 2:
+
+    perl -Iblib/lib examples/linux-event-websocket-client.pl 127.0.0.1 8081 2
+
+This example separates its application callbacks from the Linux::Event
+TCP transport factory and per-socket consumer. It sends one text message,
+prints the echo, and closes the WebSocket. These two commands are
+CLEAR-TEXT local test examples; for production WSS the framework
+must establish authenticated TLS and select the negotiated ALPN.
+The H3 path uses a separate QUIC factory, as in the real-QUIC
+t/36-client-websocket-h3.t integration test.
 
 The same method works for all three protocols. Choose only a protocol
 you enabled on the Client constructor:
