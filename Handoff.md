@@ -1,4 +1,4 @@
-## Authenticated TLS/ALPN H2 WebSocket live integration (2026-10-20)
+## Authenticated TLS/ALPN H2 WebSocket FULL CI VERIFIED (2026-10-20)
 
 Continued from verified WebSocket examples readiness checkpoint
 ddc18408fc0c0b8f0f1029a433cbc86a4a06568d.
@@ -21,15 +21,24 @@ latest test+workflow source afdb47d578995d56ba0b4d201a4b663714b61c99:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067422
 - Optional QUIC MAX_DATA:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067425
-CI distribution and examples steps have passed, TLS live test stage
-still underway at initial handoff update. Do not claim TLS test PASS
-until the complete live test stage succeeds; fix actual failures.
+BOTH FULL WORKFLOWS NOW PASSED on source afdb47d578995d56ba0b4d201a4b663714b61c99:
+- Published Net::QUIC 0.05 integration run 39530067422: PASS.
+- Optional MAX_DATA feature integration run 39530067425: PASS.
+Both passed 29 distribution files / 1,170 checks; ALL example
+syntax checks; and 15 live Linux::Event test files / 719 checks,
+including 17 new authenticated H2 TLS/ALPN WebSocket checks.
+Existing live TCP/QUIC, resource guards and diagnostic smoke steps
+also succeeded; these are not speed thresholds and no performance
+gain is claimed. Lower libraries were not modified. The only changes
+after tested source were docs/Handoff notes marked [skip ci].
 
-NEXT: confirm both CI conclusions; update docs/READINESS-REVIEW-20261020.md
-and WebSocket cookbook to distinguish verified TLS/ALPN coverage from
-independent third-party Extended CONNECT interoperability. Continue
-focused correctness tests, not broad benchmarks. No main, merge,
-release, tag, version bump or lower-engine changes.
+NEXT: independently verify RFC8441 / RFC9220 Extended CONNECT
+against another HTTP implementation if a suitable tool/peer is
+available. Do not mistake this project's real TLS ALPN or QUIC
+end-to-end tests for independent peer interoperability. A runnable
+Linux::Event H3 shared-Client QUIC factory example is another
+targeted developer-experience gap. Do not start a release audit,
+profile campaign, merge or tag. All lower libraries remain read-only.
 
 ## WebSocket runnable examples and readiness review (2026-10-20)
 
