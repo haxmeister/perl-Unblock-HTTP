@@ -1,3 +1,36 @@
+## Authenticated TLS/ALPN H2 WebSocket live integration (2026-10-20)
+
+Continued from verified WebSocket examples readiness checkpoint
+ddc18408fc0c0b8f0f1029a433cbc86a4a06568d.
+New xt/linux-event-websocket-tls.t is a real Linux::Event TCP/TLS
+Client+Server regression for RFC8441 HTTP2 WebSocket Extended CONNECT:
+it generates a localhost openssl certificate with SAN, runs a TLS
+Listener advertising only h2 ALPN and a TLS Client explicitly
+verifying hostname and certificate through that generated trust root.
+It requires selected_alpn eq h2 on BOTH endpoints; the Client
+attaches the real H2 engine only after TLS on_ready. The same
+authenticated encrypted socket carries a successful WebSocket echo
+and a separate ordinary H2 response. Expected one Client
+connection, correct Client/WebSocket transaction completion and no
+active stream slots remaining.
+
+Both existing full integration workflows now include this xt test.
+No new release/profile work or lower dependency edits. CI runs from
+latest test+workflow source afdb47d578995d56ba0b4d201a4b663714b61c99:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067422
+- Optional QUIC MAX_DATA:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067425
+CI distribution and examples steps have passed, TLS live test stage
+still underway at initial handoff update. Do not claim TLS test PASS
+until the complete live test stage succeeds; fix actual failures.
+
+NEXT: confirm both CI conclusions; update docs/READINESS-REVIEW-20261020.md
+and WebSocket cookbook to distinguish verified TLS/ALPN coverage from
+independent third-party Extended CONNECT interoperability. Continue
+focused correctness tests, not broad benchmarks. No main, merge,
+release, tag, version bump or lower-engine changes.
+
 ## WebSocket runnable examples and readiness review (2026-10-20)
 
 Continued from H3 Client WebSocket fully verified source
