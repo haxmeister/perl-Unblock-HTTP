@@ -3,7 +3,7 @@ package Unblock::HTTP;
 use strict;
 use warnings;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 1;
 
@@ -42,19 +42,21 @@ The attachment API selects a protocol from the supplied ALPN result or an
 explicit C<protocol> option. An unnegotiated TCP connection selects
 HTTP/1.1 only when enabled. HTTP/3 uses an existing Net::QUIC connection.
 
-It does not create sockets, negotiate TLS, or require any particular event
-loop. The optional L<Unblock::HTTP::QUIC> class manages HTTP/3 sessions
+It does not create sockets, negotiate TLS, install framework adapters, or
+require any particular event loop. The optional L<Unblock::HTTP::QUIC> class manages HTTP/3 sessions
 over L<Net::QUIC::Driver>. See L<Unblock::HTTP::Integration>.
 
 =head1 IMPLEMENTATION STATUS
 
-This feature branch implements reusable Server attachment, bounded buffered
-requests, and per-transaction streaming. The shared Client now has callback
-connection factories, operation handles and an initial bounded per-origin
-pool. It requires the coordinated engine receive/lifecycle branches.
-WebSocket transitions, cross-host Alt-Svc and retries after dispatch remain
-planned; authenticated same-host Alt-Svc and pre-dispatch fallback are implemented.
-See docs/IMPLEMENTATION.md.
+This release implements reusable Server attachment and a unified Client
+with framework-driven connection factories, bounded per-origin pooling,
+buffered and streamed HTTP requests, transaction-lifecycle callbacks,
+deadlines, and graceful shutdown. HTTP/1.1 WebSocket Upgrade and
+HTTP/2 and HTTP/3 Extended CONNECT are supported for both Client and Server,
+with Unblock::WebSocket loaded only when WebSocket functionality is used.
+Same-host authenticated Alt-Svc and unsent fallback are implemented.
+Cross-host Alt-Svc and replay after dispatch are intentionally not provided.
+The framework retains socket, TLS, UDP, and timer ownership.
 
 =head1 CLASSES
 
@@ -68,10 +70,6 @@ request queue and per-origin H1/H2/H3 connection pools.
 =item L<Unblock::HTTP::Server>
 
 One reusable server definition shared by incoming connections.
-
-=item L<Unblock::HTTP::Adapter::LinuxEvent>
-
-Optional reusable Linux::Event server Stream.
 
 =item L<Unblock::HTTP::QUIC>
 

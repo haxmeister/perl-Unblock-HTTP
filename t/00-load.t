@@ -10,5 +10,5 @@ use_ok('Unblock::HTTP::Server');
 use_ok('Unblock::HTTP::Integration');
 use_ok('Unblock::HTTP::QUIC');
 
-is($Unblock::HTTP::VERSION, '0.01', 'distribution version');
+is($Unblock::HTTP::VERSION, '0.02', 'distribution version');
 done_testing;
