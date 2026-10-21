@@ -39,6 +39,18 @@ any unshipped Uniform::HTTP changes actually exist before adding a
 new Uniform::HTTP release. Linux::Event and Linux::Event::HTTP are NOT
 part of this release train; no framework adapter will be bundled.
 
+The GitHub compare audit of October 21 found the following
+unshipped source changes against the last versioned GitHub tag:
+- HTTP1 feature branch: 10 commits beyond v0.11.
+- HTTP2 feature branch: 3 commits beyond v0.11.
+- HTTP3 feature branch: 56 commits beyond v0.12.
+- Net::QUIC development branch: 11 commits beyond v0.05.
+- Uniform::HTTP main: IDENTICAL to v0.06, so do not bump it solely
+  for this coordinated release.
+- Unblock::WebSocket main currently reports 0.02 but no v0.02
+  GitHub tag/release was found by this audit. Confirm PAUSE/CPAN
+  state before deciding whether to publish 0.03.
+
 All candidate version numbers except the already-set HTTP3 0.13 are
 provisional until their distribution-specific audits and changelogs.
 Avoid claiming an API is shipped from CPAN merely because the
@@ -53,9 +65,12 @@ can live as inline code inside optional runnable example scripts.
 The retained adapter code and unit tests reside solely under
 `xt/lib/Unblock/HTTP/Adapter/LinuxEvent.pm` and
 `xt/linux-event-adapter.t`, and `xt/` is excluded from MANIFEST.
-CI explicitly tests `make distdir` to confirm the tarball contains
-no `xt/`, no installed adapter, and does contain the new
-`_WebSocketH2Body` code and current core tests. The distribution
+The source distribution also excludes repository-only diagnostic
+benchmarks; those remain runnable in the Git checkout and load
+the xt/lib fixture explicitly when required. CI tests `make distdir`
+to confirm the tarball contains no `xt/`, no `bench/`, no installed
+adapter, and does contain the new `_WebSocketH2Body` code and all
+current core tests. The distribution
 declares no Linux::Event dependency.
 
 A final tarball audit should inspect the generated MANIFEST, source
