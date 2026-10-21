@@ -62,6 +62,7 @@ jobs:
           test -f "$distdir/lib/Unblock/HTTP/_WebSocketH2Body.pm"
           test -f "$distdir/t/37-client-h3-websocket-admission.t"
           test ! -d "$distdir/xt"
+          test ! -d "$distdir/bench"
           test ! -e "$distdir/lib/Unblock/HTTP/Adapter/LinuxEvent.pm"
           test ! -e "$distdir/t/12-linux-event-adapter.t"
           ! grep -E "['\"]Linux::Event['\"] *=>" "$distdir/Makefile.PL"
