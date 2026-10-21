@@ -102,7 +102,7 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
         tls => {
             cert_file => $cert,
             key_file => $key,
-            alpn => $SERVER->alpn_protocols,
+            alpn => [$SERVER->alpn_protocols],
         },
     },
 );
