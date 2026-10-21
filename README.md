@@ -256,6 +256,7 @@ The optional Linux::Event examples are:
 - `examples/linux-event-server.pl`: a shared Server with H1/H2 attachment.
 - `examples/linux-event-quic-server.pl`: a shared Server with a QUIC manager.
 - `examples/linux-event-websocket-server.pl`: H1 Upgrade or H2 Extended CONNECT WebSocket echo.
+- `examples/linux-event-websocket-client.pl`: matching H1/H2 shared Client transport factory and WebSocket echo.
 - `examples/linux-event-quic-websocket-server.pl`: H3 WebSocket echo on QUIC/TLS.
 - `examples/linux-event-websocket-server.pl`: HTTP1 Upgrade and WebSocket echo on one listener.
 
