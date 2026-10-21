@@ -66,6 +66,24 @@ A real H2 Client+Server regression is in t/33-client-websocket-h2.t;
 t/34-client-websocket-h2-lifecycle.t covers rejected handshakes, resets
 and shutdown. They use actual HTTP2 and WebSocket engines.
 
+### Verify authenticated HTTP/2 with TLS/ALPN
+
+The real Linux::Event integration test
+`xt/linux-event-websocket-tls.t` also covers **encrypted** HTTP/2,
+rather than only the cleartext prior-knowledge listener above. After
+building the coordinated feature branches and Linux::Event, run:
+
+    prove -v -b xt/linux-event-websocket-tls.t
+
+The test creates a temporary OpenSSL localhost certificate, verifies
+its chain and hostname on the Client, checks negotiated `h2` ALPN
+on BOTH TLS peers, then performs an HTTP/2 WebSocket echo and an
+ordinary HTTP request on the same pooled encrypted connection.
+The temporary certificate is for test-local trust only. This
+validates the project's HTTP/2 peers over secure sockets; it does
+not demonstrate interoperability with an independent third-party
+Extended CONNECT implementation.
+
 ## 3. Serve WebSocket over HTTP/3 and QUIC
 
 Working example:
