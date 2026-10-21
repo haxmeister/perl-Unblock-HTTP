@@ -190,8 +190,10 @@ automatically retry requests when connection outcome is ambiguous.
 
 For HTTP1 the host implements C<unblock_upgrade($websocket)> to switch
 the input consumer on the same TCP/TLS stream after its ordered output
-queue accepts the HTTP 101 response. C<Unblock::HTTP::Adapter::LinuxEvent>
-provides this hook. A native borrowed-buffer provider must hand its
+queue accepts the HTTP 101 response. A small illustrative Linux::Event
+Stream subclass in F<examples/linux-event-websocket-server.pl>
+demonstrates this hook without exporting an adapter module.
+A native borrowed-buffer provider must hand its
 unconsumed input window to the new consumer exactly once. The HTTP1
 Client releases ownership of this socket to the WebSocket host; ordinary
 HTTP pool shutdown does not close it.
@@ -253,16 +255,26 @@ Neither example makes the core classes depend on Linux::Event. For
 the exact Client transport factory requirements, see the Client POD
 and this document's C<SHARED CLIENT FACTORIES> section.
 
-=head1 OPTIONAL LINUX::EVENT ADAPTER
+=head1 FRAMEWORK INTEGRATION OWNERSHIP
 
-L<Unblock::HTTP::Adapter::LinuxEvent> is an optional Stream subclass.
-Override C<http_server()> to return the shared Server definition. It attaches
-on readiness and feeds input directly to the selected engine. Application
-callbacks belong to the definition, not to each Stream subclass.
+Unblock::HTTP defines the framework-neutral transport and callback
+contracts, but does not bundle or maintain framework adapters.
+A framework adapter for Linux::Event belongs in the separate
+Linux::Event::HTTP distribution when that project elects to provide one.
+No Linux::Event dependency or adapter is installed by Unblock::HTTP.
 
-See examples/linux-event-server.pl, examples/linux-event-websocket-server.pl,
-and examples/linux-event-quic-websocket-server.pl. This reference
-integration is not loaded by core classes.
+F<examples/linux-event-server.pl> and
+F<examples/linux-event-websocket-server.pl> each contain a complete,
+illustrative Linux::Event Stream subclass locally in the program.
+F<examples/linux-event-quic-websocket-server.pl> demonstrates a QUIC
+UDP/timer integration. These examples do not establish a supported
+adapter module API.
+
+The repository retains a historical test-only adapter fixture in
+F<xt/lib/Unblock/HTTP/Adapter/LinuxEvent.pm> and its unit tests in
+F<xt/linux-event-adapter.t>. Both are excluded from the release tarball.
+Their purpose is to exercise integration semantics without requiring
+Unblock::HTTP to distribute or support an event-loop-specific adapter.
 
 =head1 REMAINING CONTRACT WORK
 
