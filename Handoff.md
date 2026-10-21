@@ -49,12 +49,15 @@ VERIFICATION:
   resource and diagnostic smoke stages, passed. xt/linux-event-websocket.t
   adds 16 real TCP assertions for H1/H2. Neither workflow modified any
   lower dependency and no throughput change is claimed.
-- Documentation-only follow-up source e3b65492880fbf375a7d30d5ccb73d31d874600f
-  had additional CI still underway at this checkpoint:
+- Documentation/example follow-up source
+  e3b65492880fbf375a7d30d5ccb73d31d874600f also PASSED both
+  complete integration workflows:
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225290
   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225269
-  Follow-up README/Handoff corrections and example comment were
-  [skip ci]. No production or test logic changed after c3c1bc53.
+  Later edits to README, a single example comment, readiness review,
+  and Handoff were [skip ci]. No production or test logic changed
+  after the already verified source c3c1bc53. All code, live TCP/QUIC
+  correctness, and example syntax remained green.
 
 NEXT: check outstanding workflow conclusions and record final
 checkpoint. Then prefer one targeted TLS ALPN H2 WebSocket
