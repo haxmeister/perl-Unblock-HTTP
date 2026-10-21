@@ -1,3 +1,75 @@
+## Release scope and adapter packaging correction (2026-10-21)
+
+USER-APPROVED ARCHITECTURE AND RELEASE DIRECTION:
+- Unblock::HTTP MUST NOT ship or maintain Linux::Event or any
+  framework-specific adapter as an installed package. A maintained
+  Linux::Event adapter can belong in Linux::Event::HTTP, separately.
+- It is acceptable to keep runnable application examples with
+  embedded adapter glue and to retain a test-only adapter fixture.
+- Focus on the completed Client/Server API, coordinated release
+  readiness and bumped versions for modules actually changed.
+  Net::QUIC is included for a minor bump (0.05 -> 0.06).
+  Prepare versions in dependency order; avoid premature merges,
+  tags or publication. See docs/RELEASE-COORDINATION.md.
+
+IMPLEMENTED ON UPPER feature/high-level-client-server ONLY:
+- Removed lib/Unblock/HTTP/Adapter/LinuxEvent.pm from installable
+  lib/ tree, and t/12-linux-event-adapter.t from shipped unit tests.
+- Preserved exactly the test fixture in
+  xt/lib/Unblock/HTTP/Adapter/LinuxEvent.pm and its mocked tests at
+  xt/linux-event-adapter.t. Every xt integration test needing it
+  now explicitly loads "$FindBin::Bin/lib"; CI runs the fixture test
+  as one of the optional integration tests.
+- examples/linux-event-server.pl and
+  examples/linux-event-websocket-server.pl now declare their own
+  small Linux::Event subclass INSIDE each example program; neither
+  imports a packaged Unblock::HTTP adapter.
+- lib/Unblock/HTTP/Integration.pm POD states framework-neutral
+  integration ownership and defers a supported Linux::Event adapter
+  to Linux::Event::HTTP.
+- MANIFEST was regenerated from current lib/, t/, docs/,
+  examples/, root metadata and license. MANIFEST.SKIP excludes
+  xt/ and repository-only bench/. No adapter or xt fixture is
+  shipped. All eleven core PM files and current unit tests are
+  included, including _WebSocketH2Body.pm.
+- CI for BOTH tracks now runs "Audit release tarball contents"
+  after distribution tests: manicheck, make distdir, assert no
+  xt/, bench/, LinuxEvent.pm or Linux::Event required dependency,
+  and check current core files are present. This packaging step
+  has passed at intermediate source 12a19679.
+- Initial integration CI revealed more xt tests still importing
+  the fixture without xt/lib in @INC. Those were repaired. Later
+  diagnostic benchmark smoke revealed bench/client-vs-direct.pl
+  also importing the fixture. It now loads xt/lib explicitly.
+  Repository benchmark scripts remain available in git/CI but
+  are absent from the release tarball.
+- Current full workflows must be checked AFTER all of these
+  fixes, including the final CI tarball exclusion checks.
+  Do not mark full regression PASS without confirmed conclusions.
+
+RELEASE MATRIX (provisional until audited):
+- Net::QUIC 0.05 -> 0.06 (11 unreleased commits; standalone usable).
+- Unblock::HTTP1 0.11 -> 0.12 (10 commits since tagged release).
+- Unblock::HTTP2 0.11 -> 0.12 (3 commits since tagged release).
+- Unblock::HTTP3 tagged 0.12 -> feature already 0.13 (56 commits).
+- Unblock::HTTP currently 0.01 -> candidate 0.02.
+- Unblock::WebSocket currently 0.02: confirm CPAN/tag state and
+  whether a new version is needed for the changed protocol family.
+- Uniform::HTTP 0.06 is identical to tagged release, no new bump
+  unless its code changes.
+No lower library versions or main branches were changed in this
+adapter removal slice.
+
+NEXT: finish BOTH integration workflow conclusions including
+diagnostic benchmarks. Then perform dependency-order standalone
+release audits/version bumps on the respective authorized feature
+branches, with Net::QUIC first. Finally update upper minimum
+dependency versions and test source tarballs against RELEASED
+dependency versions rather than only pinned feature branches.
+Do not create GitHub releases, merge main, tag or upload to PAUSE
+until the coordinated release audit passes and release action is
+explicitly authorized.
+
 ## Authenticated TLS/ALPN H2 WebSocket FULL CI VERIFIED (2026-10-20)
 
 Continued from verified WebSocket examples readiness checkpoint
