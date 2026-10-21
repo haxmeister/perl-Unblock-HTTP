@@ -9,6 +9,8 @@ use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
+use FindBin;
+use lib "$FindBin::Bin/../xt/lib";
 use Unblock::HTTP::Adapter::LinuxEvent;
 use Unblock::HTTP1::Client;
 use Unblock::HTTP2::Client;
