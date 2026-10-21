@@ -9,10 +9,14 @@ Run after installing Unblock::HTTP1/2/3, Net::QUIC, and Linux::Event 0.117+:
     perl Makefile.PL
     make
     make test
-    prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t
+    prove -v -b xt/linux-event-tcp.t xt/linux-event-websocket.t xt/linux-event-quic.t
 
 - linux-event-tcp.t: HTTP/1.1 and HTTP/2 prior-knowledge round trips with
   Linux::Event listener/stream objects and the unified Client/Server API.
+- linux-event-websocket.t: real TCP HTTP/1.1 Upgrade and HTTP/2
+  prior-knowledge Extended CONNECT with the unified WebSocket
+  Client/Server, ordinary HTTP reuse and socket-versus-stream pool
+  ownership. Uses optional Linux::Event on both sides.
 - linux-event-quic.t: HTTP/3 client/server round trip through the QUIC
   session manager, Linux::Event UDP sockets, and independent timers. It
   generates a temporary localhost certificate using openssl.
