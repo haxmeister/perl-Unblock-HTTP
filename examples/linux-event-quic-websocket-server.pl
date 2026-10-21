@@ -34,7 +34,7 @@ my $server = Unblock::HTTP::Server->new(
         $tx->respond(status => 200, body => "HTTP/3 is still available\n");
     },
     on_websocket => sub ($tx, $request) {
-        # Reject every other WebSocket target without taking a QUIC stream.
+        # Reject other WebSocket targets with an HTTP 403 on that QUIC stream.
         return unless $request->target eq '/ws';
         return {
             on_message => sub ($ws, $payload, $type) {
