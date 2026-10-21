@@ -11,6 +11,8 @@ use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use Unblock::HTTP::Adapter::LinuxEvent;
 
 # Larger than the default 1 MiB buffered receive limit on both sides.
