@@ -61,7 +61,7 @@ jobs:
           done
       - name: Test live TCP and QUIC sockets using Linux::Event
         run: |
-          prove -v -b xt/linux-event-tcp.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
+          prove -v -b xt/linux-event-tcp.t xt/linux-event-websocket.t xt/linux-event-quic.t xt/linux-event-streaming.t xt/linux-event-slow-reader.t xt/linux-event-producer-backpressure.t xt/linux-event-hard-output-limit.t xt/linux-event-pool-fairness.t xt/linux-event-quic-producer.t xt/linux-event-quic-reader-credit.t xt/linux-event-quic-multi-credit.t xt/linux-event-quic-join-cancel.t xt/linux-event-quic-join-no-cancel.t xt/linux-event-quic-six-credit.t
           # Exercise 12 and 16 slow Readers with independently withheld
           # receive credit. Wide-window cases isolate per-stream scheduling;
           # bounded-window cases also exercise ngtcp2 MAX_DATA updates.
