@@ -6,7 +6,6 @@ use warnings;
 use Linux::Event::IO::Sock::Listener;
 use Linux::Event::Loop;
 use Unblock::HTTP::Server;
-use Unblock::HTTP::Adapter::LinuxEvent;
 
 # APPLICATION CODE: one definition serves all incoming connections.
 my $server = Unblock::HTTP::Server->new(
@@ -23,7 +22,79 @@ my $server = Unblock::HTTP::Server->new(
 
 # ADAPTER CODE: supply the definition to each framework-owned stream.
 package Example::HTTPStream;
-use parent 'Unblock::HTTP::Adapter::LinuxEvent';
+use parent 'Linux::Event::IO::Sock::Stream';
+use Scalar::Util qw(blessed);
+
+# LOCAL EXAMPLE ADAPTER: this class is not installed or bundled as a module.
+sub http { $_[0]{unblock_http} }
+sub websocket { $_[0]{unblock_websocket} }
+
+# Override this in a subclass for a cleartext HTTP/2 prior-knowledge port.
+# For TLS, the adapter uses the ALPN chosen by Linux::Event instead.
+sub http_protocol { undef }
+
+sub http_server ($self) {
+    die "http_server() must return a shared Unblock::HTTP::Server definition\n";
+}
+
+sub on_ready ($self) {
+    my $server = $self->http_server;
+    die "http_server() must return a shared Unblock::HTTP::Server definition\n"
+        unless blessed($server) && $server->isa('Unblock::HTTP::Server');
+    my $protocol = $self->http_protocol;
+    my %select = defined($protocol)
+        ? (protocol => $protocol)
+        : (alpn => $self->selected_alpn);
+    $self->{unblock_http} = $server->attach_stream(
+        transport => $self, %select,
+    );
+    return;
+}
+
+sub unblock_upgrade ($self, $websocket) {
+    die "unblock_upgrade(): WebSocket input consumer is required\n"
+        unless blessed($websocket) && $websocket->can('input')
+            && $websocket->can('input_eof') && $websocket->can('transport_error')
+            && $websocket->can('resume_output');
+    die "unblock_upgrade(): transport already upgraded\n"
+        if $self->{unblock_websocket};
+    $self->{unblock_websocket} = $websocket;
+    return;
+}
+
+sub _consumer ($self) {
+    return $self->{unblock_websocket} || $self->{unblock_http};
+}
+
+sub on_data ($self, $bytes) {
+    $self->_consumer->input($bytes);
+}
+
+sub on_eof ($self) {
+    my $consumer = $self->_consumer;
+    $consumer->input_eof if $consumer && $consumer->want_read;
+}
+
+sub on_error ($self, $error) {
+    my $consumer = $self->_consumer;
+    $consumer->transport_error("$error") if $consumer;
+}
+
+sub on_drain ($self) {
+    my $consumer = $self->_consumer;
+    $consumer->resume_output if $consumer;
+}
+
+sub unblock_send ($self, $bytes) {
+    my $ready = $self->write($bytes);
+    die "Linux::Event stream closed during HTTP output\n" if $self->is_closed;
+    return $ready;
+}
+
+sub unblock_finish ($self) { $self->end }
+sub unblock_abort ($self, $reason) { $self->close }
+
+
 sub http_server ($self) { $server }
 sub http_protocol ($self) { $ENV{UNBLOCK_HTTP_PROTOCOL} }
 
