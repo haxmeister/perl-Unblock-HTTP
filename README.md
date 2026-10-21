@@ -258,7 +258,6 @@ The optional Linux::Event examples are:
 - `examples/linux-event-websocket-server.pl`: H1 Upgrade or H2 Extended CONNECT WebSocket echo.
 - `examples/linux-event-websocket-client.pl`: matching H1/H2 shared Client transport factory and WebSocket echo.
 - `examples/linux-event-quic-websocket-server.pl`: H3 WebSocket echo on QUIC/TLS.
-- `examples/linux-event-websocket-server.pl`: HTTP1 Upgrade and WebSocket echo on one listener.
 
 Each separates application behavior from framework plumbing. The core does
 not require Linux::Event. Core requires Perl 5.20; this optional adapter uses
@@ -270,7 +269,7 @@ Run isolated contract tests:
 
 Run the live tests after installing the real engines, Linux::Event and Net::QUIC:
 
-    prove -l xt/linux-event-tcp.t xt/linux-event-quic.t
+    prove -l xt/linux-event-tcp.t xt/linux-event-websocket.t xt/linux-event-quic.t
 
 The distribution suite combines isolated contract tests with real H1/H2
 WebSocket exchanges, a borrowed native H1 input handoff regression,
