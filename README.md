@@ -245,8 +245,9 @@ connection. HTTP3 Client WebSockets wait for the peer's current
 Extended CONNECT SETTINGS before dispatch; if QUIC bidi-stream
 capacity is unavailable, the original unsent operation remains
 queued until credit returns. A denied/invalid handshake fails only
-the relevant operation. Consult the Server and Client POD for the
-complete transport, backpressure, Close and callback contracts.
+the relevant operation. Consult the [WebSocket cookbook](docs/WEBSOCKET-COOKBOOK.md),
+Server and Client POD for running all three protocols, the exact
+transport ownership rules, backpressure, Close and callback contracts.
 
 ## Examples and tests
 
@@ -254,6 +255,8 @@ The optional Linux::Event examples are:
 
 - `examples/linux-event-server.pl`: a shared Server with H1/H2 attachment.
 - `examples/linux-event-quic-server.pl`: a shared Server with a QUIC manager.
+- `examples/linux-event-websocket-server.pl`: H1 Upgrade or H2 Extended CONNECT WebSocket echo.
+- `examples/linux-event-quic-websocket-server.pl`: H3 WebSocket echo on QUIC/TLS.
 - `examples/linux-event-websocket-server.pl`: HTTP1 Upgrade and WebSocket echo on one listener.
 
 Each separates application behavior from framework plumbing. The core does
