@@ -9,6 +9,8 @@ use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use Unblock::HTTP::Adapter::LinuxEvent;
 
 # Fatal max_pending_bytes is different from cooperative write() == false.
