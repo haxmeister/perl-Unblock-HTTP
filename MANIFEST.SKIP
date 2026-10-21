@@ -8,3 +8,4 @@
 ^Unblock-HTTP-.*\.tar\.gz$
 ^docs/design-handoff\.txt$
 ^xt/
+^bench/
