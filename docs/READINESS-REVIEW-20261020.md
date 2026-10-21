@@ -37,6 +37,24 @@ and https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139977.
 The live Linux::Event integration step passed 14 test files and
 702 checks, including 16 new H1/H2 WebSocket live-socket checks.
 
+## TLS/ALPN H2 WebSocket milestone
+
+New `xt/linux-event-websocket-tls.t` creates a short-lived localhost
+certificate with OpenSSL, configures a Linux::Event TLS listener that
+advertises h2 ALPN, and starts a real TLS Client with certificate
+chain/hostname verification. It checks the negotiated h2 ALPN on both
+ends, one pooled encrypted TCP socket, an RFC 8441 WebSocket echo over
+HTTP2 DATA, an ordinary HTTP2 response, Close/END_STREAM and
+transaction cleanup. This is a *live encrypted socket integration*,
+not a standalone peer interoperability result.
+
+The optional Net::QUIC MAX_DATA full integration workflow passed
+the new TLS test (15 Linux::Event test files, 719 checks):
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067425
+The published-Net::QUIC 0.05 workflow was still running at the
+time of this review update:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067422
+
 ## Application and adapter examples
 
 - examples/linux-event-websocket-server.pl: one app definition, real
@@ -71,12 +89,15 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
    The ordinary Perl input path and a native transition test exist,
    but the upper layer cannot access an external native provider's
    borrowed window without its cooperation.
-3. **TLS/ALPN and independent peer interoperability.** H2 is covered by
-   real engines and now has a Linux::Event cleartext prior-knowledge
-   regression pending CI. That is not a full TLS ALPN WebSocket
-   interoperability test. H3 is covered by real QUIC/TLS loopback using
-   the project's engines; third-party RFC 8441/9220 peers have not been
-   established by these tests.
+3. **Independent peer interoperability remains unverified.** H2 now has
+   Linux::Event real TLS + OpenSSL with server certificate/hostname
+   validation and selected h2 ALPN, alongside the prior-knowledge
+   cleartext WebSocket test. The TLS regression exercises the unified
+   Client and Server against each other and has passed the optional
+   QUIC CI workflow (published-Net::QUIC track also scheduled). H3
+   likewise runs full QUIC/TLS with this project's engines. These
+   successes are NOT evidence of WebSocket RFC 8441/9220 interoperation
+   with an independent third-party HTTP implementation.
 4. **Connection factories remain framework callbacks.** A runnable
    Linux::Event shared Client example now covers local H1/H2 TCP
    sockets. A generic framework-independent TCP/TLS connector and a
@@ -93,10 +114,10 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
 Example compilation and the live H1/H2 WebSocket regression
 have now passed both full CI tracks. The shared-Client TCP factory
 example has also been added and compile checked. Next,
-test a real TLS ALPN H2 WebSocket exchange and, if test tools are
-available, at least one external Extended CONNECT peer. A separate
-H3 QUIC/TLS shared Client factory example can follow the proven t/36
-harness. Do not start a broad profiling or release campaign.
+finish final full-CI verification of the new TLS/ALPN H2 WebSocket
+regression, then test an independent Extended CONNECT peer if a
+supported client/server is available. A separate H3 QUIC/TLS shared
+Client factory example can follow the proven t/36 harness. Do not start a broad profiling or release campaign.
 
 Dependencies explicitly remain read-only: Unblock::HTTP1/2/3,
 Unblock::WebSocket, Uniform::HTTP and Net::QUIC. All implementation
