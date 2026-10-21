@@ -48,12 +48,18 @@ HTTP2 DATA, an ordinary HTTP2 response, Close/END_STREAM and
 transaction cleanup. This is a *live encrypted socket integration*,
 not a standalone peer interoperability result.
 
-The optional Net::QUIC MAX_DATA full integration workflow passed
-the new TLS test (15 Linux::Event test files, 719 checks):
-https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067425
-The published-Net::QUIC 0.05 workflow was still running at the
-time of this review update:
-https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067422
+BOTH full integration workflows PASSED the authenticated TLS/ALPN
+test (15 Linux::Event files, 719 checks; 29 distribution files and
+1,170 checks), along with example syntax checks and the established
+live TCP/QUIC/resource/diagnostic smoke steps:
+- Published Net::QUIC 0.05:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067422
+- Optional QUIC MAX_DATA:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39530067425
+
+The exact verified production/test source is
+afdb47d578995d56ba0b4d201a4b663714b61c99.
+Neither run proves interoperability with external WebSocket peers.
 
 ## Application and adapter examples
 
@@ -114,10 +120,10 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
 Example compilation and the live H1/H2 WebSocket regression
 have now passed both full CI tracks. The shared-Client TCP factory
 example has also been added and compile checked. Next,
-finish final full-CI verification of the new TLS/ALPN H2 WebSocket
-regression, then test an independent Extended CONNECT peer if a
-supported client/server is available. A separate H3 QUIC/TLS shared
-Client factory example can follow the proven t/36 harness. Do not start a broad profiling or release campaign.
+test an independent RFC8441/9220 Extended CONNECT peer if a
+compatible implementation is available. The remaining developer
+experience opportunity is a standalone H3 QUIC/TLS shared Client
+factory example, following the already verified t/36 harness. Do not start a broad profiling or release campaign.
 
 Dependencies explicitly remain read-only: Unblock::HTTP1/2/3,
 Unblock::WebSocket, Uniform::HTTP and Net::QUIC. All implementation
