@@ -53,6 +53,18 @@ jobs:
           perl Makefile.PL
           make
           make test
+      - name: Audit release tarball contents
+        run: |
+          perl -MExtUtils::Manifest -e 'my @missing = ExtUtils::Manifest::manicheck(); die "Missing MANIFEST entries: @missing\n" if @missing;'
+          make distdir
+          distdir=$(find . -maxdepth 1 -type d -name 'Unblock-HTTP-*' -print -quit)
+          test -n "$distdir"
+          test -f "$distdir/lib/Unblock/HTTP/_WebSocketH2Body.pm"
+          test -f "$distdir/t/37-client-h3-websocket-admission.t"
+          test ! -d "$distdir/xt"
+          test ! -e "$distdir/lib/Unblock/HTTP/Adapter/LinuxEvent.pm"
+          test ! -e "$distdir/t/12-linux-event-adapter.t"
+          ! grep -E "['\"]Linux::Event['\"] *=>" "$distdir/Makefile.PL"
       - name: Check documented Linux::Event examples
         run: |
           for example in examples/*.pl; do
