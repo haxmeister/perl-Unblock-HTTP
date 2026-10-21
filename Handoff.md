@@ -1,3 +1,64 @@
+## WebSocket runnable examples and readiness review (2026-10-20)
+
+Continued from H3 Client WebSocket fully verified source
+a3f429edf66562a55ab23e0d5b55a8e3eb989b7c, documentation HEAD
+bb1835f50d1e3118975403758130d99242fda586. Implementation in
+upper Unblock::HTTP feature/high-level-client-server ONLY. No
+lower engine, Net::QUIC, Uniform::HTTP or WebSocket edits.
+
+DELIVERED:
+- examples/linux-event-websocket-server.pl now serves HTTP1 Upgrade
+  or HTTP2 Extended CONNECT using one reusable Server, one TCP
+  Stream subclass and framework Loop->defer; select cleartext H2
+  prior knowledge with UNBLOCK_HTTP_PROTOCOL=h2.
+- examples/linux-event-quic-websocket-server.pl NEW: H3 Server
+  WebSocket echo, ordinary HTTP3, real Net::QUIC::Driver through
+  Unblock::HTTP::QUIC, a single Linux::Event UDP socket/timer and
+  a later-turn defer hook. Uses explicit cert/key CLI arguments.
+- examples/linux-event-websocket-client.pl NEW: complete Linux::Event
+  shared Client TCP factory for cleartext H1/H2, one app-facing
+  connect_websocket call and isolated transport consumer callbacks.
+- docs/WEBSOCKET-COOKBOOK.md NEW: H1/H2/H3 example commands, TLS
+  cautions, standalone Client demonstration, app/adapter separation
+  and buffer ownership checklist.
+- docs/READINESS-REVIEW-20261020.md NEW: current API/CI matrix,
+  pinned-branch dependency warning, native H1 input tail,
+  unverified external TLS ALPN peers and next useful test priorities.
+- lib/Unblock/HTTP/Integration.pm POD and README updated to remove
+  old statements that WebSocket/pooled Client are unimplemented.
+- xt/linux-event-websocket.t NEW: full Linux::Event TCP Client and
+  Server on actual kernel sockets; both HTTP1 Upgrade and HTTP2
+  Extended CONNECT send an echoed WebSocket frame and then ordinary
+  HTTP; verifies H1 detaches whole socket while H2 reuses pooled
+  multiplexed connection. Added to BOTH integration CI workflows.
+- BOTH CI workflows additionally compile-check examples/*.pl after
+  distribution tests. This guards user-facing sample syntax/imports.
+
+VERIFICATION:
+- Both workflows passed code/test source with the newly added live
+  H1/H2 WebSocket regression and example compile checks:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39524812155
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39524812151
+- Changes after the verified regression introduced the new Client
+  example and documentation only (no core protocol source changes).
+  The Client example compiled successfully on both tracks at
+  source c3c1bc53122520134dea8c8319b6c7c19e6d6611, while the
+  full workflows are still pending on that and latest docs:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139986
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139977
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225290
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525225269
+- DO NOT claim final full-source CI verification for later docs
+  until their actual conclusions are checked. No throughput claims;
+  existing diagnostic smoke benchmarks unchanged.
+
+NEXT: check outstanding workflow conclusions and record final
+checkpoint. Then prefer one targeted TLS ALPN H2 WebSocket
+interoperability test and/or complete runnable H3 shared Client QUIC
+factory, not another broad performance sweep. No merges, tags,
+releases, version bumps, or main edits. No dependency modifications
+without fresh permission.
+
 ## HTTP3 Client WebSocket Extended CONNECT FULL CI VERIFIED (2026-10-20)
 
 Continuing from verified H3 Server source b43532e92917d5850b6abc78c16485e3e16acc37
