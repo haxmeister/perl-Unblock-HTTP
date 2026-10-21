@@ -28,10 +28,14 @@ improvement is inferred from the diagnostic smokes.
 
 The existing Linux::Event integration suite exercises live TCP and QUIC
 sockets and output/backpressure semantics, but is not proof of
-interoperability with external browsers or frameworks. An additional
-live H1 Upgrade/H2 prior-knowledge WebSocket regression
-(xt/linux-event-websocket.t) has been added. Its new CI outcome must
-be checked separately before calling that coverage verified.
+interoperability with external browsers or frameworks. A focused live H1 Upgrade/H2 prior-knowledge WebSocket regression
+(xt/linux-event-websocket.t) is now fully CI VERIFIED in both
+published Net::QUIC and optional MAX_DATA tracks at source
+c3c1bc53122520134dea8c8319b6c7c19e6d6611:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139986
+and https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39525139977.
+The live Linux::Event integration step passed 14 test files and
+702 checks, including 16 new H1/H2 WebSocket live-socket checks.
 
 ## Application and adapter examples
 
@@ -86,9 +90,9 @@ H2/H3 defer callbacks MUST schedule a later event-loop turn.
 
 ## Next small, useful steps
 
-First verify the example compilation and new live H1/H2 WebSocket
-regression in both CI tracks, fixing only evidence-based failures.
-The shared-Client TCP transport example has now been added. Next,
+Example compilation and the live H1/H2 WebSocket regression
+have now passed both full CI tracks. The shared-Client TCP factory
+example has also been added and compile checked. Next,
 test a real TLS ALPN H2 WebSocket exchange and, if test tools are
 available, at least one external Extended CONNECT peer. A separate
 H3 QUIC/TLS shared Client factory example can follow the proven t/36
