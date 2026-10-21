@@ -9,6 +9,8 @@ use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Unblock::HTTP::Client;
 use Unblock::HTTP::Server;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use Unblock::HTTP::Adapter::LinuxEvent;
 
 our ($LOOP, $PROTOCOL, $SERVER, $FAILED, $REQUESTS, $WS_MESSAGES);
