@@ -1,60 +1,73 @@
 # Coordinated Unblock HTTP family release plan (2026-10-21)
 
-Status: release PREPARATION on feature branches; not a published release.
-No merges, tags, GitHub releases, PAUSE uploads or version edits to main
-have been performed by this plan.
+Status as of 2026-10-21: **all five changed repositories have been
+fast-forward merged to MAIN and version-bumped release candidates are
+on MAIN**. This document covers the remaining coordinated release
+audits, tagging and publication; it is not evidence of any published
+GitHub/CPAN releases. No version tags, GitHub releases or PAUSE uploads
+were created during the merges. Current authoritative next steps
+are also in each repository's main-branch Handoff.md.
 
-## Scope and dependency order
+## Current main-branch release candidates and order
 
-1. Net::QUIC: released 0.05; proposed next minor release **0.06**.
-   Audit the latest `feature/connection-max-data-wakeup` branch,
-   including independent standalone Net::QUIC usability, shutdown,
-   MAX_DATA/request-credit wakeup, real QUIC/TLS tests, API and ABI.
-   Avoid turning Net::QUIC into an Unblock-only dependency.
-2. Unblock::WebSocket: current module reports 0.02. Inspect the
-   code shipped to CPAN versus the handshake/streaming implementation
-   required by unified H1/H2/H3, and bump to 0.03 **if a new WebSocket
-   distribution is needed**. It remains a standalone module and an
-   optional dependency of Unblock::HTTP.
-3. Unblock::HTTP1: latest tagged version 0.11, candidate 0.12 from
-   `feature/unified-receive-lifecycle`. Re-audit input switching,
-   output ordering, native borrowed-input remainder, transaction
-   callbacks, public NativeABI header and current examples.
-4. Unblock::HTTP2: latest tagged version 0.11, candidate 0.12 from
-   `feature/unified-receive-lifecycle`. Re-audit SETTINGS, extended
-   CONNECT, stream body, on_drain and stream-local resets.
-5. Unblock::HTTP3: latest tagged version 0.12, feature branch already
-   reports 0.13. Candidate 0.13 (avoid redundant second bump).
-   After Net::QUIC 0.06, verify the minimum Net::QUIC requirement
-   matches the APIs H3 actually needs. Check current SETTINGS,
-   credit wakeups and QUIC provider independence.
-6. Unblock::HTTP: feature branch currently 0.01, candidate 0.02
-   with the complete unified Client/Server/WebSocket APIs.
-   Release ONLY after the lower distributions that are required
-   by its install metadata are available in their correct versions.
-   Finalize the exact dependency minimums only after those releases.
+The user specifically authorized merging these five release candidates
+to their respective main branches, and has chosen to complete the
+remaining release process in each distribution's own chat.
 
-Uniform::HTTP 0.06 is an existing published dependency. Verify whether
-any unshipped Uniform::HTTP changes actually exist before adding a
-new Uniform::HTTP release. Linux::Event and Linux::Event::HTTP are NOT
-part of this release train; no framework adapter will be bundled.
+1. **Net::QUIC 0.06** - MAIN contains standalone MAX_DATA wakeup,
+   six module version bumps and Changes; standalone 15-job CI
+   https://github.com/haxmeister/perl-Net-QUIC/actions/runs/39693427664
+   passed. Next release audit/tag/PAUSE upload occurs in Net::QUIC.
+   Net::QUIC must remain fully standalone, not become an Unblock
+   transport wrapper or acquire an HTTP dependency.
+2. **Unblock::HTTP1 0.12** - MAIN includes streamed/buffered receive,
+   terminal callbacks, attached-host output ordering and H1 Upgrade
+   handoff. Standalone CI
+   https://github.com/haxmeister/perl-Unblock-HTTP1/actions/runs/39694114939
+   and framework examples 39694114991 passed.
+3. **Unblock::HTTP2 0.12** - MAIN includes streaming/lifecycle,
+   Extended CONNECT, stream-local flow control and restored installed
+   NativeABI distribution smoke. Complete CI
+   https://github.com/haxmeister/perl-Unblock-HTTP2/actions/runs/39699576879
+   plus interoperability 39699576871 passed.
+4. **Unblock::HTTP3 0.13** - MAIN includes the existing literal 0.13
+   versions, H3 streaming/credit/SETTINGS, and native callback queue
+   memory fixes. Standalone CI 39172771475 and independent quic-go
+   interoperability 39172069428 passed. Its Makefile.PL currently
+   allows Net::QUIC >=0.05, which was separately tested; do not
+   raise this minimum to 0.06 without an actual need.
+5. **Unblock::HTTP 0.02** - MAIN contains the unified Client/Server,
+   H1/H2/H3 WebSockets and optional host reference examples. Its
+   minimum engine dependencies are HTTP1 >=0.12, HTTP2 >=0.12,
+   HTTP3 >=0.13, Uniform::HTTP >=0.06. Both FINAL coordinated
+   full-workflow integrations, pinned to the final merged engines,
+   PASSED on source 9db01d71bb0122134539b680adb2a6ebc7611e37:
+   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39700432122
+   https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39700432046
+   Verify installability against their ultimately RELEASED artifacts
+   before publishing 0.02.
 
-The GitHub compare audit of October 21 found the following
-unshipped source changes against the last versioned GitHub tag:
-- HTTP1 feature branch: 10 commits beyond v0.11.
-- HTTP2 feature branch: 3 commits beyond v0.11.
-- HTTP3 feature branch: 56 commits beyond v0.12.
-- Net::QUIC development branch: 11 commits beyond v0.05.
-- Uniform::HTTP main: IDENTICAL to v0.06, so do not bump it solely
-  for this coordinated release.
-- Unblock::WebSocket main currently reports 0.02 but no v0.02
-  GitHub tag/release was found by this audit. Confirm PAUSE/CPAN
-  state before deciding whether to publish 0.03.
+**Unblock::WebSocket** remains a separate, optionally loaded
+distribution, with current main source version 0.02; it was not
+modified or merged during this particular unified release preparation.
+Verify that the required released WebSocket package/version is indexed
+before advertising unified optional WebSocket support. Only bump it
+if its own repository audit identifies unshipped changes and arrange
+any needed release in its separate project chat.
 
-All candidate version numbers except the already-set HTTP3 0.13 are
-provisional until their distribution-specific audits and changelogs.
-Avoid claiming an API is shipped from CPAN merely because the
-coordinated feature branches pass CI.
+**Uniform::HTTP 0.06** is identical to its existing published tag;
+no modification or version bump is warranted in this train.
+
+**Linux::Event** and **Linux::Event::HTTP** remain outside this
+distribution release train. Do not install, bundle, maintain or
+declare Linux::Event as a runtime dependency of Unblock::HTTP.
+The maintained Linux::Event integration, if eventually built, belongs
+in Linux::Event::HTTP by the user's explicit decision.
+
+Next steps should be executed in each separate repository chat from
+the authoritative main-branch Handoff.md. Prepare and publish in
+dependency order; no tags, merges or PAUSE uploads have yet been done
+as part of these versioned releases.
 
 ## Unblock::HTTP source package boundary
 
@@ -92,6 +105,6 @@ from the proposed release tarball.
 - Shared Client/Server examples and callback APIs remain functional
   with published dependency versions.
 - Net::QUIC remains useful without Unblock::HTTP.
-- Main branch updates, tags and external publishing occur only as
-  explicit release actions after the audit, not during this
-  feature-branch cleanup.
+- Main branches already contain the authorized coordinated source.
+  Future release tags, GitHub releases and PAUSE uploads must follow
+  each distribution's own final audit and the user's permission.
