@@ -1,3 +1,158 @@
+# MAIN-BRANCH RELEASE HANDOFF: Unblock::HTTP 0.02
+Updated: 2026-10-21
+Repository: https://github.com/haxmeister/perl-Unblock-HTTP
+Current branch: main
+Completed development branch: feature/high-level-client-server
+Fast-forward merge source checkpoint: 9db01d71bb0122134539b680adb2a6ebc7611e37
+
+## Instructions for the next Unblock::HTTP-only chat
+
+The maintainer explicitly authorized pushing the completed feature branches
+to main and then continuing release work in each library's OWN project chat,
+based entirely on its handoff. This upper distribution HAS been merged
+to MAIN. The code already declares version 0.02 and includes its new Changes
+entry. The earlier main was a 0.01 development baseline. There has been
+NO version-0.02 GitHub tag/release, CPAN/PAUSE upload, or completed
+published-dependency installability audit. MAIN already has the unified
+API; do not restart implementation/architecture design or broad
+performance sweeps. The old sections below repeatedly instruct "do
+not modify main/merge/bump versions" because they describe earlier
+development phases. Those historical restrictions are superseded
+by this current, user-authorized main-branch state. Publication/tagging
+requires the maintainer's explicit decision after the final audit.
+
+## Delivered public API and constraints
+
+- One event-loop-neutral Unblock::HTTP::Server and
+  Unblock::HTTP::Client spanning HTTP/1.1, HTTP/2 and HTTP/3. The upper
+  API reuses the *real* lower-engine Transaction and Uniform::HTTP
+  messages. No additional HTTP parser, proxy transaction, or duplicate
+  WebSocket codec. Linux-only lower engines are allowed where documented,
+  but the upper interface does NOT bind to Linux::Event or any other loop.
+- Framework-owned TCP/TLS streams/listeners and ready authenticated
+  Net::QUIC connections are attached via small documented contracts,
+  plus optional host-provided connect_stream/connect_quic factories.
+  Client pools and request queues respect per-origin connection and
+  multiplexing limits; bounded response buffering is the default,
+  supplying on_data automatically selects streaming. Callback-first,
+  NOT async/await. Per-request completion/error/cancel, deadline,
+  backpressure, shutdown and connection reuse are tested.
+- HTTP1 WebSocket uses validated Upgrade/101 and transfers ownership
+  of the entire socket to the actual Unblock::WebSocket session. A
+  native borrowed-input provider must forward the unconsumed input
+  tail to the successor consumer exactly once.
+- H2 and H3 WebSockets use Extended CONNECT/HTTP 200 on separate
+  multiplexed Transactions (other HTTP requests and WebSocket streams
+  continue on the same socket/QUIC connection). A deferred per-stream
+  DATA writer avoids reentering nghttp2/nghttp3/QUIC receive callbacks.
+  Client waits for current peer SETTINGS_ENABLE_CONNECT_PROTOCOL before
+  dispatch; H3 additionally requeues unsent operations when QUIC
+  bidi-stream credit is exhausted. Rejected handshakes fail only the
+  operation/stream, not the whole connection; graceful Close, reset,
+  timeout and terminal callback states are tested.
+- Net::QUIC remains independently usable, NOT subsumed or acquired by
+  Unblock::HTTP. The top layer neither loads nor owns any particular
+  event loop. Performance matters: no gratuitous buffering, closures
+  in hot paths, or duplicated message/protocol abstractions.
+
+## Hard packaging boundary the maintainer decided
+
+**Unblock::HTTP MUST NOT DISTRIBUTE FRAMEWORK ADAPTER MODULES.**
+A maintained Linux::Event adapter, if desired later, belongs in
+the *separate* Linux::Event::HTTP distribution, not here. Do not
+add a Linux::Event dependency or reintroduce an installable
+lib/Unblock/HTTP/Adapter/LinuxEvent.pm. It was deliberately removed.
+A historical adapter fixture remains ONLY in repository test support:
+  xt/lib/Unblock/HTTP/Adapter/LinuxEvent.pm
+  xt/linux-event-adapter.t
+All xt/ and diagnostic bench/ files are excluded from MANIFEST/source
+tarball; CI uses them only from the checkout. Optional reference
+examples for Linux::Event contain their small integration class
+INLINE in the sample program and are included in the source
+distribution. See docs/WEBSOCKET-COOKBOOK.md,
+docs/READINESS-REVIEW-20261020.md, and
+docs/RELEASE-COORDINATION.md. The source package's Makefile.PL
+must not list Linux::Event as a required runtime dependency.
+No framework adapters for other loops are required for this release.
+
+## What was merged across repositories
+
+The maintainer approved and completed fast-forward merges to MAIN:
+- Net::QUIC 0.06 source bc4dcce3ac0bcfd19a4c442b4ed98cad3f9d5adb
+  (full standalone CI 39693427664 PASS); no 0.06 publication yet.
+- Unblock::HTTP1 0.12 source a976f169cd06ecc4cadab74dad1e281b42f57c4b
+  (standalone 39694114939 and examples 39694114991 PASS).
+- Unblock::HTTP2 0.12 source 7a8a59910c9e2d9ad1f5d73d72820ae1f856ce76
+  (standalone 39699576879 and interop 39699576871 PASS); this includes
+  the installed NativeABI test correction for versioned 0.12 tarballs.
+- Unblock::HTTP3 0.13 source 6687bcef0efd11991ac609f7dc7f7fa487153d28
+  (standalone 39172771475 PASS, third-party quic-go interop
+  39172069428 PASS; latest difference from passing code is docs-only).
+- Unified Unblock::HTTP 0.02 source 9db01d71bb0122134539b680adb2a6ebc7611e37
+  (both final coordinated integration workflows below PASS).
+
+All five now have an updated main-branch Handoff.md intended as
+a self-contained starting point for separate repository-specific
+release conversations. This project is the LAST distribution to
+publish in the dependency order. Uniform::HTTP 0.06 is already
+released and unchanged. Unblock::WebSocket is an independent
+optionally loaded dependency; source is 0.02, but check its
+published/indexed version if shipping optional WS support.
+
+## Exact verified upper integration state
+
+Two full upper integration workflows using final merged engine
+source pins in their workflow files PASSED, before the main-branch
+docs-only handoff edits:
+- Published Net::QUIC 0.05 / Linux::Event integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39700432122
+- Optional Net::QUIC MAX_DATA 0.06 feature integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39700432046
+The runs exercise the current upper 0.02 distribution and current
+HTTP1 0.12, HTTP2 0.12, HTTP3 0.13 source commits. They include
+the distribution unit suite, real TCP, H2 TLS/ALPN WebSocket,
+actual QUIC/TLS H3 Client/Server WebSocket, streaming, request
+credit, retention/resource guards and diagnostic benchmark smokes.
+They also check example compilation and the tarball boundary:
+"make distdir" excludes xt/, bench/, and the removed installed
+Linux::Event adapter while including real core modules and tests.
+The successful benchmark smoke is NOT a claim of a measured speedup.
+Main updates after this verified source are DOCUMENTATION ONLY.
+
+## The concrete next actions (release readiness, not implementation)
+
+1. Read this header, current MAIN Handoff.md, Changes, README.md,
+   Makefile.PL, MANIFEST/SKIP, docs/RELEASE-COORDINATION.md,
+   docs/IMPLEMENTATION.md, docs/ENGINE-CONTRACTS.md and cookbook.
+   Verify main, no accidental local changes, module 0.02 version and
+   all explicit module versions.
+2. Finish focused source-tarball / disttest / PAUSE indexing checks,
+   including installability on a clean machine and optional WebSocket
+   operation. Verify framework-specific adapter fixture does not leak
+   into package or dependency metadata.
+3. Wait for the lower release versions to be published, then test
+   Unblock::HTTP 0.02 AGAINST those published CPAN dependency packages,
+   not only GitHub feature pins. Minimum declared in Makefile.PL:
+   Unblock::HTTP1 >= 0.12, Unblock::HTTP2 >= 0.12,
+   Unblock::HTTP3 >= 0.13, Uniform::HTTP >= 0.06.
+   Net::QUIC is pulled in by HTTP3. Determine the actual indexed
+   Unblock::WebSocket version needed for optional use, without making
+   an unrelated WebSocket/host-adapter version bump.
+4. Correct any real release blockers with targeted tests/POD fixes;
+   avoid new architecture work, excessive benchmark cycles, or
+   releasing unsupported framework adapters.
+5. Once the rest of the release train is published and the final
+   standalone audit passes, ask for authorization to tag/release
+   Unblock::HTTP 0.02 on GitHub and upload to PAUSE. Verify CPAN
+   index, dependencies, examples and release notes after publishing.
+
+## Historical development handoff and CI logs below
+
+The following older sections are retained for engineering context.
+Their statements that no changes may be made to main, that the Client
+or WebSocket remains unimplemented, or that versions have not been
+bumped, are outdated and do not supersede the MAIN status above.
+
 ## Coordinated release status checkpoint (2026-10-21)
 
 User requested framework-specific adapters be retained ONLY in
