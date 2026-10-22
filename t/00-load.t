@@ -11,4 +11,14 @@ use_ok('Unblock::HTTP::Integration');
 use_ok('Unblock::HTTP::QUIC');
 
 is($Unblock::HTTP::VERSION, '0.02', 'distribution version');
+for my $module (qw(
+    Unblock::HTTP::Client
+    Unblock::HTTP::Server
+    Unblock::HTTP::Integration
+    Unblock::HTTP::QUIC
+)) {
+    no strict 'refs';
+    is(${"${module}::VERSION"}, $Unblock::HTTP::VERSION,
+        "$module package version matches distribution");
+}
 done_testing;
