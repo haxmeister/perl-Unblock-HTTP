@@ -1,3 +1,48 @@
+## Coordinated release status checkpoint (2026-10-21)
+
+User requested framework-specific adapters be retained ONLY in
+repository tests/examples, not bundled or installed in Unblock::HTTP.
+User also requested a coordinated version-bumped release of modified
+modules, including standalone Net::QUIC 0.06.
+
+As of this checkpoint:
+- Net::QUIC feature/connection-max-data-wakeup version 0.06 at
+  bc4dcce3ac0bcfd19a4c442b4ed98cad3f9d5adb, full matrix
+  GitHub Actions 39693427664 PASS; main/released 0.05 unchanged.
+- HTTP1 feature/unified-receive-lifecycle 0.12 at
+  a976f169cd06ecc4cadab74dad1e281b42f57c4b;
+  full CI 39694114939 PASS and framework examples 39694114991 PASS.
+- HTTP2 feature/unified-receive-lifecycle 0.12 source at
+  a4adee8e4b14641bc866ed1a36ea23d07aee2fcd;
+  30 distribution tests / 525 assertions and interop PASS,
+  but the Linux latest installed NativeABI packaging smoke retained
+  hardcoded 0.11 tarball filenames and failed. Fixed on HTTP2
+  feature branch at 7a8a59910c9e2d9ad1f5d73d72820ae1f856ce76:
+  workflow now reads the version from HTTP2.pm and uses
+  Unblock-HTTP2-$VERSION consistently. Its fresh full workflow
+  39699576879 is PENDING; do not declare HTTP2 completely green
+  until it passes.
+- HTTP3 feature/unified-receive-lifecycle package version already
+  0.13 (all 15 public/internal indexed modules literal-versioned)
+  and prior standalone/interop CI PASS. Confirm full release audit
+  after Net::QUIC 0.06 dependency baseline decision.
+- Upper Unblock::HTTP version bumped to 0.02 on
+  feature/high-level-client-server; minimum HTTP1/HTTP2 0.12,
+  HTTP3 0.13. Both upper full integration workflows
+  39693981597 / 39693981618 PASS, including tarball audit
+  excluding LinuxEvent adapter, xt-only fixture and bench scripts.
+  Upper CI should be repinned to the final corrected HTTP1/2
+  release commits before final signoff.
+- Uniform::HTTP 0.06 unchanged from its released tag. Verify
+  Unblock::WebSocket publish/index state before final optional
+  prerequisite declaration. See docs/RELEASE-COORDINATION.md.
+
+NEXT: verify corrected HTTP2 CI, repin upper exact HTTP1/2
+commits and retest; finalize HTTP3 + upper distribution tarball,
+metadata, release-note and dependency checks. Then arrange
+release order with Net::QUIC first. No main merge, tag,
+release or PAUSE upload performed yet.
+
 ## Release scope and adapter packaging correction (2026-10-21)
 
 USER-APPROVED ARCHITECTURE AND RELEASE DIRECTION:
