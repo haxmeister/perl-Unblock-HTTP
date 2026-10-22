@@ -276,10 +276,11 @@ F<xt/linux-event-adapter.t>. Both are excluded from the release tarball.
 Their purpose is to exercise integration semantics without requiring
 Unblock::HTTP to distribute or support an event-loop-specific adapter.
 
-=head1 REMAINING CONTRACT WORK
+=head1 ADAPTER OWNERSHIP REQUIREMENTS
 
 The receive-mode, terminal-notification and H1/H2/H3 WebSocket
-transition paths are implemented on the coordinated feature branches.
+transition paths are included in the released engine versions required
+by Unblock::HTTP 0.02.
 The whole-buffer transport contract remains in force. Adapter authors
 must still handle hard buffer limits, borrowed-input ownership across
 native H1 switches, and framework-specific shutdown semantics.
