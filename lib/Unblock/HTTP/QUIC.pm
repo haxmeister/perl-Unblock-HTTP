@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use Scalar::Util qw(refaddr blessed);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub client { return shift->_new('Client', @_); }
 sub server { return shift->_new('Server', @_); }
