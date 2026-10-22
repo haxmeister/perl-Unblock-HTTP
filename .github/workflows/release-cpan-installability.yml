@@ -73,7 +73,7 @@ jobs:
           test ! -e "$distdir/lib/Unblock/HTTP/Adapter/LinuxEvent.pm"
           ! grep -E "['\"]Linux::Event['\"] *=>" "$distdir/Makefile.PL"
           perl -MJSON::PP -e '
-            open my $fh, "<", "META.json" or die $!;
+            open my $fh, "<", "Unblock-HTTP-0.02/META.json" or die $!;
             local $/;
             my $meta = decode_json(<$fh>);
             die "wrong release version" unless $meta->{version} eq "0.02";
