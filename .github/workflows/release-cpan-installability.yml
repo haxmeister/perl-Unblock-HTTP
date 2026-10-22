@@ -1,0 +1,79 @@
+name: CPAN release installability
+
+on:
+  push:
+    branches:
+      - release/0.02-readiness
+  workflow_dispatch:
+
+jobs:
+  published-cpan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpanminus build-essential pkg-config libssl-dev openssl zlib1g-dev libnghttp2-dev
+      - name: Install released dependencies from CPAN, not source pins
+        run: |
+          trap 'sudo tail -n 100 /root/.cpanm/build.log' ERR
+          sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
+          sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
+          sudo cpanm --notest --quiet Net::QUIC@0.06
+          sudo cpanm --notest --quiet Unblock::HTTP1@0.12 Unblock::HTTP2@0.12 Unblock::HTTP3@0.13
+          sudo cpanm --notest --quiet Unblock::WebSocket@0.02
+      - name: Assert selected installed distributions
+        run: |
+          perl -MNet::QUIC -MUnblock::HTTP1 -MUnblock::HTTP2 -MUnblock::HTTP3 -MUniform::HTTP -MUnblock::WebSocket -e '
+            for my $p (
+              ["Net::QUIC", $Net::QUIC::VERSION, 0.06],
+              ["Unblock::HTTP1", $Unblock::HTTP1::VERSION, 0.12],
+              ["Unblock::HTTP2", $Unblock::HTTP2::VERSION, 0.12],
+              ["Unblock::HTTP3", $Unblock::HTTP3::VERSION, 0.13],
+              ["Uniform::HTTP", $Uniform::HTTP::VERSION, 0.06],
+              ["Unblock::WebSocket", $Unblock::WebSocket::VERSION, 0.02],
+            ) {
+              die "$p->[0] version $p->[1] below required $p->[2]\n" unless $p->[1] >= $p->[2];
+              print "$p->[0]: $p->[1]\n";
+            }'
+      - name: Distribution test against installed CPAN packages
+        run: |
+          perl Makefile.PL
+          make
+          make test
+          make distcheck
+          make disttest
+      - name: Audit tarball and PAUSE indexing metadata
+        run: |
+          make distmeta
+          make distdir
+          distdir=$(find . -maxdepth 1 -type d -name 'Unblock-HTTP-0.02' -print -quit)
+          test -n "$distdir"
+          test -f "$distdir/lib/Unblock/HTTP/_WebSocketH2Body.pm"
+          test -f "$distdir/t/37-client-h3-websocket-admission.t"
+          test ! -d "$distdir/xt"
+          test ! -d "$distdir/bench"
+          test ! -d "$distdir/.github"
+          test ! -e "$distdir/Handoff.md"
+          test ! -e "$distdir/docs/RELEASE-COORDINATION.md"
+          test ! -e "$distdir/lib/Unblock/HTTP/Adapter/LinuxEvent.pm"
+          ! grep -E "['\"]Linux::Event['\"] *=>" "$distdir/Makefile.PL"
+          perl -MJSON::PP -e '
+            open my $fh, "<", "META.json" or die $!;
+            local $/;
+            my $meta = decode_json(<$fh>);
+            die "wrong release version" unless $meta->{version} eq "0.02";
+            my %excluded = map { $_ => 1 } @{$meta->{no_index}{package} || []};
+            for my $name (qw(
+                Unblock::HTTP::_AltSvc
+                Unblock::HTTP::_ClientOperation
+                Unblock::HTTP::_EngineFactory
+                Unblock::HTTP::_Policy
+                Unblock::HTTP::_Session
+                Unblock::HTTP::_WebSocketH2Body
+            )) {
+                die "private package indexed: $name" unless $excluded{$name};
+            }
+          '
