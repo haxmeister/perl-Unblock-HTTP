@@ -23,6 +23,16 @@ WriteMakefile(
     },
     META_MERGE => {
         'meta-spec' => { version => 2 },
+        no_index => {
+            package => [qw(
+                Unblock::HTTP::_AltSvc
+                Unblock::HTTP::_ClientOperation
+                Unblock::HTTP::_EngineFactory
+                Unblock::HTTP::_Policy
+                Unblock::HTTP::_Session
+                Unblock::HTTP::_WebSocketH2Body
+            )],
+        },
         resources => {
             homepage => 'https://github.com/haxmeister/perl-Unblock-HTTP',
             repository => {
