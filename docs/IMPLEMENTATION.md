@@ -1,3 +1,8 @@
+> **Release note (2026-10-21):** This file is an engineering history with
+> dated feature-branch checkpoints and obsolete development restrictions.
+> For the released 0.02 API and dependency requirements, use README.md,
+> Makefile.PL, and the public module POD. The completed work is on main.
+>
 ## HTTP3 Client WebSocket Extended CONNECT (2026-10-20)
 
 The unified Client now implements opt-in `http3 => { websocket => 1 }`
