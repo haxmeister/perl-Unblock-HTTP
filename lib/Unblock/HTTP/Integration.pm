@@ -3,7 +3,7 @@ package Unblock::HTTP::Integration;
 use strict;
 use warnings;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 1;
 
@@ -15,11 +15,11 @@ Unblock::HTTP::Integration - Attach framework transports to HTTP engines
 
 =head1 IMPLEMENTATION STATUS
 
-This feature branch supplies reusable Server policy, direct engine
+Unblock::HTTP 0.02 supplies reusable Server policy, direct engine
 attachment, and the shared pooled Client with buffered or streamed callbacks.
-It requires the coordinated engine feature branches. HTTP1 Upgrade and
-HTTP2/HTTP3 WebSocket Extended CONNECT are implemented for Client and
-Server; H3 Client/Server exchanges are verified over real QUIC/TLS.
+It requires Unblock::HTTP1 0.12, Unblock::HTTP2 0.12, and Unblock::HTTP3 0.13
+or newer. HTTP1 Upgrade and HTTP2/HTTP3 WebSocket Extended CONNECT are
+implemented for Client and Server; H3 exchanges are tested over real QUIC/TLS.
 Authenticated same-host Alt-Svc and unsent connection fallback are
 implemented. Cross-host Alt-Svc, post-dispatch retries and generic
 framework-managed connection factories remain outside this layer.
