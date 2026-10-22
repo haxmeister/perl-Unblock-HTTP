@@ -41,9 +41,6 @@ t/19-client-admission.t
 t/20-client-idle.t
 t/21-client-network.t
 t/22-client-operation-lifetime.t
-t/23-h3-profile-summary.t
-t/24-h3-profile-sweep.t
-t/25-h3-compare-sweeps.t
 t/26-client-url-fastpath.t
 t/27-client-shutdown.t
 t/28-server-websocket.t
