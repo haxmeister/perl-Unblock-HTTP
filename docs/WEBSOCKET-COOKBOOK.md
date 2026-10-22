@@ -1,6 +1,6 @@
 # WebSocket cookbook
 
-This feature branch of Unblock::HTTP implements the same application-facing
+Unblock::HTTP 0.02 implements the same application-facing
 WebSocket callback model on HTTP/1.1, HTTP/2 and HTTP/3. The protocol engines,
 WebSocket codec, QUIC transport and host event loop stay separate.
 
@@ -16,8 +16,8 @@ real engine Transactions. No extra HTTP protocol parser is needed.
 
 Working example: [examples/linux-event-websocket-server.pl](../examples/linux-event-websocket-server.pl).
 
-After installing the coordinated HTTP engine feature branches,
-Unblock::WebSocket and Linux::Event, run:
+After installing Unblock::HTTP1 0.12+, Unblock::HTTP2 0.12+,
+Unblock::HTTP3 0.13+, Unblock::WebSocket and Linux::Event, run:
 
     perl -Iblib/lib examples/linux-event-websocket-server.pl 8080
 
@@ -70,8 +70,7 @@ and shutdown. They use actual HTTP2 and WebSocket engines.
 
 The real Linux::Event integration test
 `xt/linux-event-websocket-tls.t` also covers **encrypted** HTTP/2,
-rather than only the cleartext prior-knowledge listener above. After
-building the coordinated feature branches and Linux::Event, run:
+rather than only the cleartext prior-knowledge listener above. After installing the released engines and Linux::Event, run:
 
     prove -v -b xt/linux-event-websocket-tls.t
 
