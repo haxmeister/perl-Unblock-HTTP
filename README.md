@@ -5,15 +5,15 @@ HTTP/2, HTTP/3, and WebSocket. Protocol parsing stays in the
 existing engines. WebSocket sessions use the separate Unblock::WebSocket
 distribution; this top layer adds no XS.
 
-This feature branch is under development. It implements reusable Server
-attachment, a shared Client with per-origin pools and bounded queues,
-and opt-in WebSocket handshakes over HTTP/1.1 Upgrade and HTTP/2/3
-Extended CONNECT. The WebSocket library is an optional dependency.
-Cross-host Alt-Svc and post-dispatch request replay remain unimplemented;
-optional framework-driven request deadlines are available. The
-buffered and streamed callbacks require the coordinated engine feature
-branches. Read [implementation status](docs/IMPLEMENTATION.md) before using
-the branch. It is not a release candidate.
+Unblock::HTTP 0.02 provides reusable Server attachment, a shared Client
+with per-origin pools and bounded queues, and opt-in WebSocket handshakes
+over HTTP/1.1 Upgrade and HTTP/2/3 Extended CONNECT. Unblock::WebSocket
+is an optional dependency, loaded only when WebSockets are used.
+Cross-host Alt-Svc and post-dispatch request replay are intentionally not
+provided; optional framework-driven request deadlines are available.
+The required released engines are Unblock::HTTP1 0.12+, Unblock::HTTP2
+0.12+, Unblock::HTTP3 0.13+, and Uniform::HTTP 0.06+. The separate
+[implementation notes](docs/IMPLEMENTATION.md) record development history.
 
 ## One Server, many connections
 
@@ -51,9 +51,9 @@ still runs after successful body completion. Failed or cancelled bodies do
 not reach it. Register `$tx->on_finish(...)` before the transaction is terminal
 to observe completion, error, or cancellation exactly once.
 
-This requires `feature/unified-receive-lifecycle` in HTTP1, HTTP2 and HTTP3.
-Released H1/H2 0.11 and H3 0.12 lack these primitives. Attachment checks the
-required methods and gives an explicit error for an older engine.
+This requires Unblock::HTTP1 0.12+, Unblock::HTTP2 0.12+, and
+Unblock::HTTP3 0.13+. Attachment also checks required engine methods
+and gives an explicit error for an incompatible older engine.
 
 ## Framework attachment
 
@@ -106,7 +106,7 @@ $endpoint->start;
 
 Read `perldoc Unblock::HTTP::Integration` for the adapter contract.
 
-## Shared Client (development)
+## Shared Client
 
 The Client now owns reusable HTTP policy, request scheduling, and per-origin
 connection pools. An application makes one Client for many destinations:
@@ -165,10 +165,9 @@ using fresh connections; a transmitted request is never replayed.
 inspect queued, connecting, active, idle, and retiring connections.
 
 Fatal hard-limit output rejection is distinct from cooperative
-backpressure. The optional LinuxEvent integration propagates
+backpressure. The repository-only Linux::Event integration tests propagate
 max_pending_bytes violations as transport errors; it does not
-replay the rejected bytes. The coordinated HTTP1 feature engine
-waits until attached output is accepted before reporting a
+replay the rejected bytes. Unblock::HTTP1 0.12+ waits until attached output is accepted before reporting a
 successful server terminal callback. See docs/IMPLEMENTATION.md.
 
 Idle connection eviction is opt-in with `idle_timeout => $seconds`.
@@ -177,7 +176,7 @@ When enabled, the framework supplies `schedule_timer` and may supply
 socket or QUIC resources. Timers are cancelled on reuse and never close
 connections with active streams or queued requests waiting for peer credit.
 
-The feature's live integration tests also exercise streamed request and
+The repository-only live integration tests also exercise streamed request and
 response bodies exceeding 1 MiB on H1/H2/H3, with integrity checks and
 controlled accepted-but-blocked output resumption. A preliminary
 direct-engine versus unified-Client TCP loopback benchmark is included
@@ -199,7 +198,7 @@ and origin hostname verification. When advertised HTTP/3 is selected, the
 QUIC factory receives alternative_host and alternative_port and must confirm
 verified_origin => 1 before the request can be sent. A failed advertised
 QUIC connection may safely fall back before dispatch; a request already
-submitted to an engine is never automatically replayed. This is **not** a release candidate.
+submitted to an engine is never automatically replayed.
 
 ## WebSockets across HTTP/1, HTTP/2 and HTTP/3
 
@@ -260,8 +259,9 @@ The optional Linux::Event examples are:
 - `examples/linux-event-quic-websocket-server.pl`: H3 WebSocket echo on QUIC/TLS.
 
 Each separates application behavior from framework plumbing. The core does
-not require Linux::Event. Core requires Perl 5.20; this optional adapter uses
-Perl 5.36 syntax.
+not require Linux::Event. The distribution requires Perl 5.20; some
+optional example programs use newer Perl syntax. No framework adapter
+is installed by this distribution.
 
 Run isolated contract tests:
 
