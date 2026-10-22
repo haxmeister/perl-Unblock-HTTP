@@ -1,3 +1,41 @@
+# RELEASE 0.02 AUDIT CHECKPOINT (2026-10-21)
+
+This checkpoint is on branch `release/0.02-readiness`, created from main
+e7a53da133f7cf25e3028cee9f8b7b3fe3f5fe3a. Main was not modified
+by these release-readiness corrections. The authoritative main-branch
+development handoff follows below and remains valid for architecture scope.
+
+Preparation changes on this branch:
+- Align Unblock::HTTP::Client, Server, QUIC and Integration public
+  package versions to 0.02; assert these versions in t/00-load.t.
+- Add `META_MERGE no_index.package` for all six private helper packages.
+- Correct outdated feature-branch and release-candidate descriptions in
+  README, Integration POD, and the WebSocket cookbook. Mark historical
+  implementation/engine-contract notes as historical.
+- Exclude internal .github/ workflows and docs/RELEASE-COORDINATION.md
+  from the source distribution via MANIFEST.SKIP; the previously verified
+  exclusion of xt/, bench/, and installable framework adapters remains.
+- Add a narrow GitHub Actions workflow,
+  `.github/workflows/release-cpan-installability.yml`, using CPAN releases
+  Net::QUIC 0.06, HTTP1 0.12, HTTP2 0.12, HTTP3 0.13, Uniform::HTTP
+  0.06, and optional WebSocket 0.02 rather than GitHub source pins. It
+  runs unit and disttest, checks distcheck, tarball boundaries and
+  private-package PAUSE metadata. First run:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39720832062
+
+Outstanding before a 0.02 release:
+- Review the completed clean published-dependency CI result (pending as
+  of this checkpoint), including whether Unblock::WebSocket 0.02 can be
+  installed from CPAN.
+- Confirm all required packages are indexed and the source disttest and
+  generated PAUSE metadata pass; correct real release blockers only.
+- Merge release-readiness corrections to main after review and verify
+  final main CI. Tag/GitHub publish/PAUSE upload require explicit approval.
+- Do not bundle any framework-specific adapter, modify unrelated lower
+  distributions, or start another broad performance campaign.
+
+---
+
 # MAIN-BRANCH RELEASE HANDOFF: Unblock::HTTP 0.02
 Updated: 2026-10-21
 Repository: https://github.com/haxmeister/perl-Unblock-HTTP
