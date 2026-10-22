@@ -11,3 +11,4 @@
 ^docs/RELEASE-COORDINATION\.md$
 ^xt/
 ^bench/
+^t/(23-h3-profile-summary|24-h3-profile-sweep|25-h3-compare-sweeps)\.t$
