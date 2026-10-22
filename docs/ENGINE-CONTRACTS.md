@@ -1,9 +1,11 @@
 # Engine contracts for ordinary Server reception
 
-Status: implemented and CI verified on feature branches, 2026-10-17.
+Historical design checkpoint (2026-10-17). These engine contracts were
+implemented and merged before Unblock::HTTP 0.02 release preparation.
 Date: 2026-10-17
 Scope: perl-Unblock-HTTP1, perl-Unblock-HTTP2, perl-Unblock-HTTP3.
-Do not change main in any repository. Do not merge or release these changes.
+The branch and no-release instructions recorded during this milestone
+no longer apply. See the current main-branch Handoff.md.
 
 ## First dependency milestone
 
