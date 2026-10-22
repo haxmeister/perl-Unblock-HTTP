@@ -1,38 +1,60 @@
 # RELEASE 0.02 AUDIT CHECKPOINT (2026-10-21)
 
-This checkpoint is on branch `release/0.02-readiness`, created from main
-e7a53da133f7cf25e3028cee9f8b7b3fe3f5fe3a. Main was not modified
-by these release-readiness corrections. The authoritative main-branch
-development handoff follows below and remains valid for architecture scope.
+Release-readiness fixes were made on branch `release/0.02-readiness`,
+forked from main e7a53da133f7cf25e3028cee9f8b7b3fe3f5fe3a.
+No changes have been merged into main by this audit. The prior
+main-branch development handoff follows below.
 
-Preparation changes on this branch:
-- Align Unblock::HTTP::Client, Server, QUIC and Integration public
-  package versions to 0.02; assert these versions in t/00-load.t.
-- Add `META_MERGE no_index.package` for all six private helper packages.
-- Correct outdated feature-branch and release-candidate descriptions in
-  README, Integration POD, and the WebSocket cookbook. Mark historical
-  implementation/engine-contract notes as historical.
-- Exclude internal .github/ workflows and docs/RELEASE-COORDINATION.md
-  from the source distribution via MANIFEST.SKIP; the previously verified
-  exclusion of xt/, bench/, and installable framework adapters remains.
-- Add a narrow GitHub Actions workflow,
-  `.github/workflows/release-cpan-installability.yml`, using CPAN releases
-  Net::QUIC 0.06, HTTP1 0.12, HTTP2 0.12, HTTP3 0.13, Uniform::HTTP
-  0.06, and optional WebSocket 0.02 rather than GitHub source pins. It
-  runs unit and disttest, checks distcheck, tarball boundaries and
-  private-package PAUSE metadata. First run:
-  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39720832062
+## Completed corrections
 
-Outstanding before a 0.02 release:
-- Review the completed clean published-dependency CI result (pending as
-  of this checkpoint), including whether Unblock::WebSocket 0.02 can be
-  installed from CPAN.
-- Confirm all required packages are indexed and the source disttest and
-  generated PAUSE metadata pass; correct real release blockers only.
-- Merge release-readiness corrections to main after review and verify
-  final main CI. Tag/GitHub publish/PAUSE upload require explicit approval.
-- Do not bundle any framework-specific adapter, modify unrelated lower
-  distributions, or start another broad performance campaign.
+- Public Unblock::HTTP, Client, Server, Integration and QUIC versions
+  all declare 0.02; t/00-load.t asserts release version consistency.
+- Makefile.PL excludes six private helper packages from PAUSE indexing
+  via META_MERGE no_index.package; release metadata is verified.
+- README, Integration POD and WebSocket cookbook no longer misrepresent
+  this candidate as an unreleased feature branch. Historical design
+  documents are identified as such.
+- MANIFEST.SKIP removes .github/, Handoff.md, internal release
+  coordination, xt/, bench/ and related diagnostic material from CPAN.
+  The three bench-dependent tests t/23..25 remain in the checkout but
+  are excluded from MANIFEST so disttest never requires absent bench/.
+  Linux::Event adapter fixture stays in xt/ only; no installable
+  adapter or Linux::Event runtime prerequisite is shipped.
+- All tracked files are represented in MANIFEST or MANIFEST.SKIP.
+
+## Release verification
+
+Final workflow: https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/39721546444
+Conclusion: SUCCESS on source 9ac7fd409e830db53e26ef64213dcda3a82c7637.
+A later documentation-only Handoff update does not change tested source.
+
+The clean Ubuntu runner installs the actual CPAN packages:
+Net::QUIC 0.06, Unblock::HTTP1 0.12, Unblock::HTTP2 0.12,
+Unblock::HTTP3 0.13 and Uniform::HTTP 0.06. The core API loads without
+WebSocket installed. Unblock::WebSocket 0.02 was NOT found on the CPAN
+index; for optional integration tests it is installed from main source
+SHA 6f27677e176a3010355e1db5d135895baa3d8128.
+Source-checkout tests, make distcheck and make disttest passed.
+The packaged disttest reports 25 test files / 1,031 assertions PASS.
+Source tarball content and generated META.json version/no_index checks
+passed. Framework adapter modules do not ship.
+
+Earlier complete integration workflows pinned to the final engines also
+passed, and remain the evidence for live TCP, TLS/ALPN H2, QUIC/TLS H3,
+backpressure, and WebSocket behavior. CI diagnostic benchmarks do NOT
+constitute measured performance gains.
+
+## Remaining before release
+
+1. Coordinate the optional Unblock::WebSocket 0.02 CPAN publication in
+   its OWN repository chat if full optional WebSocket functionality is
+   to be immediately installable by CPAN users. Do not make this
+   distribution depend on WebSocket unconditionally.
+2. After maintainer approval, merge this readiness branch into main
+   and verify final main commit/workflow status.
+3. Only after explicit publication authorization, create the 0.02
+   GitHub tag/release and PAUSE upload; verify the indexed release.
+   No tag, GitHub release or PAUSE upload was performed in this audit.
 
 ---
 
