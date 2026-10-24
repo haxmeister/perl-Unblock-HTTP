@@ -1,0 +1,31 @@
+name: HTTP1-only installation
+
+on:
+  push:
+    branches: [feature/linux-event-integration]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  http1-only:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        perl: ['5.20', '5.44']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678
+        with:
+          perl-version: ${{ matrix.perl }}
+      - name: Install ordinary base prerequisites
+        run: cpanm --notest --installdeps .
+      - name: Build and test without optional engines
+        run: |
+          perl Makefile.PL
+          make
+          make test
+          make disttest
+          perl -e 'for my $module (qw(Unblock::HTTP2 Unblock::HTTP3 Net::QUIC Unblock::WebSocket)) { (my $file = $module) =~ s{::}{/}g; die "$module unexpectedly installed" if eval { require "$file.pm"; 1 } }'

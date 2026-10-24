@@ -335,7 +335,7 @@ sub request {
 
     my %callbacks;
     for my $name (qw(
-        on_response on_data on_end on_error on_finish on_informational on_drain
+        on_response on_data on_end on_error on_finish on_informational on_drain on_transaction
     )) {
         next unless exists $field{$name};
         my $cb = delete $field{$name};
@@ -1071,16 +1071,16 @@ sub _dispatch {
         if (my $bridge = delete $active_op->{websocket_bridge}) {
             $bridge->detach;
         }
-        $active_op->{state} = ($active_op->{timeout_error}
+        $active_op->{state} = ($active_op->{admission_error} || $active_op->{timeout_error}
             || $active_op->{websocket_handshake_error}) ? 'error'
             : $tx->is_cancelled ? 'cancelled'
             : $tx->is_error ? 'error' : 'complete';
-        $active_op->{error} = $active_op->{timeout_error}
+        $active_op->{error} = $active_op->{admission_error} || $active_op->{timeout_error}
             || $active_op->{websocket_handshake_error}
             || ($tx->is_error ? $tx->error : undef);
         $active_op->_cancel_timer;
         $active_conn->{active}--;
-        if (($active_op->{timeout_error}
+        if (($active_op->{admission_error} || $active_op->{timeout_error}
              || $active_op->{websocket_handshake_error})
             && $callbacks->{on_error}) {
             eval { $callbacks->{on_error}->($tx, $active_op->{error}); 1 }
@@ -1138,6 +1138,17 @@ sub _dispatch {
         unshift @{ $pool->{pending} }, $op;
         $self->{pending_count}++;
         return 0;
+    }
+    if ($ok && !$op->is_terminal && $callbacks->{on_transaction}) {
+        # Admission is a one-shot boundary, outside engine request(). The
+        # operation already exposes the real transaction, so callers may
+        # write/end a streamed body or cancel without a provisional buffer.
+        local $pool->{callback_depth} = ($pool->{callback_depth} || 0) + 1;
+        my $admitted = eval { $callbacks->{on_transaction}->($op->{transaction}); 1 };
+        if (!$admitted && !$op->is_terminal) {
+            $op->{admission_error} = "$@" || 'on_transaction callback failed';
+            $op->{transaction}->cancel;
+        }
     }
     unless ($ok) {
         delete $self->{active_operations}{$op_id};
@@ -1437,6 +1448,27 @@ transaction itself records a cancellation because no protocol parser
 error has been invented. An intentional user C<cancel()> remains distinct:
 it does not manufacture an on_error callback. No timed-out request is
 automatically replayed.
+
+=head1 REQUEST ADMISSION CALLBACK
+
+C<request()> accepts C<on_transaction =E<gt> sub { my ($tx) = @_; ... }>.
+It runs once after the real engine Transaction is assigned to the operation,
+outside the engine's request constructor. Use it to call C<write()> and
+C<end()> for C<stream_body =E<gt> 1>, or to cancel the operation. It may run
+synchronously when a reusable connection is already available; use its
+Transaction argument rather than assuming the returned operation variable
+has been assigned.
+
+Queued cancellation, connection failure, temporary HTTP/3 stream-credit
+exhaustion, and operations that become terminal during engine admission do
+not invoke this callback. When credit becomes available the same queued
+operation receives one notification with its actual admitted Transaction.
+
+An exception cancels the admitted Transaction, marks the operation as an
+error, and invokes C<on_error> and C<on_finish> once with that Transaction.
+As with timeout cancellation, the Transaction reports cancellation while
+the operation retains the callback error. An exception after the callback
+has already made the operation terminal does not produce a second finish.
 
 =head1 HTTP/1.1 WEBSOCKETS
 

@@ -53,3 +53,5 @@ t/34-client-websocket-h2-lifecycle.t
 t/35-server-websocket-h3.t
 t/36-client-websocket-h3.t
 t/37-client-h3-websocket-admission.t
+t/38-client-on-transaction.t
+t/39-http1-only.t

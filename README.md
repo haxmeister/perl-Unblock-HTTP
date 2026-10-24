@@ -11,8 +11,11 @@ over HTTP/1.1 Upgrade and HTTP/2/3 Extended CONNECT. Unblock::WebSocket
 is an optional dependency, loaded only when WebSockets are used.
 Cross-host Alt-Svc and post-dispatch request replay are intentionally not
 provided; optional framework-driven request deadlines are available.
-The required released engines are Unblock::HTTP1 0.12+, Unblock::HTTP2
-0.12+, Unblock::HTTP3 0.13+, and Uniform::HTTP 0.06+. The separate
+Base requirements are Unblock::HTTP1 0.12+ and Uniform::HTTP 0.06+.
+HTTP/2 requires optional Unblock::HTTP2 0.12+; HTTP/3 requires optional
+Unblock::HTTP3 0.13+. Enable the corresponding installation feature or
+install that engine explicitly before enabling the protocol. An unavailable
+enabled engine produces an explicit attachment error. The separate
 [implementation notes](docs/IMPLEMENTATION.md) record development history.
 
 ## One Server, many connections
@@ -51,8 +54,8 @@ still runs after successful body completion. Failed or cancelled bodies do
 not reach it. Register `$tx->on_finish(...)` before the transaction is terminal
 to observe completion, error, or cancellation exactly once.
 
-This requires Unblock::HTTP1 0.12+, Unblock::HTTP2 0.12+, and
-Unblock::HTTP3 0.13+. Attachment also checks required engine methods
+For enabled protocols this requires Unblock::HTTP1 0.12+, Unblock::HTTP2
+0.12+, or Unblock::HTTP3 0.13+. Attachment also checks required engine methods
 and gives an explicit error for an incompatible older engine.
 
 ## Framework attachment
