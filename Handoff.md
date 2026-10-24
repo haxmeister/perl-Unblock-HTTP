@@ -5,10 +5,20 @@ Branch: feature/linux-event-integration
 
 The user explicitly authorized these upstream changes from the Linux::Event::HTTP
 reconstruction chat. Main, releases, tags and version numbers must remain
-unchanged. Nothing has been pushed. Earlier release instructions below are
-historical and do not authorize publishing this development branch.
+unchanged. On 2026-10-24 the user authorized feature-branch pushes as needed.
+Main still requires permission. This feature branch is now published.
+Earlier release instructions below remain historical.
 
-Client on_transaction admission callback, HTTP2/HTTP3 optional dependency metadata, and explicit missing-enabled-engine errors are implemented. The local H1-only/mocked suite passes on Perl 5.38.2 threaded and 5.44.0 non-threaded: 30 files / 870 top-level tests (optional engine suites skipped). make disttest passes on 5.38: 27 files / 753 tests. H1 upload uses a real engine; H3 admission/credit coverage uses engine doubles. New H1-only CI installs ordinary prerequisites without --nodeps; it has not run remotely. Generic handoff is authorized but remains pending.
+Client on_transaction admission callback, HTTP2/HTTP3 optional dependency metadata, and explicit missing-enabled-engine errors are implemented. The local H1-only/mocked suite passes on Perl 5.38.2 threaded and 5.44.0 non-threaded: 30 files / 870 top-level tests (optional engine suites skipped). make disttest passes on 5.38: 27 files / 753 tests. H1 upload uses a real engine; H3 admission/credit coverage uses engine doubles. New H1-only CI installs ordinary prerequisites without --nodeps; it passes remotely on Perl 5.20 and 5.44. Generic handoff is authorized but remains pending.
+
+Published implementation: 6fa6c452236f9ecc2830d250fefc7d79d1167676.
+The GitHub API publication preserves the exact tested local tree
+c7620c4a6d845865dde850896285c09a7122e0c7 (formerly local 1b853f0).
+H1-only installation CI PASS on Perl 5.20/5.44, ordinary --installdeps,
+source suite, disttest and absence of optional H2/H3/QUIC/WebSocket packages.
+Perl 5.20 source tests skip Perl-5.36+ benchmark utilities as intended;
+packaged disttest passes 27 files / 753 checks on both versions.
+- https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40105784783
 
 The coordinating checkout is Linux::Event::HTTP feature/unblock-http-rebuild.
 Keep that handoff current with verified commits and dependency pins.
