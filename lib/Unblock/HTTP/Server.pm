@@ -580,7 +580,8 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
 
 This feature branch implements reusable attachment and ordinary buffered or
 streamed requests. It requires the receive/lifecycle feature branches of the
-three engines; released H1/H2 0.11 and H3 0.12 do not provide these methods.
+supported engine releases. Require Unblock::HTTP1 >= 0.13, optional
+Unblock::HTTP2 >= 0.13 and optional Unblock::HTTP3 >= 0.14 for this API.
 HTTP/1.1 Server Upgrade and HTTP/2 Server Extended CONNECT are verified
 opt-in paths using Unblock::WebSocket. HTTP/2 Client Extended CONNECT is
 also verified and documented in Unblock::HTTP::Client. HTTP/3 Server
