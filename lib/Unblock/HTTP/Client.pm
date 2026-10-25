@@ -1091,6 +1091,14 @@ sub _dispatch {
             if ($response->status < 200 || $response->status >= 300) {
                 $callbacks->{on_response}->($tx, $response)
                     if $callbacks->{on_response};
+                # This request has an open producer for successful
+                # full-duplex CONNECT. When the peer rejects it, send
+                # request FIN on a later turn so the HTTP response can
+                # complete normally. Never write from a receive callback.
+                my $active_self = $weak_self or return;
+                $active_self->{factory}{defer}->(sub {
+                    $tx->end unless $tx->is_terminal;
+                });
                 return;
             }
             my $active_op = $weak_op or return;
