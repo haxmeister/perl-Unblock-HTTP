@@ -340,7 +340,7 @@ sub request {
 
     my %callbacks;
     for my $name (qw(
-        on_response on_data on_end on_error on_finish on_informational on_drain on_transaction
+        on_response on_data on_end on_error on_finish on_informational on_drain on_transaction on_handoff
     )) {
         next unless exists $field{$name};
         my $cb = delete $field{$name};
@@ -358,6 +358,10 @@ sub request {
     my $stream_body = delete($field{stream_body}) ? 1 : 0;
     croak 'request(): on_drain requires stream_body'
         if $callbacks{on_drain} && !$stream_body;
+    croak 'request(): on_handoff requires explicit http_version => 1.1'
+        if $callbacks{on_handoff} && $version ne 'http/1.1';
+    croak 'request(): on_handoff cannot be combined with WebSocket'
+        if $callbacks{on_handoff} && $ws_spec;
     croak 'request(): pending queue is full'
         if $self->{pending_count} >= $self->{limit}{max_pending_requests};
     croak 'request(): do not pass scheme, authority or target with url'
@@ -1065,6 +1069,39 @@ sub _dispatch {
             $ws->input($tail) if length $tail;
         };
     }
+    if ($callbacks->{on_handoff} && !$ws_spec) {
+        # A generic H1 101/CONNECT transfer retires the entire socket from
+        # the HTTP pool. The successor inherits the transport and remainder.
+        $engine_callback{on_switch} = sub {
+            my ($tx, $response) = @_;
+            my $active_self = $weak_self or return;
+            my $active_pool = $weak_pool or return;
+            my $active_conn = $weak_conn or return;
+            my $active_op = $weak_op or return;
+            local $active_pool->{callback_depth} =
+                ($active_pool->{callback_depth} || 0) + 1;
+            my $host = $active_conn->{host};
+            croak 'request(): on_handoff requires unblock_upgrade()'
+                unless $host->can('unblock_upgrade');
+            my $successor = $callbacks->{on_handoff}->($tx, $response, $host);
+            croak 'request(): on_handoff must return a successor consumer'
+                unless blessed($successor);
+            for my $method (qw(input input_eof transport_error resume_output)) {
+                croak "request(): on_handoff successor must implement $method()"
+                    unless $successor->can($method);
+            }
+            $host->unblock_upgrade($successor);
+            $active_op->{upgrade_retirement} = [$active_pool, $active_conn];
+            $active_conn->{released} = 1;
+            $active_self->_cancel_idle($active_conn)
+                if $active_conn->{idle_cancel};
+            $active_pool->{connections} = [
+                grep { $_ != $active_conn } @{ $active_pool->{connections} }
+            ];
+            my $tail = $active_conn->{engine}->take_remainder;
+            $successor->input($tail) if length $tail;
+        };
+    }
     $engine_callback{on_finish} = sub {
         my ($tx) = @_;
         my $active_op = $weak_op or return;
@@ -1543,6 +1580,25 @@ Other HTTP work for the same origin opens/reuses a different HTTP stream.
 Rejected or malformed handshakes fail the original operation; there is
 no automatic request replay. Calling C<cancel()> before establishment
 uses the usual queued/connecting/active operation cancellation semantics.
+
+=head1 GENERIC HTTP/1.1 PROTOCOL HANDOFF
+
+Pass C<on_handoff> to C<request()> with C<http_version =E<gt> '1.1'>
+to transfer a successful HTTP1 101 Upgrade or CONNECT response to a
+framework-independent protocol consumer. C<on_handoff($tx, $response,
+$transport)> returns an object supporting C<input>, C<input_eof>,
+C<transport_error> and C<resume_output>. The transport must implement
+C<unblock_upgrade($consumer)>; on success the socket leaves the HTTP
+connection pool, the original write queue stays in order, and any
+post-switch HTTP remainder is delivered once to the successor. For a
+native input provider, the framework also transfers its own retained
+unconsumed window to the successor.
+
+The HTTP request operation finishes at the handshake boundary, not
+when the successor protocol later closes. The caller owns the upgraded
+consumer's lifetime, including its socket. This option does not select
+HTTP2 or HTTP3 Extended CONNECT, and it cannot be combined with the
+specialized C<connect_websocket()> API.
 
 =head1 HTTP/2 WEBSOCKET EXTENDED CONNECT
 
