@@ -24,15 +24,15 @@ jobs:
           sudo cpanm --notest --quiet Linux::Event@0.117
           sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
           sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
-          sudo cpanm --notest --quiet Net::QUIC@0.05
-          perl -MNet::QUIC -e 'die "Expected CPAN Net::QUIC 0.05\n" unless $Net::QUIC::VERSION eq "0.05"'
+          sudo cpanm --notest --quiet Net::QUIC@0.06
+          perl -MNet::QUIC -e 'die "Expected CPAN Net::QUIC 0.06\n" unless $Net::QUIC::VERSION eq "0.06"'
           mkdir -p /tmp/unblock-sources
-          # Pin the coordinated receive/lifecycle engine commits. Publish these
-          # feature commits before this upper branch; never silently test main.
+          # Test the prepared standalone engine main commits exactly; their
+          # forthcoming CPAN releases are separate from this source CI.
           for spec in \
-            perl-Unblock-HTTP1:a976f169cd06ecc4cadab74dad1e281b42f57c4b \
-            perl-Unblock-HTTP2:7a8a59910c9e2d9ad1f5d73d72820ae1f856ce76 \
-            perl-Unblock-HTTP3:6687bcef0efd11991ac609f7dc7f7fa487153d28 \
+            perl-Unblock-HTTP1:091e2744b84c0233a050d0643366128f29e38f47 \
+            perl-Unblock-HTTP2:2110f272fc2db06c065c8444a189a30038f2724f \
+            perl-Unblock-HTTP3:8fa64811ef5d2f8b30708cf0f2e15d9e946d6bee \
             perl-Unblock-WebSocket:6f27677e176a3010355e1db5d135895baa3d8128; do
             project=${spec%%:*}
             revision=${spec#*:}
@@ -112,7 +112,7 @@ jobs:
           perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 --samples=96 --warmup=24 --rounds=3 /tmp/unblock-h3-sweep-a
           perl bench/h3-profile-sweep.pl --pair=c16-b4096-16384 --samples=96 --warmup=24 --rounds=3 --swap-url-order /tmp/unblock-h3-sweep-b
           perl bench/h3-compare-sweeps.pl --json=/tmp/unblock-h3-sweep-comparison.json /tmp/unblock-h3-sweep-a /tmp/unblock-h3-sweep-b
-          perl -MJSON::PP -e 'sub read_json { my ($p) = @_; open my $fh, "<", $p or die $!; local $/; return decode_json(<$fh>); } my $a=read_json("/tmp/unblock-h3-sweep-a/sweep.json"); my $b=read_json("/tmp/unblock-h3-sweep-b/sweep.json"); my $c=read_json("/tmp/unblock-h3-sweep-comparison.json"); die "invalid independent sweep reports" unless $a->{complete} && $b->{complete} && @{$a->{cases}} == 2 && @{$b->{cases}} == 2 && @{$c->{cases}} == 2 && $a->{host}{net_quic_version} eq "0.05" && $b->{host}{net_quic_version} eq "0.05" && $c->{first_dir} ne $c->{second_dir} && $a->{cases}[0]{id} eq "c16-b4096-16384-cycled" && $a->{cases}[1]{id} eq "c16-b4096-16384-unique" && $b->{cases}[0]{id} eq "c16-b4096-16384-unique" && $b->{cases}[1]{id} eq "c16-b4096-16384-cycled";'
+          perl -MJSON::PP -e 'sub read_json { my ($p) = @_; open my $fh, "<", $p or die $!; local $/; return decode_json(<$fh>); } my $a=read_json("/tmp/unblock-h3-sweep-a/sweep.json"); my $b=read_json("/tmp/unblock-h3-sweep-b/sweep.json"); my $c=read_json("/tmp/unblock-h3-sweep-comparison.json"); die "invalid independent sweep reports" unless $a->{complete} && $b->{complete} && @{$a->{cases}} == 2 && @{$b->{cases}} == 2 && @{$c->{cases}} == 2 && $a->{host}{net_quic_version} eq "0.06" && $b->{host}{net_quic_version} eq "0.06" && $c->{first_dir} ne $c->{second_dir} && $a->{cases}[0]{id} eq "c16-b4096-16384-cycled" && $a->{cases}[1]{id} eq "c16-b4096-16384-unique" && $b->{cases}[0]{id} eq "c16-b4096-16384-unique" && $b->{cases}[1]{id} eq "c16-b4096-16384-cycled";'
           # Distinct request targets remove the two-path-only workload
           # bias. Paired direct/unified, fresh isolated processes.
           # These are CPU/resource diagnostics, NEVER speed pass/fail gates.

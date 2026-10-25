@@ -29,9 +29,9 @@ jobs:
           # coordinated HTTP engine source commits. Do not test moving main.
           for spec in \
             perl-Net-QUIC:bc4dcce3ac0bcfd19a4c442b4ed98cad3f9d5adb \
-            perl-Unblock-HTTP1:a976f169cd06ecc4cadab74dad1e281b42f57c4b \
-            perl-Unblock-HTTP2:7a8a59910c9e2d9ad1f5d73d72820ae1f856ce76 \
-            perl-Unblock-HTTP3:6687bcef0efd11991ac609f7dc7f7fa487153d28 \
+            perl-Unblock-HTTP1:091e2744b84c0233a050d0643366128f29e38f47 \
+            perl-Unblock-HTTP2:2110f272fc2db06c065c8444a189a30038f2724f \
+            perl-Unblock-HTTP3:8fa64811ef5d2f8b30708cf0f2e15d9e946d6bee \
             perl-Unblock-WebSocket:6f27677e176a3010355e1db5d135895baa3d8128; do
             project=${spec%%:*}
             revision=${spec#*:}

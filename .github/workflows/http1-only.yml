@@ -2,7 +2,7 @@ name: HTTP1-only installation
 
 on:
   push:
-    branches: [feature/linux-event-integration]
+    branches: [feature/linux-event-integration, main]
   pull_request:
   workflow_dispatch:
 
@@ -20,8 +20,19 @@ jobs:
       - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678
         with:
           perl-version: ${{ matrix.perl }}
-      - name: Install ordinary base prerequisites
-        run: cpanm --notest --installdeps .
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: haxmeister/perl-Unblock-HTTP1
+          ref: 091e2744b84c0233a050d0643366128f29e38f47
+          path: .ci-deps/http1
+      - name: Install prepared HTTP1 0.13 and ordinary base prerequisites
+        run: |
+          # HTTP1 0.13 is release prepared on main, but not yet on CPAN.
+          # This validates source integration, not CPAN installability.
+          cpanm --notest 'Uniform::HTTP@0.06'
+          cpanm --notest ./.ci-deps/http1
+          perl -MUnblock::HTTP1 -e 'die "requires HTTP1 >= 0.13" unless $Unblock::HTTP1::VERSION >= 0.13'
+          cpanm --notest --installdeps .
       - name: Build and test without optional engines
         run: |
           perl Makefile.PL
