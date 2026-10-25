@@ -33,8 +33,11 @@ SETTINGS waiting, independent ordinary HTTP sibling, exact raw
 DATA, reciprocal FIN, 200 accepted and 403 rejected, one shared
 pooled connection, zero pool-active/loop watcher leaks.
 Existing H3 credit/malformed UDP and H2/H3 WebSocket tests also PASS.
-An additional no-on_request rejection assertion was appended in
-downstream root commit 1590a770; its own CI is pending separately.
+Follow-up no-on_request rejection assertion root
+1590a770b8ff8b4a7ab6f837afac75559a3ff386 VERIFIED in downstream
+CI 40154733648: all seven Perl lanes PASS and latest real H2/H3
+generic CONNECT test PASSED in native and Perl input modes. Stage E
+core stream-local handoff gate now closed.
 
 No main branches changed, no tags, version bumps, merges or release.
 The approved Linux::Event::HTTP reconstruction Stage E is at the
