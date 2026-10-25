@@ -253,8 +253,10 @@ sub _generic_multiplexed_handoff {
     };
     $tx->on_data(sub { $consumer->input($_[1]) });
     $tx->on_finish(sub {
-        $consumer->transport_error($tx->error || 'CONNECT stream ended')
-            unless $tx->is_complete;
+        my ($finished_tx) = @_;
+        $consumer->transport_error(
+            $finished_tx->error || 'CONNECT stream ended',
+        ) unless $finished_tx->is_complete;
         $bridge->detach;
         delete $sessions->{$id};
         delete $attempts->{$id};
