@@ -1,3 +1,46 @@
+## 2026-10-25 Generic H2/H3 CONNECT stream handoff — verified
+
+Scoped feature work on feature/linux-event-integration is complete:
+- Server on_handoff($tx, $request, $bridge) handles generic H2/H3
+  Extended CONNECT (and basic CONNECT). It accepts by returning an
+  input/EOF/error/resume consumer; the engine responds 200, streams
+  DATA both directions through the existing deferred bounded stream
+  body adapter, and leaves sibling HTTP operations unaffected.
+  Returning undef sends 403 without installing a consumer.
+- Client request(... method => 'CONNECT', http_version => '2'|'3',
+  on_handoff => sub { ... }) creates a consumer after a successful 2xx
+  response. Explicit SETTINGS enablement is required at Server policy
+  but WebSocket advertising is NOT required. Client waits for the
+  peer's H2/H3 Extended CONNECT SETTINGS before stream admission;
+  no initial warmup request is needed.
+- A rejected CONNECT receives an ordinary HTTP 403 and closes its
+  unused request-body writer on a deferred loop turn. Stream-local
+  output, EOF, backpressure, cancellation/error and on_finish cleanup
+  use existing Unblock transaction semantics; no Linux-specific code.
+- The existing private _WebSocketH2Body transport is reused as a
+  protocol-neutral deferred stream bridge (consumer accessor added).
+  Its output resume tolerates a generic consumer with no is_closed
+  WebSocket-specific method.
+- Fixed generic Server terminal observer to use the callback argument
+  rather than retaining its Transaction through its own on_finish
+  closure, preserving lifetime cleanup.
+
+Verified upper H1-only CI 40154517724 PASS Perl 5.20 and 5.44.
+Verified downstream Linux::Event::HTTP CI 40154550676 PASS all
+seven Perl lanes. Required t/rebuild/107-generic-multiplex.t PASSED
+H2/H3 actual TLS/QUIC with native and Perl input: first-connection
+SETTINGS waiting, independent ordinary HTTP sibling, exact raw
+DATA, reciprocal FIN, 200 accepted and 403 rejected, one shared
+pooled connection, zero pool-active/loop watcher leaks.
+Existing H3 credit/malformed UDP and H2/H3 WebSocket tests also PASS.
+An additional no-on_request rejection assertion was appended in
+downstream root commit 1590a770; its own CI is pending separately.
+
+No main branches changed, no tags, version bumps, merges or release.
+The approved Linux::Event::HTTP reconstruction Stage E is at the
+verified core integration gate; Stage B throughput and Stage C
+h2spec conformance remain open; Stage F legacy cleanup deferred.
+
 # ACTIVE: Linux::Event integration development
 
 Updated: 2026-10-24 (America/Chicago)
