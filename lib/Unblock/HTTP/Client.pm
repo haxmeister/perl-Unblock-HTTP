@@ -132,6 +132,11 @@ sub shutdown {
     $self->{shutdown} = 1;
     $self->{alt_svc}->clear;
     for my $pool (values %{ $self->{pools} }) {
+        # A recovered H3 stream may have taken its request away from a
+        # speculative factory. Cancel the outstanding connector even if
+        # no request is left in the pending queue.
+        $self->_abandon_connect($pool, $pool->{attempt}{op})
+            if $pool->{attempt};
         local $pool->{callback_depth} =
             ($pool->{callback_depth} || 0) + 1;
         for my $op (@{ [ @{ $pool->{pending} } ] }) {
@@ -651,6 +656,11 @@ sub _pump {
         my ($conn) = grep { $self->_usable($_, $op->{version}, $op) }
             @{ $pool->{connections} };
         if ($conn) {
+            # Existing stream credit can recover while another connector
+            # is still negotiating for this same queued request. Release
+            # the now-unneeded factory before dispatching the request.
+            $self->_abandon_connect($pool, $op)
+                if $pool->{attempt} && $pool->{attempt}{op} == $op;
             shift @{ $pool->{pending} };
             $self->{pending_count}--;
             last unless $self->_dispatch($pool, $conn, $op);

@@ -23,6 +23,19 @@ packaged disttest passes 27 files / 753 checks on both versions.
 The coordinating checkout is Linux::Event::HTTP feature/unblock-http-rebuild.
 Keep that handoff current with verified commits and dependency pins.
 
+## 2026-10-25 H3 admission race correction (pending CI)
+
+Linux::Event::HTTP real-QUIC stream-credit regression found that a peer's
+original H3 connection could regain bidi credit and admit a queued request
+while a second speculative connect factory, started during credit exhaustion,
+remained live with no pending operation. Unblock::HTTP Client now cancels
+that factory before dispatching the recovered request. Shutdown also always
+abandons any still-active per-origin connector, including orphaned attempts
+that no longer have a queued operation. This is host-neutral admission and
+connector-ownership cleanup, not an adapter or Net::QUIC change.
+Regression cases added to t/27-client-shutdown.t. Verify feature CI and the
+Linux::Event::HTTP required real-QUIC test before marking it fixed.
+
 ---
 
 # RELEASE 0.02 AUDIT CHECKPOINT (2026-10-21)
