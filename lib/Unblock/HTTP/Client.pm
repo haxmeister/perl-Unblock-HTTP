@@ -482,7 +482,8 @@ sub _usable {
     return 0 unless _compatible($version, $conn->{protocol});
     return 0 if $conn->{released} || _closed($conn) || _retired($conn)
         || $conn->{credit_blocked};
-    if ($op && $op->{websocket_connect}) {
+    if ($op && ($op->{websocket_connect}
+            || ($op->{callbacks}{on_handoff} && $version ne 'http/1.1'))) {
         return 0 if $version eq 'h2'
             && (!$conn->{h2_settings_seen}
                 || $conn->{engine}->peer_setting('enable_connect_protocol') != 1);
@@ -629,7 +630,8 @@ sub _pump {
         # Wait on an existing protocol connection without opening more
         # sockets. If its peer explicitly disables Extended CONNECT,
         # reject this unsent operation rather than downgrading/replaying.
-        if ($op->{websocket_connect}
+        if (($op->{websocket_connect}
+                || $op->{callbacks}{on_handoff})
             && ($op->{version} eq 'h2' || $op->{version} eq 'h3')) {
             my $version = $op->{version};
             my @existing = grep {
@@ -655,7 +657,9 @@ sub _pump {
                 $self->_fail_pending(
                     $pool, $op, 'peer has not enabled HTTP/'
                         . ($version eq 'h2' ? '2' : '3')
-                        . ' WebSocket Extended CONNECT',
+                        . ($op->{websocket_connect}
+                            ? ' WebSocket Extended CONNECT'
+                            : ' generic Extended CONNECT'),
                 );
                 next;
             }
@@ -856,10 +860,10 @@ sub _connected {
             $weak_conn->{credit_blocked} = 0;
             $weak_self->_schedule($weak_pool);
         };
-        if ($self->{policy}->websocket_enabled('h3')) {
-            # This hook fires after the CURRENT H3 peer SETTINGS frame,
-            # including when it contains no extension settings. Never
-            # submit CONNECT inline from the native receive callback.
+        {
+            # All H3 Clients can submit protocol-neutral CONNECT requests.
+            # Notify queued operations after peer SETTINGS arrives, even
+            # without WebSocket policy. Do not enter the native callback.
             $options->{on_extension_settings} = sub {
                 return unless $weak_self && $weak_pool && $weak_conn;
                 $weak_self->_schedule($weak_pool);
