@@ -9,7 +9,8 @@ unchanged. On 2026-10-24 the user authorized feature-branch pushes as needed.
 Main still requires permission. This feature branch is now published.
 Earlier release instructions below remain historical.
 
-Client on_transaction admission callback, HTTP2/HTTP3 optional dependency metadata, and explicit missing-enabled-engine errors are implemented. The local H1-only/mocked suite passes on Perl 5.38.2 threaded and 5.44.0 non-threaded: 30 files / 870 top-level tests (optional engine suites skipped). make disttest passes on 5.38: 27 files / 753 tests. H1 upload uses a real engine; H3 admission/credit coverage uses engine doubles. New H1-only CI installs ordinary prerequisites without --nodeps; it passes remotely on Perl 5.20 and 5.44. Generic handoff is authorized but remains pending.
+Client on_transaction admission callback, HTTP2/HTTP3 optional dependency metadata, and explicit missing-enabled-engine errors are implemented. The local H1-only/mocked suite passes on Perl 5.38.2 threaded and 5.44.0 non-threaded: 30 files / 870 top-level tests (optional engine suites skipped). make disttest passes on 5.38: 27 files / 753 tests. H1 upload uses a real engine; H3 admission/credit coverage uses engine doubles. New H1-only CI installs ordinary prerequisites without --nodeps; it passes remotely on Perl 5.20 and 5.44. Generic HTTP1 Server/Client handoff is implemented and tested; generic
+H2/H3 stream-local handoff remains pending.
 
 Published implementation: 6fa6c452236f9ecc2830d250fefc7d79d1167676.
 The GitHub API publication preserves the exact tested local tree
@@ -22,6 +23,34 @@ packaged disttest passes 27 files / 753 checks on both versions.
 
 The coordinating checkout is Linux::Event::HTTP feature/unblock-http-rebuild.
 Keep that handoff current with verified commits and dependency pins.
+
+## Generic HTTP1 handoff implemented for Linux::Event reconstruction
+
+Feature-branch commits:
+- ba73dfd0f731620763ec3a0ba62c5d1262650ddf:
+  Server on_handoff after a valid 101 Upgrade or successful CONNECT.
+  Returns a generic framework-agnostic successor input consumer; the
+  attached host's unblock_upgrade() atomically swaps the input owner.
+  WebSocket handshake retains precedence when both are opted in.
+- a850460a253937735f8cfe763a4afd3bf43ec147:
+  Client request(on_handoff => ..., http_version => '1.1')
+  handles successful HTTP1 switch. The transferred entire socket leaves
+  the Client pool; the successor receives buffered same-read tail once.
+  H1 handshake on_finish is separate from successor lifetime.
+- Upper H1-only CI 40151043666 and 40151346692 PASS Perl 5.20/5.44.
+- Downstream Linux::Event::HTTP t/rebuild/104-generic-handoff.t and
+  t/rebuild/105-generic-client.t PASS on native and Perl input across
+  supported Perl lanes in CI 40151423807 (six ordinary lanes green).
+  Latest Perl's mandatory H3 WebSocket Close regression still FAILS
+  for an independent Unblock::HTTP3 engine completion recheck defect.
+
+Root H3 diagnosis CI 40150770545 captured a pre-timeout Client H3
+Transaction with response complete, incoming reader complete, outgoing
+writer complete, native output_finished, stream lifecycle closed_seen
+and callback_depth=0, yet state remained active. Fix belongs in the
+read-only H3 engine; explicit new authorization required. Do not mask
+the failing regression or add a private-engine shortcut here.
+Generic H2/H3 non-WebSocket stream-local CONNECT remains future Stage E.
 
 ## 2026-10-25 H3 admission race correction (pending CI)
 
