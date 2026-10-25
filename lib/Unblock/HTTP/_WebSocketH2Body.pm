@@ -148,7 +148,8 @@ sub _flush {
 
     if (!$self->{waiting} && $self->{queued} < 32_768) {
         my $ws = $self->{websocket};
-        $ws->resume_output if $ws && !$ws->is_closed;
+        $ws->resume_output if $ws
+            && (!$ws->can('is_closed') || !$ws->is_closed);
     }
     return;
 }
