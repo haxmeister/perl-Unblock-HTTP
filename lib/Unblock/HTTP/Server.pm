@@ -7,7 +7,7 @@ use Scalar::Util qw(blessed refaddr weaken);
 use Unblock::HTTP::_Policy;
 use Unblock::HTTP::_EngineFactory;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub new {
     my ($class, @args) = @_;

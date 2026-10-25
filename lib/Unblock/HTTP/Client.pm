@@ -11,7 +11,7 @@ use Unblock::HTTP::_EngineFactory;
 use Unblock::HTTP::_ClientOperation;
 use Unblock::HTTP::_AltSvc;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub new {
     my ($class, @args) = @_;
