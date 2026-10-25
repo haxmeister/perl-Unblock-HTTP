@@ -36,9 +36,10 @@ sub new {
         if $websocket_enabled && !$callbacks{on_websocket};
     croak 'new(): on_websocket requires an enabled websocket protocol'
         if !$websocket_enabled && $callbacks{on_websocket};
-    croak 'new(): HTTP2/HTTP3 WebSocket requires a defer callback'
+    croak 'new(): multiplexed stream handoff requires a defer callback'
         if ($policy->websocket_enabled('h2')
-            || $policy->websocket_enabled('h3')) && !$defer;
+            || $policy->websocket_enabled('h3')
+            || $callbacks{on_handoff}) && !$defer;
     return bless {
         policy => $policy,
         on_websocket => $callbacks{on_websocket},
@@ -222,6 +223,49 @@ sub _attach_websocket_stream {
     return $attached;
 }
 
+# A generic CONNECT takes ownership of one multiplexed stream, not the
+# TCP/TLS/QUIC transport. Reuse the existing bounded deferred body bridge.
+# The caller supplies a byte consumer, never a new HTTP parser.
+sub _generic_multiplexed_handoff {
+    my ($self, $tx, $request, $sessions, $attempts) = @_;
+    my $id = $tx->stream_id;
+    $attempts->{$id} = 1;
+    require Unblock::HTTP::_WebSocketH2Body;
+    my $bridge = Unblock::HTTP::_WebSocketH2Body->new(
+        transaction => $tx, defer => $self->{defer},
+    );
+    my $consumer = $self->{on_handoff}->($tx, $request, $bridge);
+    unless (defined $consumer) {
+        $bridge->detach;
+        $tx->on_finish(sub { delete $attempts->{$id} });
+        $tx->respond(status => 403, body => 'CONNECT denied');
+        return;
+    }
+    croak 'on_handoff must return a stream consumer'
+        unless blessed($consumer);
+    for my $method (qw(input input_eof transport_error resume_output)) {
+        croak "on_handoff stream consumer must implement $method()"
+            unless $consumer->can($method);
+    }
+    $bridge->consumer($consumer);
+    $sessions->{$id} = {
+        bridge => $bridge, consumer => $consumer, generic => 1,
+    };
+    $tx->on_data(sub { $consumer->input($_[1]) });
+    $tx->on_finish(sub {
+        $consumer->transport_error($tx->error || 'CONNECT stream ended')
+            unless $tx->is_complete;
+        $bridge->detach;
+        delete $sessions->{$id};
+        delete $attempts->{$id};
+    });
+    $tx->respond(
+        status => 200, stream_body => 1,
+        on_drain => sub { $bridge->resume },
+    );
+    return;
+}
+
 # Extended CONNECT belongs to one H2 transaction; the HTTP/2 connection
 # remains able to serve independent ordinary HTTP and other WebSockets.
 # Outgoing WebSocket frames must NEVER re-enter nghttp2 from input callbacks.
@@ -232,15 +276,20 @@ sub _attach_h2_websocket_stream {
     my $defer = $self->{defer};
     my $on_headers = $self->{callbacks}{on_request};
     my $on_request_end = $self->{callbacks}{on_request_end};
-    my %sessions;
+    my (%sessions, %handled_generic);
 
     my $on_request = sub {
         my ($tx, $request) = @_;
         my $protocol = $request->protocol;
-        my $candidate = $request->method eq 'CONNECT'
+        my $candidate = $handler && $request->method eq 'CONNECT'
             && ((defined($protocol) && $protocol eq 'websocket')
                 || _websocket_candidate($request));
-        return $on_headers->(@_) unless $candidate;
+        unless ($candidate) {
+            return $self->_generic_multiplexed_handoff(
+                $tx, $request, \%sessions, \%handled_generic,
+            ) if $self->{on_handoff} && $request->method eq 'CONNECT';
+            return $on_headers->(@_);
+        }
 
         my $selected = $handler->($tx, $request);
         unless (defined $selected) {
@@ -302,10 +351,16 @@ sub _attach_h2_websocket_stream {
 
     my $on_request_complete = sub {
         my ($tx) = @_;
-        if (my $session = $sessions{$tx->stream_id}) {
-            $session->{websocket}->input_eof;
+        my $id = $tx->stream_id;
+        if (my $session = $sessions{$id}) {
+            if ($session->{generic}) {
+                $session->{consumer}->input_eof;
+            } else {
+                $session->{websocket}->input_eof;
+            }
             return;
         }
+        return if $handled_generic{$id};
         return $on_request_end->(@_);
     };
 
@@ -333,10 +388,15 @@ sub _attach_h3_websocket_connection {
     my $on_request = sub {
         my ($tx, $request) = @_;
         my $protocol = $request->protocol;
-        my $candidate = $request->method eq 'CONNECT'
+        my $candidate = $handler && $request->method eq 'CONNECT'
             && ((defined($protocol) && $protocol eq 'websocket')
                 || _websocket_candidate($request));
-        return $on_headers->(@_) unless $candidate;
+        unless ($candidate) {
+            return $self->_generic_multiplexed_handoff(
+                $tx, $request, \%sessions, \%websocket_attempts,
+            ) if $self->{on_handoff} && $request->method eq 'CONNECT';
+            return $on_headers->(@_);
+        }
 
         my $id = $tx->stream_id;
         $websocket_attempts{$id} = 1;
@@ -403,7 +463,11 @@ sub _attach_h3_websocket_connection {
         my $id = $tx->stream_id;
         if ($websocket_attempts{$id}) {
             if (my $session = $sessions{$id}) {
-                $session->{websocket}->input_eof;
+                if ($session->{generic}) {
+                    $session->{consumer}->input_eof;
+                } else {
+                    $session->{websocket}->input_eof;
+                }
             }
             # Even a 400/403 CONNECT belongs to on_websocket, not to
             # the ordinary request-end responder. Do not respond twice.
@@ -454,7 +518,9 @@ sub attach_stream {
     return $self->_attach_handoff_stream($transport, $engine_options)
         if $protocol eq 'http/1.1' && $self->{on_handoff};
     return $self->_attach_h2_websocket_stream($transport, $engine_options)
-        if $protocol eq 'h2' && $self->{policy}->websocket_enabled($protocol);
+        if $protocol eq 'h2'
+            && ($self->{policy}->websocket_enabled($protocol)
+                || $self->{on_handoff});
     return Unblock::HTTP::_EngineFactory->create(
         'Server', $protocol, %$engine_options,
         %{ $self->{callbacks} }, transport => $transport,
@@ -473,7 +539,7 @@ sub attach_quic {
     croak 'attach_quic(): connection is closed' if $connection->closed;
     croak 'attach_quic(): connection is not ready' unless $connection->ready;
     return $self->_attach_h3_websocket_connection($connection, $engine_options)
-        if $self->{policy}->websocket_enabled('h3');
+        if $self->{policy}->websocket_enabled('h3') || $self->{on_handoff};
     my $engine = Unblock::HTTP::_EngineFactory->create(
         'Server', 'h3', %$engine_options,
         %{ $self->{callbacks} }, quic => $connection,
@@ -611,8 +677,14 @@ handshake takes precedence. Unrelated 101/CONNECT switches use
 C<on_handoff>. The callback is not invoked for normal HTTP requests or
 for unsuccessful CONNECT responses.
 
-Generic H2/H3 stream-local CONNECT and Client-side non-WebSocket
-handoff are not implemented by this callback.
+For enabled HTTP2/HTTP3, C<on_handoff($tx, $request, $bridge)>
+may return a generic stream consumer for CONNECT. The integration
+responds 200 and forwards DATA and EOF on that stream only, leaving
+ordinary sibling streams and the connection intact. The bridge accepts
+C<unblock_send>, C<unblock_finish> and C<unblock_abort>. Returning
+undef rejects CONNECT with 403. Configure C<enable_connect_protocol>
+for extended H2 CONNECT or C<enable_extended_connect> for H3.
+Multiplexed handoff requires a C<defer> scheduler.
 
 =head2 HTTP/1.1 WebSocket Upgrade
 

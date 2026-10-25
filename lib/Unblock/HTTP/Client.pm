@@ -358,8 +358,11 @@ sub request {
     my $stream_body = delete($field{stream_body}) ? 1 : 0;
     croak 'request(): on_drain requires stream_body'
         if $callbacks{on_drain} && !$stream_body;
-    croak 'request(): on_handoff requires explicit http_version => 1.1'
-        if $callbacks{on_handoff} && $version ne 'http/1.1';
+    croak 'request(): on_handoff requires explicit http_version'
+        if $callbacks{on_handoff} && !$strict_version;
+    croak 'request(): multiplexed on_handoff requires CONNECT'
+        if $callbacks{on_handoff} && $version ne 'http/1.1'
+            && (($field{method} || 'GET') ne 'CONNECT');
     croak 'request(): on_handoff cannot be combined with WebSocket'
         if $callbacks{on_handoff} && $ws_spec;
     croak 'request(): pending queue is full'
@@ -398,7 +401,7 @@ sub request {
     my $op = Unblock::HTTP::_ClientOperation->new(
         $self, $request, \%callbacks, $version, $origin,
     );
-    $op->{stream_body} = $ws_spec
+    $op->{stream_body} = ($ws_spec || $callbacks{on_handoff})
         && ($version eq 'h2' || $version eq 'h3') ? 1 : $stream_body;
     $op->{websocket_connect} = $ws_spec if $ws_spec;
     if (!$strict_version && $scheme eq 'https'
@@ -1069,7 +1072,53 @@ sub _dispatch {
             $ws->input($tail) if length $tail;
         };
     }
-    if ($callbacks->{on_handoff} && !$ws_spec) {
+    if ($callbacks->{on_handoff} && !$ws_spec
+        && ($conn->{protocol} eq 'h2' || $conn->{protocol} eq 'h3')) {
+        $engine_callback{on_response} = sub {
+            my ($tx, $response) = @_;
+            if ($response->status < 200 || $response->status >= 300) {
+                $callbacks->{on_response}->($tx, $response)
+                    if $callbacks->{on_response};
+                return;
+            }
+            my $active_op = $weak_op or return;
+            my $active_self = $weak_self or return;
+            require Unblock::HTTP::_WebSocketH2Body;
+            my $bridge = Unblock::HTTP::_WebSocketH2Body->new(
+                transaction => $tx, defer => $active_self->{factory}{defer},
+            );
+            my $consumer = $callbacks->{on_handoff}->(
+                $tx, $response, $bridge,
+            );
+            croak 'on_handoff must return a stream consumer'
+                unless blessed($consumer);
+            for my $method (qw(input input_eof transport_error resume_output)) {
+                croak "on_handoff stream consumer must implement $method()"
+                    unless $consumer->can($method);
+            }
+            $bridge->consumer($consumer);
+            $active_op->{handoff_consumer} = $consumer;
+            $active_op->{handoff_bridge} = $bridge;
+        };
+        $engine_callback{on_data} = sub {
+            my $active_op = $weak_op or return;
+            my $consumer = $active_op->{handoff_consumer} or return;
+            $consumer->input($_[1]);
+        };
+        $engine_callback{on_drain} = sub {
+            my $active_op = $weak_op or return;
+            my $bridge = $active_op->{handoff_bridge} or return;
+            $bridge->resume;
+        };
+        $engine_callback{on_complete} = sub {
+            my $active_op = $weak_op or return;
+            my $consumer = $active_op->{handoff_consumer};
+            $consumer->input_eof if $consumer;
+            $callbacks->{on_end}->($_[0]) if $callbacks->{on_end};
+        };
+    }
+    if ($callbacks->{on_handoff} && !$ws_spec
+        && $conn->{protocol} eq 'http/1.1') {
         # A generic H1 101/CONNECT transfer retires the entire socket from
         # the HTTP pool. The successor inherits the transport and remainder.
         $engine_callback{on_switch} = sub {
@@ -1116,6 +1165,12 @@ sub _dispatch {
             ($active_pool->{callback_depth} || 0) + 1;
         $active_op->{transaction} ||= $tx;
         if (my $bridge = delete $active_op->{websocket_bridge}) {
+            $bridge->detach;
+        }
+        if (my $bridge = delete $active_op->{handoff_bridge}) {
+            my $consumer = delete $active_op->{handoff_consumer};
+            $consumer->transport_error($tx->error || 'CONNECT stream ended')
+                if $consumer && !$tx->is_complete;
             $bridge->detach;
         }
         $active_op->{state} = ($active_op->{admission_error} || $active_op->{timeout_error}
@@ -1593,6 +1648,16 @@ connection pool, the original write queue stays in order, and any
 post-switch HTTP remainder is delivered once to the successor. For a
 native input provider, the framework also transfers its own retained
 unconsumed window to the successor.
+
+With explicit C<http_version =E<gt> '2'> or C<'3'>,
+C<request(method =E<gt> 'CONNECT', on_handoff =E<gt> sub { ... })>
+returns a consumer for just one multiplexed stream. Its callback receives
+C<($tx, $response, $bridge)> after a successful 2xx response, and the
+bridge supports C<unblock_send>, C<unblock_finish>, C<unblock_abort>.
+Incoming DATA, EOF and errors go to the same consumer contract.
+The parent TCP/TLS or QUIC connection remains in the Client pool and
+continues handling sibling HTTP streams. Stream output is scheduled by
+the configured C<defer> callback, never reentrant with receive parsing.
 
 The HTTP request operation finishes at the handshake boundary, not
 when the successor protocol later closes. The caller owns the upgraded

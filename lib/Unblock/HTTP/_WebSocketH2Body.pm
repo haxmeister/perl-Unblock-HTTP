@@ -36,7 +36,12 @@ sub new {
 
 sub websocket {
     my ($self, $ws) = @_;
-    $self->{websocket} = $ws;
+    return $self->consumer($ws);
+}
+
+sub consumer {
+    my ($self, $consumer) = @_;
+    $self->{websocket} = $consumer;
     weaken($self->{websocket});
     return $self;
 }
