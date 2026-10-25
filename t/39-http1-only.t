@@ -39,7 +39,7 @@ for my $protocol (qw(h2 h3)) {
 }
 my $meta = CPAN::Meta->load_file('MYMETA.json');
 my $requires = $meta->effective_prereqs->requirements_for('runtime', 'requires');
-is($requires->requirements_for_module('Unblock::HTTP1'), '0.12', 'HTTP1 remains required');
+is($requires->requirements_for_module('Unblock::HTTP1'), '0.13', 'HTTP1 remains required');
 my %required = map { $_ => 1 } $requires->required_modules;
 ok(!$required{'Unblock::HTTP2'} && !$required{'Unblock::HTTP3'}, 'H2/H3 are not mandatory dependencies');
 for my $name (qw(http2 http3)) {
