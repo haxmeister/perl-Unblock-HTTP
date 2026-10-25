@@ -108,8 +108,11 @@ if ($dry_run) {
 }
 
 require Net::QUIC;
-die "controlled real-QUIC sweep requires published Net::QUIC 0.05\n"
-    unless $Net::QUIC::VERSION eq '0.05';
+# Comparisons are matched within each run and record the exact QUIC
+# version. Requiring one historic version unnecessarily rejects newer
+# published, API-compatible Net::QUIC releases.
+die "controlled real-QUIC sweep requires Net::QUIC >= 0.05\n"
+    unless $Net::QUIC::VERSION >= 0.05;
 for my $key (qw(UNBLOCK_H3_PROFILE_CHECKPOINT_EVERY
                 UNBLOCK_H3_PROFILE_REGISTRY UNBLOCK_H3_PROFILE_ASSERT_BOUNDED
                 UNBLOCK_H3_PROFILE_WIRE UNBLOCK_H3_HEAP_DIR)) {

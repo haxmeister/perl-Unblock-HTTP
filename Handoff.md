@@ -1,5 +1,22 @@
 # MAIN RELEASE-PREPARED: Unblock::HTTP 0.03 - 2026-10-25
 
+## 0.03 main integration gate and benchmark diagnostic fix
+
+On the merged 0.03 main candidate:
+- H1-only test/dists 40237479907 PASS Perl 5.20 and 5.44.
+- QUIC MAX_DATA integration 40237479936 PASS.
+- Linux::Event integration 40237479905 passed the real socket
+  correctness step but its optional benchmark smoke failed because
+  bench/h3-profile-sweep.pl was pinned to Net::QUIC exactly 0.05
+  while current published 0.06 was installed.
+- Benchmark helper now checks Net::QUIC >=0.05 and continues
+  recording its precise version; paired comparison requires identical
+  versions within the same run. This is a benchmark runner fix only,
+  not a new engine optimization or relaxed protocol assertion.
+- Await full regenerated CI conclusion after this benchmark-helper
+  correction; do not declare full release audit green in advance.
+
+
 The maintainer authorized and completed the fast-forward main merge.
 The tested source release-preparation commit is
 22c2c32c612b51d994b3f315c53509df3097dd41.
