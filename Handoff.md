@@ -1,3 +1,21 @@
+# RELEASE PREPARATION: Unblock::HTTP 0.03 - 2026-10-25
+
+The maintainer authorized all completed framework-neutral feature
+changes to be merged to main with a version bump and release prep.
+No GitHub tag, release or PAUSE/CPAN upload has been authorized.
+Public module versions and t/00-load.t are 0.03.
+Required Unblock::HTTP1 >=0.13 was release-prepared and merged main:
+091e2744b84c0233a050d0643366128f29e38f47.
+Optional Unblock::HTTP2 >=0.13 main:
+2110f272fc2db06c065c8444a189a30038f2724f.
+Optional Unblock::HTTP3 >=0.14 was release-prepared and merged main:
+8fa64811ef5d2f8b30708cf0f2e15d9e946d6bee.
+No framework-specific adapter is shipped or introduced.
+See docs/RELEASE-0.03.md and verify H1-only, full integration,
+distcheck/disttest, optional metadata and version/indexing.
+The CPAN-dependency installability gate remains PENDING until lower
+releases are actually published and indexed.
+
 ## 2026-10-25 Generic H2/H3 CONNECT stream handoff — verified
 
 Scoped feature work on feature/linux-event-integration is complete:
