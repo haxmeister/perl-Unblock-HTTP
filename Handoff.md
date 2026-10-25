@@ -33,8 +33,13 @@ that factory before dispatching the recovered request. Shutdown also always
 abandons any still-active per-origin connector, including orphaned attempts
 that no longer have a queued operation. This is host-neutral admission and
 connector-ownership cleanup, not an adapter or Net::QUIC change.
-Regression cases added to t/27-client-shutdown.t. Verify feature CI and the
-Linux::Event::HTTP required real-QUIC test before marking it fixed.
+Regression cases added to t/27-client-shutdown.t.
+VERIFIED: Upper HTTP1-only CI run 40147073797 PASS on Perl 5.20 and
+5.44. The downstream Linux::Event::HTTP run 40147115577 PASS in seven
+Perl lanes including the mandatory real H3 stream-credit/malformed-input
+regression, which previously retained a connected UDP socket and QUIC
+timer. After this fix all client/server watchers are released. Both
+repositories remain feature-branch-only; there is no release or main change.
 
 ---
 
