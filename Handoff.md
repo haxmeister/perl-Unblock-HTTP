@@ -1,3 +1,25 @@
+# VERIFIED MAIN 0.03 RELEASE PREPARATION - 2026-10-25
+
+Final production/test source commit:
+42d3df6356dcf53b5660b209f6c02b91e43cf683.
+Main CI ALL THREE PASS:
+- HTTP1-only install Perl 5.20 and 5.44, source disttest:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237944928
+- QUIC MAX_DATA framework integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237944769
+- Full Linux::Event TCP/TLS/QUIC and benchmark diagnostic smoke:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237944883
+
+All three feature branches (HTTP1 0.13, HTTP3 0.14, unified HTTP 0.03)
+have been fast-forward merged to main, release notes created,
+source metadata/versions audited and regression/CI gates verified.
+HTTP2 0.13 remains unchanged on its existing main.
+The native ABI versions were NOT bumped.
+No tags, GitHub releases, CPAN/PAUSE uploads or new public releases
+were created in this work. The manual CPAN-only installability audit
+must run after lower distributions are publicly indexed; do not
+claim CPAN release readiness before that check.
+
 # MAIN RELEASE-PREPARED: Unblock::HTTP 0.03 - 2026-10-25
 
 ## 0.03 main integration gate and benchmark diagnostic fix
