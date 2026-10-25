@@ -51,7 +51,7 @@ jobs:
           git -C /tmp/unblock-websocket-source checkout --quiet --detach FETCH_HEAD
           test "$(git -C /tmp/unblock-websocket-source rev-parse HEAD)" = 6f27677e176a3010355e1db5d135895baa3d8128
           sudo cpanm --notest --quiet /tmp/unblock-websocket-source
-          perl -MUnblock::WebSocket -e 'die "Wrong WebSocket version" unless $Unblock::WebSocket::VERSION eq "0.03"'
+          perl -MUnblock::WebSocket -e 'die "Wrong WebSocket version" unless $Unblock::WebSocket::VERSION eq "0.02"'
       - name: Distribution test against published core CPAN packages and optional source WebSocket
         run: |
           perl Makefile.PL

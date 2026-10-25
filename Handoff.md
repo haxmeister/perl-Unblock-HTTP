@@ -1,3 +1,34 @@
+# MAIN RELEASE-PREPARED: Unblock::HTTP 0.03 - 2026-10-25
+
+The maintainer authorized and completed the fast-forward main merge.
+The tested source release-preparation commit is
+22c2c32c612b51d994b3f315c53509df3097dd41.
+The 0.03 public module and metadata version is now on main.
+Main retains generic on_transaction, HTTP1/H2/H3 on_handoff,
+speculative H3 connector cleanup and genuinely optional H2/H3 engines.
+Dependency minimums: HTTP1 0.13 required, HTTP2 0.13 and HTTP3 0.14
+optional; Uniform::HTTP 0.06. No framework-specific adapters bundled.
+
+The required H1-only source/dependency CI passed on feature and main:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237392358
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237479907
+
+Full main integration with prepared engine dependencies:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237479905
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40237479936
+Both were in progress when this handoff was authored; check final
+results before claiming the full release audit is passed.
+
+The manual CPAN installability gate is still blocked until the
+lower versions have actually been released and indexed, then
+.gitHub/workflows/release-cpan-installability.yml must be run.
+Optional Unblock::WebSocket still expects its own version 0.02;
+the audit's accidental 0.03 expectation was corrected.
+No new tag, GitHub release, PAUSE/CPAN upload or publication performed.
+See docs/RELEASE-0.03.md. Historical "main untouched" restrictions
+below are superseded ONLY for these user-authorized main merges;
+publication remains a separate explicit authorization.
+
 # RELEASE PREPARATION: Unblock::HTTP 0.03 - 2026-10-25
 
 The maintainer authorized all completed framework-neutral feature
