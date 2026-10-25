@@ -866,6 +866,14 @@ sub _connected {
             # without WebSocket policy. Do not enter the native callback.
             $options->{on_extension_settings} = sub {
                 return unless $weak_self && $weak_pool && $weak_conn;
+                # SETTINGS matters to CONNECT admission only. Do not
+                # spuriously pump ordinary H3 operations or launch an
+                # additional speculative connection during stream-credit
+                # recovery.
+                return unless grep {
+                    $_->{websocket_connect}
+                        || $_->{callbacks}{on_handoff}
+                } @{ $weak_pool->{pending} };
                 $weak_self->_schedule($weak_pool);
             };
         }
