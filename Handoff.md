@@ -1,3 +1,43 @@
+# FINAL 0.03 RELEASE AUDIT - 2026-10-25
+
+Maintainer requested the full release audit used for Unblock::HTTP1/2/3.
+The source/test candidate on main is fae57dc38e5410bf95c9ce36346a6b636dd3b1be.
+Changes: corrected public README and WebSocket cookbook minimum engine
+versions, corrected README newline example, removed obsolete feature-branch
+wording from Server POD, wrote concise public docs/RELEASE-0.03.md, updated
+Changes to a normal version entry, and upgraded the CPAN release CI to test
+published dependencies (including Unblock::WebSocket 0.02) instead of a
+pinned source checkout. The first CPAN workflow attempt caught a runner
+permission problem caused by sudo cpanm --installdeps ., which was fixed
+by installing the necessary Perl prerequisites directly.
+
+ALL FINAL CI PASSED on that source:
+- Published CPAN release installability gate on release/0.03-readiness:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40262512576
+  H1-only installation/application test, then optional published H2/H3,
+  Net::QUIC and WebSocket, full make test/distcheck/disttest and tarball
+  audit, including excluded framework test adapters and no Linux::Event
+  dependency; all passed.
+- HTTP1-only main integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40262502924
+- QUIC MAX_DATA integration:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40262502738
+- Linux::Event TCP/TLS/QUIC, live socket tests and benchmark diagnostic:
+  https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40262502651
+
+Source archive manifest: 95 tracked files accounted for, 58 shipped,
+37 excluded; zero missing or stale entries and no include/skip conflicts.
+Five public modules remain 0.03. Perl 5.20; Unblock::HTTP1 0.13 required;
+HTTP2 0.13, HTTP3 0.14 and WebSocket 0.02 optional as documented. No
+runtime protocol code, public API, native ABI, standalone engine source,
+or framework adapter was changed during this final audit.
+
+RELEASE READY on main. Publish using v0.03 tag and
+Unblock-HTTP-0.03.tar.gz, after maintainer review. No GitHub release,
+tag, or CPAN/PAUSE upload was performed in this audit.
+
+---
+
 # VERIFIED MAIN 0.03 RELEASE PREPARATION - 2026-10-25
 
 Final production/test source commit:
