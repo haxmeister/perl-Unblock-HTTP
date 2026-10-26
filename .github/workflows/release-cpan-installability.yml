@@ -1,4 +1,4 @@
-name: CPAN core and optional source release audit (0.03)
+name: CPAN release installability audit (0.03)
 
 on:
   push:
@@ -18,41 +18,43 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cpanminus build-essential pkg-config libssl-dev openssl zlib1g-dev libnghttp2-dev
-      - name: Install released mandatory dependencies from CPAN, not source pins
+      - name: Install required HTTP1-only dependencies from CPAN
         run: |
-          trap 'sudo tail -n 100 /root/.cpanm/build.log' ERR
-          sudo cpanm --notest --quiet Uniform::HTTP@0.06 Alien::nghttp2@0.003
-          sudo cpanm --notest --quiet Alien::ngtcp2@0.03 Alien::nghttp3@0.01
-          sudo cpanm --notest --quiet Net::QUIC@0.06
-          sudo cpanm --notest --quiet Unblock::HTTP1@0.13 Unblock::HTTP2@0.13 Unblock::HTTP3@0.14
-      - name: Assert selected installed distributions
+          sudo cpanm --notest --quiet 'Uniform::HTTP@0.06' 'Unblock::HTTP1@0.13'
+          sudo cpanm --notest --quiet --installdeps .
+          perl -MUnblock::HTTP1 -MUniform::HTTP -e '
+            die "HTTP1 too old" unless $Unblock::HTTP1::VERSION >= 0.13;
+            die "Uniform too old" unless $Uniform::HTTP::VERSION >= 0.06;'
+      - name: Verify HTTP1-only application without optional engines
         run: |
-          perl -MNet::QUIC -MUnblock::HTTP1 -MUnblock::HTTP2 -MUnblock::HTTP3 -MUniform::HTTP -e '
+          perl Makefile.PL
+          make
+          prove -bl t/39-http1-only.t
+          perl -Ilib -MUnblock::HTTP -MUnblock::HTTP::Client -MUnblock::HTTP::Server -MUnblock::HTTP::Integration -e '
+            die "Wrong Unblock::HTTP version" unless $Unblock::HTTP::VERSION eq "0.03";'
+      - name: Install optional published protocol engines and WebSocket
+        run: |
+          sudo cpanm --notest --quiet 'Alien::nghttp2@0.003'
+          sudo cpanm --notest --quiet 'Alien::ngtcp2@0.03' 'Alien::nghttp3@0.01'
+          sudo cpanm --notest --quiet 'Net::QUIC@0.06'
+          sudo cpanm --notest --quiet 'Unblock::HTTP2@0.13' 'Unblock::HTTP3@0.14'
+          sudo cpanm --notest --quiet 'Unblock::WebSocket@0.02'
+      - name: Verify published dependency versions
+        run: |
+          perl -MNet::QUIC -MUnblock::HTTP1 -MUnblock::HTTP2 -MUnblock::HTTP3 -MUnblock::WebSocket -MUniform::HTTP -e '
             for my $p (
               ["Net::QUIC", $Net::QUIC::VERSION, 0.06],
               ["Unblock::HTTP1", $Unblock::HTTP1::VERSION, 0.13],
               ["Unblock::HTTP2", $Unblock::HTTP2::VERSION, 0.13],
               ["Unblock::HTTP3", $Unblock::HTTP3::VERSION, 0.14],
+              ["Unblock::WebSocket", $Unblock::WebSocket::VERSION, 0.02],
               ["Uniform::HTTP", $Uniform::HTTP::VERSION, 0.06],
             ) {
-              die "$p->[0] version $p->[1] below required $p->[2]\n" unless $p->[1] >= $p->[2];
+              die "$p->[0] version $p->[1] below required $p->[2]\n"
+                unless $p->[1] >= $p->[2];
               print "$p->[0]: $p->[1]\n";
             }'
-      - name: Verify core API loads without optional WebSocket
-        run: |
-          perl -Ilib -MUnblock::HTTP -MUnblock::HTTP::Client -MUnblock::HTTP::Server -MUnblock::HTTP::Integration -e 'die "Wrong Unblock::HTTP version" unless $Unblock::HTTP::VERSION eq "0.03"'
-      - name: Install optional WebSocket from pinned main source
-        run: |
-          # Unblock::WebSocket 0.02 is not yet indexed on CPAN.
-          # This tests its optional integration without misreporting CPAN installability.
-          git init --quiet /tmp/unblock-websocket-source
-          git -C /tmp/unblock-websocket-source remote add origin https://github.com/haxmeister/perl-Unblock-WebSocket.git
-          git -C /tmp/unblock-websocket-source fetch --quiet --depth=1 origin 6f27677e176a3010355e1db5d135895baa3d8128
-          git -C /tmp/unblock-websocket-source checkout --quiet --detach FETCH_HEAD
-          test "$(git -C /tmp/unblock-websocket-source rev-parse HEAD)" = 6f27677e176a3010355e1db5d135895baa3d8128
-          sudo cpanm --notest --quiet /tmp/unblock-websocket-source
-          perl -MUnblock::WebSocket -e 'die "Wrong WebSocket version" unless $Unblock::WebSocket::VERSION eq "0.02"'
-      - name: Distribution test against published core CPAN packages and optional source WebSocket
+      - name: Distribution tests against published CPAN dependencies
         run: |
           perl Makefile.PL
           make
@@ -67,6 +69,7 @@ jobs:
           test -n "$distdir"
           test -f "$distdir/lib/Unblock/HTTP/_WebSocketH2Body.pm"
           test -f "$distdir/t/37-client-h3-websocket-admission.t"
+          test -f "$distdir/docs/RELEASE-0.03.md"
           test ! -d "$distdir/xt"
           test ! -d "$distdir/bench"
           test ! -d "$distdir/.github"

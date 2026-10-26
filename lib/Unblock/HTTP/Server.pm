@@ -576,20 +576,14 @@ Unblock::HTTP::Server - Shared HTTP server policy and connection attachment
     );
     $engine->input($bytes);
 
-=head1 IMPLEMENTATION STATUS
+=head1 SUPPORTED PROTOCOLS
 
-This feature branch implements reusable attachment and ordinary buffered or
-streamed requests. It requires the receive/lifecycle feature branches of the
-supported engine releases. Require Unblock::HTTP1 >= 0.13, optional
-Unblock::HTTP2 >= 0.13 and optional Unblock::HTTP3 >= 0.14 for this API.
-HTTP/1.1 Server Upgrade and HTTP/2 Server Extended CONNECT are verified
-opt-in paths using Unblock::WebSocket. HTTP/2 Client Extended CONNECT is
-also verified and documented in Unblock::HTTP::Client. HTTP/3 Server
-Extended CONNECT is verified by real QUIC/TLS loopback. HTTP/3 Client
-Extended CONNECT is also implemented and verified over real QUIC/TLS,
-including peer SETTINGS, stream-credit admission and cancellation.
-Initial Client factories and bounded pooling are implemented there.
-See docs/IMPLEMENTATION.md. This is not a release candidate.
+One Server definition attaches HTTP/1.1, HTTP/2 or HTTP/3 connections
+using the corresponding standalone engines. Unblock::HTTP1 0.13 is
+required; Unblock::HTTP2 0.13 and Unblock::HTTP3 0.14 are optional.
+Ordinary buffered and streamed requests, graceful shutdown, WebSocket
+transitions and generic CONNECT handoff are supported. The framework
+owns sockets, TLS, UDP, timers and deferred callback scheduling.
 
 =head1 CONSTRUCTOR
 

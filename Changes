@@ -1,6 +1,6 @@
 Revision history for Unblock::HTTP
 
-0.03  2026-10-25 (release candidate; not yet published)
+0.03  2026-10-25
     - Add Client request on_transaction callback when a queued request
       is admitted to its real engine, supporting streaming uploads.
     - Add framework-neutral generic socket-wide HTTP1 Upgrade and

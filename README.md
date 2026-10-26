@@ -55,7 +55,7 @@ not reach it. Register `$tx->on_finish(...)` before the transaction is terminal
 to observe completion, error, or cancellation exactly once.
 
 For enabled protocols this requires Unblock::HTTP1 0.13+, Unblock::HTTP2
-0.12+, or Unblock::HTTP3 0.14+. Attachment also checks required engine methods
+0.13+, or Unblock::HTTP3 0.14+. Attachment also checks required engine methods
 and gives an explicit error for an incompatible older engine.
 
 ## Framework attachment
@@ -120,7 +120,7 @@ my $op = $client->request(
     url => 'https://example.com/data',
     on_response => sub {
         my ($tx, $response) = @_;
-        print $response->status, "\\n";
+        print $response->status, "\n";
     },
 );
 ```
@@ -170,8 +170,8 @@ inspect queued, connecting, active, idle, and retiring connections.
 Fatal hard-limit output rejection is distinct from cooperative
 backpressure. The repository-only Linux::Event integration tests propagate
 max_pending_bytes violations as transport errors; it does not
-replay the rejected bytes. Unblock::HTTP1 0.13+ waits until attached output is accepted before reporting a
-successful server terminal callback. See docs/IMPLEMENTATION.md.
+replay the rejected bytes. Unblock::HTTP1 0.13+ waits until attached output is accepted before
+reporting a successful server terminal callback. See docs/IMPLEMENTATION.md.
 
 Idle connection eviction is opt-in with `idle_timeout => $seconds`.
 When enabled, the framework supplies `schedule_timer` and may supply
