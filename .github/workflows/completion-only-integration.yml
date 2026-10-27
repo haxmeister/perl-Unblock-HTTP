@@ -1,0 +1,66 @@
+name: completion-only upstream integration
+
+on:
+  push:
+    branches:
+      - feature/completion-only-callback
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: haxmeister/perl-Unblock-HTTP1
+          ref: 96c01f7091c12bacd7cad8260a018d0094b38ce5
+          path: .ci-deps/http1-trial
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install native and Perl dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev openssl zlib1g-dev libnghttp2-dev
+          cpanm --notest 'Uniform::HTTP@0.06'
+          cpanm --notest ./.ci-deps/http1-trial
+          cpanm --notest --installdeps .
+
+      - name: Confirm experimental HTTP1 version and callback contract
+        run: |
+          perl -MUnblock::HTTP1::Server -e '
+            my $s = Unblock::HTTP1::Server->new(
+              on_request_end => sub { $_[0]->respond(status => 200, body => "ok") },
+            );
+            die "HTTP1 callback contract unavailable" unless $s;
+            print "completion-only accepted on HTTP1 $Unblock::HTTP1::Server::VERSION\n";
+          '
+
+      - name: Run complete HTTP1-only suite and packaged distribution
+        run: |
+          perl Makefile.PL
+          make
+          make test
+          make disttest
+
+      - name: Install published optional HTTP2 HTTP3 and WebSocket stack
+        run: |
+          cpanm --notest 'Alien::nghttp2@0.003'
+          cpanm --notest 'Alien::ngtcp2@0.03' 'Alien::nghttp3@0.01'
+          cpanm --notest 'Net::QUIC@0.06'
+          cpanm --notest 'Unblock::HTTP2@0.13' 'Unblock::HTTP3@0.14'
+          cpanm --notest 'Unblock::WebSocket@0.02'
+
+      - name: Run all protocol and upgrade tests with experimental HTTP1
+        run: |
+          perl Makefile.PL
+          make test
+          make disttest
