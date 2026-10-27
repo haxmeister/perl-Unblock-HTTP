@@ -47,7 +47,7 @@ sub new {
         defer => $defer,
         # Map once at definition time; no transaction or body wrapper.
         callbacks => {
-            on_request => $callbacks{on_headers} || \&_ignore_headers,
+            ($callbacks{on_headers} ? (on_request => $callbacks{on_headers}) : ()),
             on_request_end => $callbacks{on_request},
             ($callbacks{on_error} ? (on_error => $callbacks{on_error}) : ()),
         },
@@ -290,7 +290,8 @@ sub _attach_h2_websocket_stream {
             return $self->_generic_multiplexed_handoff(
                 $tx, $request, \%sessions, \%handled_generic,
             ) if $self->{on_handoff} && $request->method eq 'CONNECT';
-            return $on_headers->(@_);
+            return $on_headers->(@_) if $on_headers;
+            return;
         }
 
         my $selected = $handler->($tx, $request);
@@ -397,7 +398,8 @@ sub _attach_h3_websocket_connection {
             return $self->_generic_multiplexed_handoff(
                 $tx, $request, \%sessions, \%websocket_attempts,
             ) if $self->{on_handoff} && $request->method eq 'CONNECT';
-            return $on_headers->(@_);
+            return $on_headers->(@_) if $on_headers;
+            return;
         }
 
         my $id = $tx->stream_id;
