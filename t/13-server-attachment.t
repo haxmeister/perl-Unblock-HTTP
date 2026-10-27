@@ -23,7 +23,8 @@ BEGIN {
     sub start { $_[0]{started}++; $_[0] }
     sub input {
         my ($self, $tx, $request) = @_;
-        $self->{options}{on_request}->($tx, $request);
+        $self->{options}{on_request}->($tx, $request)
+            if $self->{options}{on_request};
         $self->{options}{on_request_end}->($tx, $request);
     }
     for my $version (1 .. 3) {
@@ -76,6 +77,8 @@ isnt(refaddr($h1), refaddr($second), 'separate engines for separate connections'
 is($h1->{options}{transport}, $host1, 'first transport retained by its engine');
 is($second->{options}{transport}, $host2, 'second transport independent');
 is($h1->{options}{on_request_end}, $callback, 'completed callback identity retained without a trampoline');
+ok(!exists $h1->{options}{on_request},
+    'completion-only server does not install an artificial header callback');
 is($h1->{options}{receive_body}, 'buffered', 'bounded buffering selected');
 is($h1->{options}{max_buffered_body_bytes}, 1_048_576, 'one MiB default limit');
 ok(!exists $h1->{options}{websocket}, 'upper-layer policy is not an engine option');
