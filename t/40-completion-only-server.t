@@ -14,6 +14,7 @@ use Unblock::HTTP1::Server;
 
 my @seen;
 my $definition = Unblock::HTTP::Server->new(
+    http1 => {},
     on_request => sub {
         my ($tx, $request) = @_;
         push @seen, [
@@ -47,6 +48,7 @@ ok(!$host->{aborted}, 'attached host was not aborted');
 
 my @headers;
 my $early = Unblock::HTTP::Server->new(
+    http1 => {},
     on_headers => sub { push @headers, $_[1]->target },
     on_request => sub { $_[0]->respond(status => 200, body => '') },
 );
