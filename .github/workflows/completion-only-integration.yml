@@ -60,7 +60,12 @@ jobs:
           cpanm --notest 'Unblock::WebSocket@0.02'
 
       - name: Run all protocol and upgrade tests with experimental HTTP1
+        env:
+          OPENSSL_CONF: /etc/ssl/openssl.cnf
         run: |
+          test -r "$OPENSSL_CONF"
           perl Makefile.PL
           make test
           make disttest
+          # H3 WebSocket tests must not be skipped by missing TLS tooling.
+          prove -bl t/35-server-websocket-h3.t t/36-client-websocket-h3.t
