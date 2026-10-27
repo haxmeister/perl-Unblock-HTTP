@@ -1,3 +1,41 @@
+# ACTIVE completion-only callback integration trial - 2026-10-26
+
+Branch feature/completion-only-callback from main
+b96117bc75934d7cd0f414899c24cf1ffca1bb96.
+Production commit bc3c66247dd8feb7492e2d880978de9f2ecbfe9f:
+on_headers remains optional, but no longer generates a dummy
+on_request header observer. Explicit on_headers still maps directly.
+Both H2 and H3 WebSocket dispatch now tolerate absent on_headers
+for ordinary requests (no undefined callback invocation). This generic
+design improves all integrations, not only Linux::Event.
+Independent lower dependency branch:
+Unblock::HTTP1 feature/completion-only-callback at
+96c01f7091c12bacd7cad8260a018d0094b38ce5.
+Published HTTP1 0.13 still REQUIRES on_request, so this upper
+feature must NOT be shipped against it without a coordinated
+upstream release/prerequisite bump or equivalent compatibility handling.
+
+t/13-server-attachment.t now verifies no no-op callback is installed;
+t/40-completion-only-server.t tests real full-body-only H1 with
+pipelining, canonical frozen request and explicit header behavior.
+The initial new test omitted mandatory top-level http1 => {};
+corrected in test-only 7a390af; it was a fixture mistake.
+MANIFEST updated. Feature-only workflow exercises H1 candidate and
+then published H2/H3/WebSocket:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40439940480
+PASS, HTTP1-only and full installed stack; however the first full
+run skipped two real H3 websocket TLS tests because setup-perl
+sets OPENSSL_CONF to a nonexistent path. Workflow correction
+962ad912 adds OPENSSL_CONF=/etc/ssl/openssl.cnf and explicit H3
+tests. Check latest CI result for real no-skip validation.
+
+No main, version, ABI or release changes. Native end-to-end socket
+A/B so far does not demonstrate a statistically reliable speedup.
+Keep feature isolated and Stage B OPEN; root and lower feature
+handoffs contain cross-repo evidence.
+
+---
+
 # FINAL 0.03 RELEASE AUDIT - 2026-10-25
 
 Maintainer requested the full release audit used for Unblock::HTTP1/2/3.
