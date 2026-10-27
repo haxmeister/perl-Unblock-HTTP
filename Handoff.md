@@ -1,5 +1,24 @@
 # ACTIVE completion-only callback integration trial - 2026-10-26
 
+FINAL FULL VALIDATION:
+https://github.com/haxmeister/perl-Unblock-HTTP/actions/runs/40440089986
+SUCCESS. HTTP1-only make test/disttest, then published H2/H3,
+Net::QUIC and WebSocket installed with the pinned lower HTTP1
+feature. Complete installed suite and make disttest PASS.
+With OPENSSL_CONF=/etc/ssl/openssl.cnf, real QUIC WebSocket
+t/35-server-websocket-h3.t and t/36-client-websocket-h3.t
+each run and PASS in both full tests plus explicit prove,
+not merely skipped. Cross-protocol callback changes validated.
+No production release/minimum update authorized.
+
+Root independent engine trial:
+https://github.com/haxmeister/perl-Linux-Event-HTTP/actions/runs/40440056191
+SUCCESS; native engine saves about 3.0-3.6 CPU us/request
+(~6% for this engine-only benchmark), portable ~1.5-3.2 us
+(~2-5%) compared with released baseline. Root real-socket
+improvement is approximately 1% on the paired runner, below
+the magnitude required to close Stage B.
+
 Branch feature/completion-only-callback from main
 b96117bc75934d7cd0f414899c24cf1ffca1bb96.
 Production commit bc3c66247dd8feb7492e2d880978de9f2ecbfe9f:
